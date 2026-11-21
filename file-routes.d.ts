@@ -41,13 +41,6 @@ declare module "virtual:file-routes" {
       $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/[...404]"), Extract<"route", keyof typeof import("./src/routes/[...404]")>>>;
     },
     {
-      path: "/api/ws-probe";
-      page: false;
-      $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/api/ws-probe"), Extract<"GET", keyof typeof import("./src/routes/api/ws-probe")>>>;
-      $HEAD: FileRouteLazyRef<Pick<typeof import("./src/routes/api/ws-probe"), Extract<"GET", keyof typeof import("./src/routes/api/ws-probe")>>>;
-      $$route?: undefined;
-    },
-    {
       path: "/auth/confirm";
       page: false;
       $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/auth/confirm"), Extract<"GET", keyof typeof import("./src/routes/auth/confirm")>>>;
