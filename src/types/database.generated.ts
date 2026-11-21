@@ -69,52 +69,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-                },"board_invites": {
+                },"board_access": {
                   Row: {
-                    "board_id": string,"created_at": string,"email": string,"id": string,"invited_by": string,"role": string,"status": string,"token": string
+                    "access": string,"board_id": string,"created_at": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "board_id": string,"created_at"?: string,"email": string,"id"?: string,"invited_by": string,"role"?: string,"status"?: string,"token"?: string
+                    "access": string,"board_id": string,"created_at"?: string,"user_id": string
                   }
                   Update: {
-                    "board_id"?: string,"created_at"?: string,"email"?: string,"id"?: string,"invited_by"?: string,"role"?: string,"status"?: string,"token"?: string
+                    "access"?: string,"board_id"?: string,"created_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {
-      foreignKeyName: "board_invites_board_id_fkey"
+      foreignKeyName: "board_access_board_id_fkey"
       columns: ["board_id"]
 isOneToOne: false
       referencedRelation: "boards"
       referencedColumns: ["id"]
     },{
-      foreignKeyName: "board_invites_invited_by_fkey"
-      columns: ["invited_by"]
-isOneToOne: false
-      referencedRelation: "profiles"
-      referencedColumns: ["id"]
-    }
-                  ]
-                },"board_members": {
-                  Row: {
-                    "board_id": string,"created_at": string,"role": string,"status": string,"user_id": string
-                  }
-                  ComputedFields: never
-                  Insert: {
-                    "board_id": string,"created_at"?: string,"role"?: string,"status"?: string,"user_id": string
-                  }
-                  Update: {
-                    "board_id"?: string,"created_at"?: string,"role"?: string,"status"?: string,"user_id"?: string
-                  }
-                  Relationships: [
-                    {
-      foreignKeyName: "board_members_board_id_fkey"
-      columns: ["board_id"]
-isOneToOne: false
-      referencedRelation: "boards"
-      referencedColumns: ["id"]
-    },{
-      foreignKeyName: "board_members_user_id_fkey"
+      foreignKeyName: "board_access_user_id_fkey"
       columns: ["user_id"]
 isOneToOne: false
       referencedRelation: "profiles"
@@ -123,14 +97,14 @@ isOneToOne: false
                   ]
                 },"boards": {
                   Row: {
-                    "created_at": string,"id": string,"name": string,"owner_id": string,"updated_at": string
+                    "created_at": string,"id": string,"name": string,"owner_id": string,"updated_at": string,"workspace_id": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"id"?: string,"name": string,"owner_id": string,"updated_at"?: string
+                    "created_at"?: string,"id"?: string,"name": string,"owner_id": string,"updated_at"?: string,"workspace_id"?: string | null
                   }
                   Update: {
-                    "created_at"?: string,"id"?: string,"name"?: string,"owner_id"?: string,"updated_at"?: string
+                    "created_at"?: string,"id"?: string,"name"?: string,"owner_id"?: string,"updated_at"?: string,"workspace_id"?: string | null
                   }
                   Relationships: [
                     {
@@ -138,6 +112,12 @@ isOneToOne: false
       columns: ["owner_id"]
 isOneToOne: false
       referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "boards_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
       referencedColumns: ["id"]
     }
                   ]
@@ -253,17 +233,89 @@ isOneToOne: false
                   ]
                 },"profiles": {
                   Row: {
-                    "avatar_url": string | null,"created_at": string,"display_name": string,"email": string,"id": string
+                    "avatar_url": string | null,"created_at": string,"display_name": string,"email": string,"id": string,"theme": string,"username": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email": string,"id": string
+                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email": string,"id": string,"theme"?: string,"username"?: string | null
                   }
                   Update: {
-                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email"?: string,"id"?: string
+                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email"?: string,"id"?: string,"theme"?: string,"username"?: string | null
                   }
                   Relationships: [
                     
+                  ]
+                },"workspace_invites": {
+                  Row: {
+                    "created_at": string,"email": string,"id": string,"invited_by": string,"role": string,"status": string,"token": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"email": string,"id"?: string,"invited_by": string,"role"?: string,"status"?: string,"token"?: string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"email"?: string,"id"?: string,"invited_by"?: string,"role"?: string,"status"?: string,"token"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "workspace_invites_invited_by_fkey"
+      columns: ["invited_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "workspace_invites_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"workspace_members": {
+                  Row: {
+                    "created_at": string,"role": string,"user_id": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"role"?: string,"user_id": string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"role"?: string,"user_id"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "workspace_members_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "workspace_members_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"workspaces": {
+                  Row: {
+                    "created_at": string,"id": string,"name": string,"owner_id": string,"slug": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"name": string,"owner_id": string,"slug": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"name"?: string,"owner_id"?: string,"slug"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "workspaces_owner_id_fkey"
+      columns: ["owner_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
                   ]
                 }
           }
@@ -271,11 +323,17 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "accept_board_invite":
+            "accept_workspace_invite":
 { Args: { "p_token": string }; Returns: string
+                           },
+"user_board_access":
+{ Args: { "p_board_id": string }; Returns: string
                            },
 "user_board_role":
 { Args: { "p_board_id": string }; Returns: string
+                           },
+"user_workspace_role":
+{ Args: { "p_workspace_id": string }; Returns: string
                            }
           }
           Enums: {

@@ -48,7 +48,7 @@ const ECHO_TIMEOUT = 8000;
  *  Serving this seed keeps reads non-suspending (the shell renders
  *  instantly) and lets optimistic writes race the initial load cleanly. */
 const EMPTY_SNAPSHOT: BoardSnapshot = {
-  board: { id: '', name: '', owner_id: '', created_at: '', updated_at: '' },
+  board: { id: '', name: '', owner_id: '', workspace_id: null, created_at: '', updated_at: '' },
   lists: [],
   cards: [],
   revision: 0,

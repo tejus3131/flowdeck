@@ -58,7 +58,7 @@ vi.mock('./boards', () => ({
 import type { BoardSnapshot, CardRow, ListRow } from './boards';
 
 const board = (over: Partial<BoardSnapshot> = {}): BoardSnapshot => ({
-  board: { id: 'b1', name: 'Test board', owner_id: 'u1', created_at: '', updated_at: '' },
+  board: { id: 'b1', name: 'Test board', owner_id: 'u1', workspace_id: null, created_at: '', updated_at: '' },
   lists: LIST_FIXTURE,
   cards: CARD_FIXTURE,
   revision: 1,

@@ -47,7 +47,7 @@ export const getBoards = query(async (): Promise<BoardSummary[]> => {
   const supabase = createSupabaseRequestClient();
   const { data, error } = await supabase
     .from('boards')
-    .select('id, name, owner_id, created_at, updated_at')
+    .select('id, name, owner_id, workspace_id, created_at, updated_at')
     .order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
   return data ?? [];
@@ -191,13 +191,21 @@ export async function createBoard(name: string): Promise<string> {
   const user = await requireUser(supabase);
   const boardName = cleanText(name, 'Board name', 80);
 
+  // Boards belong to a workspace; until the workspace switcher lands, the
+  // caller's first workspace (their personal one) is the target.
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+  if (!workspace) throw new Error('No workspace found for this account');
+
   const { data: board, error } = await supabase
     .from('boards')
-    .insert({ name: boardName, owner_id: user.id })
+    .insert({ name: boardName, workspace_id: workspace.id, owner_id: user.id })
     .select('id')
     .single();
   if (error) throw new Error(error.message);
-
   await supabase.from('lists').insert(
     DEFAULT_LISTS.map((listName, index) => ({
       board_id: board!.id,
