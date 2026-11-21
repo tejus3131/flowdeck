@@ -155,7 +155,6 @@ export function UserMenu(props: { profile: () => MeProfile }) {
               type="submit"
               role="menuitem"
               class="w-full rounded-xl px-2 py-2 text-left text-sm font-medium text-neutral-500 hover:bg-neutral-100 hover:text-red-500 dark:text-neutral-400 dark:hover:bg-neutral-800"
-              onClick={() => setOpen(false)}
             >
               Sign out
             </button>
