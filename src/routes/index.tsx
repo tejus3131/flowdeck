@@ -1,64 +1,31 @@
 import { Title } from '@solidjs/meta';
-import type { RouteDefinition } from '@solidjs/router';
-import { For, Show, createMemo } from 'solid-js';
+import { Show, createMemo } from 'solid-js';
 
-import Counter from '../components/Counter';
-import { getCurrentUser, getUsers, login, logout } from '../lib/users';
-import logo from '../logo.svg';
-
-// The preload starts these fetches as navigation begins — and it doubles as
-// the page's single-flight manifest: after a mutation, the server reruns it
-// to put the refreshed data on the action response itself.
-export const route = {
-  preload: () => {
-    void getCurrentUser();
-    void getUsers();
-  },
-} satisfies RouteDefinition;
+import { getMe } from '../lib/auth';
 
 export default function Home() {
-  // Server-function reads: the signed-in user comes off the session cookie
-  // (see src/server/session.ts); the user list feeds the sign-in form.
-  const me = createMemo(() => getCurrentUser());
-  const users = createMemo(() => getUsers());
+  const me = createMemo(() => getMe());
 
   return (
-    <main>
-      <Title>Home - Solid App</Title>
-      <img src={logo} class="logo" alt="Solid logo" />
-      <h1>Hello Solid!</h1>
-      <Counter />
-      <p>
-        Edit <code>src/routes/index.tsx</code> and save to reload.
+    <main class="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-start justify-center gap-4 px-4">
+      <Title>Flowdeck</Title>
+      <h1 class="text-3xl font-semibold tracking-tight">Flowdeck</h1>
+      <p class="text-neutral-600 dark:text-neutral-400">
+        Realtime kanban boards for you, your team — and your agents.
       </p>
-      {/* The session pillar: login/logout are form actions posting to server
-          functions — plain form posts, so they work before hydration too. */}
-      <Show
-        when={me()}
-        fallback={
-          <form action={login} method="post">
-            <select name="id">
-              <For each={users()}>
-                {(user) => <option value={user.id}>{user.name}</option>}
-              </For>
-            </select>{' '}
-            <button type="submit">Sign in</button>
-          </form>
-        }
-      >
-        {(user) => (
-          <form action={logout} method="post">
-            Signed in as {user().name}. <button type="submit">Sign out</button>
-          </form>
+      <Show when={me()} fallback={
+        <p class="text-sm text-neutral-500 dark:text-neutral-400">
+          <a href="/sign-in" class="underline">Sign in</a> with a magic link to
+          get started.
+        </p>
+      }>
+        {(profile) => (
+          <p class="text-sm text-neutral-500 dark:text-neutral-400">
+            Welcome back, {profile().display_name || profile().email}. Your
+            boards dashboard is coming next.
+          </p>
         )}
       </Show>
-      <a
-        href="https://v2.solidjs.com/"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Learn Solid
-      </a>
     </main>
   );
 }

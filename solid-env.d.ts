@@ -20,7 +20,9 @@ declare module 'virtual:solid-env/server' {
     ? O
     : string;
   const env: {
-    readonly "SESSION_SECRET": __Out<__Schema["server"]["SESSION_SECRET"]>;
+    readonly "SUPABASE_URL": __Out<__Schema["server"]["SUPABASE_URL"]>;
+    readonly "SUPABASE_PUBLISHABLE_KEY": __Out<__Schema["server"]["SUPABASE_PUBLISHABLE_KEY"]>;
+    readonly "SUPABASE_SECRET_KEY": __Out<__Schema["server"]["SUPABASE_SECRET_KEY"]>;
     readonly "VITE_APP_NAME": __Out<__Schema["client"]["VITE_APP_NAME"]>;
   };
   export { env };

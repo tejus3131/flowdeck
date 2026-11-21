@@ -12,11 +12,16 @@ import * as v from 'valibot';
 // baked into the bundle. Generated types land in solid-env.d.ts.
 export default {
   server: {
-    // Comma-separated, newest first — see src/server/session.ts for the
-    // rotation story. Generate one: `openssl rand -base64 32`.
-    SESSION_SECRET: v.pipe(v.string(), v.minLength(32)),
+    // Supabase project API endpoint (local stack in dev, hosted in prod).
+    SUPABASE_URL: v.pipe(v.string(), v.url()),
+    // The publishable (anon) key — public by design; RLS is the security
+    // layer for everything done with it.
+    SUPABASE_PUBLISHABLE_KEY: v.pipe(v.string(), v.minLength(20)),
+    // The secret (service role) key — server-only; used solely for
+    // administrative calls (signed storage URLs etc.), never for user reads.
+    SUPABASE_SECRET_KEY: v.pipe(v.string(), v.minLength(20)),
   },
   client: {
-    VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Solid App'),
+    VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Flowdeck'),
   },
 };
