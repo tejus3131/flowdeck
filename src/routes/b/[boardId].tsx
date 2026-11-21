@@ -1,5 +1,6 @@
 import { Title } from '@solidjs/meta';
 import type { RouteProps } from '@solidjs/router';
+import { liveQuery } from '@solidjs/router';
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 
 import { createBoardEngine, BOARD_ENTITY } from '../../lib/sync';
@@ -28,6 +29,7 @@ const EMPTY: BoardSnapshot = {
   lists: [],
   cards: [],
   revision: 0,
+  myAccess: null,
 };
 
 /** Fractional position for a card dropped at display index `toIndex`. */
@@ -56,7 +58,15 @@ const OP_LABELS: Record<string, string> = {
 };
 
 export default function Board(props: RouteProps<'/b/:boardId'>) {
-  const engine = createBoardEngine(boardStream, () => props.params.boardId, EMPTY);
+  // liveQuery: one shared channel per board, request-scoped on the server
+  // (SSR renders the first value and closes), reconnecting on the client.
+  const boardLive = liveQuery(boardStream, 'board');
+  const engine = createBoardEngine(
+    (boardId) => boardLive(boardId),
+    () => props.params.boardId,
+    EMPTY,
+    () => boardLive.status(props.params.boardId),
+  );
   const view = engine.view;
   const me = createMemo(() => getMe());
   const presence = createBoardPresence(props.params.boardId, () => me());
@@ -210,6 +220,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   };
 
   const syncing = () => engine.ops().some((op) => op.status === 'inFlight');
+  // Viewers see the board without the editing surface: no mutation UI, no
+  // drag; their effective access comes with every snapshot.
+  const canEdit = () => view().myAccess === 'edit';
 
   return (
     <>
@@ -246,14 +259,25 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
               </form>
             }
           >
-            <button
-              type="button"
-              class="rounded-md px-2 py-1 text-base font-semibold tracking-tight hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              title="Rename board"
-              onClick={() => setRenamingBoard(true)}
+            <Show
+              when={canEdit()}
+              fallback={<span class="rounded-md px-2 py-1 text-base font-semibold tracking-tight">{view().board.name || '…'}</span>}
             >
-              {view().board.name || '…'}
-            </button>
+              <button
+                type="button"
+                class="rounded-md px-2 py-1 text-base font-semibold tracking-tight hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                title="Rename board"
+                onClick={() => setRenamingBoard(true)}
+              >
+                {view().board.name || '…'}
+              </button>
+            </Show>
+          </Show>
+
+          <Show when={!canEdit()}>
+            <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300" title="An admin limited your access on this board">
+              👁 View only
+            </span>
           </Show>
 
           <span class="ml-auto flex items-center gap-2 text-xs text-neutral-400">
@@ -309,6 +333,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 remoteDrag={presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()}
                 dropHint={dropHint()?.listId === list.id ? dropHint()!.index : null}
                 isTemp={engine.isTemp(list.id)}
+                canEdit={canEdit()}
                 onDragStart={(cardId) => {
                   setDragging(cardId);
                   presence.broadcastDrag(cardId, me()?.display_name || 'Someone');
@@ -323,7 +348,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   setDropHint(null);
                   // Cards still materializing can't be dragged yet (their
                   // real id hasn't been echoed) — the drop is a no-op.
-                  if (cardId && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
+                  if (cardId && canEdit() && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
                 }}                onHover={(index) => setDropHint({ listId: list.id, index })}
                 adding={addingIn() === list.id}
                 onAdd={() => setAddingIn(list.id)}
@@ -341,7 +366,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             )}
           </For>
 
-          <AddList onAdd={addList} />
+          <Show when={canEdit()}>
+            <AddList onAdd={addList} />
+          </Show>
         </div>
       </main>
 
@@ -350,6 +377,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           <CardDrawer
             cardId={cardId()}
             cards={view().cards}
+            canEdit={canEdit()}
             onClose={() => setOpenCardId(null)}
             onDelete={() => {
               removeCard(cardId());
@@ -376,6 +404,7 @@ function BoardColumn(props: {
   remoteDrag: RemoteDrag | null;
   dropHint: number | null;
   isTemp: boolean;
+  canEdit: boolean;
   adding: boolean;
   onDragStart: (cardId: string) => void;
   onDragEnd: () => void;
@@ -448,14 +477,21 @@ function BoardColumn(props: {
             </form>
           }
         >
-          <button
-            type="button"
-            class="rounded-md px-1.5 py-0.5 text-sm font-semibold hover:bg-neutral-200/70 dark:hover:bg-neutral-800"
-            title="Rename list"
-            onClick={() => setRenaming(true)}
+          <Show
+            when={props.canEdit}
+            fallback={
+              <span class="rounded-md px-1.5 py-0.5 text-sm font-semibold">{props.list.name}</span>
+            }
           >
-            {props.list.name}
-          </button>
+            <button
+              type="button"
+              class="rounded-md px-1.5 py-0.5 text-sm font-semibold hover:bg-neutral-200/70 dark:hover:bg-neutral-800"
+              title="Rename list"
+              onClick={() => setRenaming(true)}
+            >
+              {props.list.name}
+            </button>
+          </Show>
         </Show>
         <div class="flex items-center gap-1.5 text-xs text-neutral-400">
           <span class="rounded-full bg-neutral-200/80 px-1.5 py-0.5 font-medium dark:bg-neutral-800">
@@ -473,14 +509,16 @@ function BoardColumn(props: {
               </button>
             }
           >
-            <button
-              type="button"
-              title="Delete list"
-              class="rounded-md px-1 hover:text-red-500"
-              onClick={() => setConfirming(true)}
-            >
-              ×
-            </button>
+            <Show when={props.canEdit}>
+              <button
+                type="button"
+                title="Delete list"
+                class="rounded-md px-1 hover:text-red-500"
+                onClick={() => setConfirming(true)}
+              >
+                ×
+              </button>
+            </Show>
           </Show>
         </div>
       </header>
@@ -494,8 +532,9 @@ function BoardColumn(props: {
               </Show>
               <article
                 data-card
-                draggable="true"
+                draggable={props.canEdit ? 'true' : undefined}
                 onDragStart={(event) => {
+                  if (!props.canEdit) return;
                   const transfer = event.dataTransfer;
                   if (transfer) {
                     transfer.effectAllowed = 'move';
@@ -520,17 +559,19 @@ function BoardColumn(props: {
                 <Show when={card.description}>
                   <p class="mt-1 line-clamp-2 text-xs text-neutral-400">{card.description}</p>
                 </Show>
-                <button
-                  type="button"
-                  title="Delete card"
-                  class="absolute right-2 top-2 hidden rounded px-1 text-neutral-300 hover:text-red-500 group-hover:block dark:text-neutral-600"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    props.onRemoveCard(card.id);
-                  }}
-                >
-                  ×
-                </button>
+                <Show when={props.canEdit}>
+                  <button
+                    type="button"
+                    title="Delete card"
+                    class="absolute right-2 top-2 hidden rounded px-1 text-neutral-300 hover:text-red-500 group-hover:block dark:text-neutral-600"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      props.onRemoveCard(card.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </Show>
               </article>
             </>
           )}
@@ -539,24 +580,26 @@ function BoardColumn(props: {
           <div class="h-1 rounded-full bg-indigo-500/60" />
         </Show>
 
-        {/* Add-card: the input ALWAYS clears instantly on submit (the card
-            appears immediately via the engine) — optionally stays open for
-            the next card ("add another"), never blocked by the server. */}
-        <Show
-          when={props.adding || keepOpen()}
-          fallback={
-            <button
-              type="button"
-              class="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-              onClick={() => {
-                setKeepOpen(true);
-                props.onAdd();
-              }}
-            >
-              + Add card
-            </button>
-          }
-        >
+        {/* Add-card (editors only): the input ALWAYS clears instantly on
+            submit (the card appears immediately via the engine) — optionally
+            stays open for the next card ("add another"), never blocked by
+            the server. Viewers see no editing surface at all. */}
+        <Show when={props.canEdit}>
+          <Show
+            when={props.adding || keepOpen()}
+            fallback={
+              <button
+                type="button"
+                class="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                onClick={() => {
+                  setKeepOpen(true);
+                  props.onAdd();
+                }}
+              >
+                + Add card
+              </button>
+            }
+          >
           <form
             class="flex flex-col gap-2"
             onSubmit={(event) => {
@@ -607,6 +650,7 @@ function BoardColumn(props: {
               </Show>
             </div>
           </form>
+          </Show>
         </Show>
       </div>
     </section>
@@ -664,6 +708,7 @@ function AddList(props: { onAdd: (name: string) => void }) {
 function CardDrawer(props: {
   cardId: string;
   cards: CardRow[];
+  canEdit: boolean;
   onClose: () => void;
   onDelete: () => void;
   onUpdate: (patch: { title?: string; description?: string }) => void;
@@ -704,9 +749,14 @@ function CardDrawer(props: {
         <div class="flex items-start justify-between gap-2">
           <input
             value={titleDraft()}
+            readonly={props.canEdit ? undefined : true}
             class="flex-1 border-0 bg-transparent px-0 py-0 text-lg font-semibold focus:border-0 focus:ring-0 dark:bg-transparent"
-            onInput={(event) => setTitleDraft(event.currentTarget.value)}
-            onBlur={saveTitle}
+            onInput={(event) => {
+              if (props.canEdit) setTitleDraft(event.currentTarget.value);
+            }}
+            onBlur={() => {
+              if (props.canEdit) saveTitle();
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.currentTarget.blur();
@@ -727,23 +777,30 @@ function CardDrawer(props: {
         </label>
         <textarea
           rows={4}
-          placeholder="Add a description…"
+          placeholder={props.canEdit ? 'Add a description…' : ''}
+          readonly={props.canEdit ? undefined : true}
           value={descriptionDraft()}
-          onInput={(event) => setDescriptionDraft(event.currentTarget.value)}
-          onBlur={saveDescription}
+          onInput={(event) => {
+            if (props.canEdit) setDescriptionDraft(event.currentTarget.value);
+          }}
+          onBlur={() => {
+            if (props.canEdit) saveDescription();
+          }}
         />
 
         <div class="flex items-center justify-between">
           <span class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
             Comments
           </span>
-          <button
-            type="button"
-            class="text-xs font-medium text-red-500 hover:text-red-600"
-            onClick={props.onDelete}
-          >
-            Delete card
-          </button>
+          <Show when={props.canEdit}>
+            <button
+              type="button"
+              class="text-xs font-medium text-red-500 hover:text-red-600"
+              onClick={props.onDelete}
+            >
+              Delete card
+            </button>
+          </Show>
         </div>
 
         <Show

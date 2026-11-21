@@ -29,8 +29,10 @@ import {
   createMemo,
   createSignal,
   createStore,
+  onSettled,
   type Accessor,
 } from 'solid-js';
+import { getRequestEvent, isServer } from '@solidjs/web';
 
 import type { BoardSnapshot, CardRow, ListRow } from './boards';
 
@@ -48,30 +50,144 @@ export interface PendingOp {
   at: number;
 }
 
-export interface OpSpec {
+export interface OpSpec<S = unknown> {
   kind: string;
   guards?: string[];
   tempIds?: string[];
   /** Apply the op to the local view draft. Runs synchronously on mutate. */
-  apply: (draft: BoardSnapshot) => void;
+  apply: (draft: S) => void;
   /** The server call — its resolution is the ACK. */
   send: () => Promise<unknown>;
   /** True when the durable snapshot contains this op's change. */
-  echo: (durable: BoardSnapshot) => boolean;
+  echo: (durable: S) => boolean;
 }
 
 /** Guard id for the board's own row (name etc.). */
 export const BOARD_ENTITY = 'board';
 
+/**
+ * True during a DOCUMENT render on the server (SSR). The live-wire
+ * producers also run server-side — for them this is false, so they keep
+ * streaming; only the document render needs "first value, then finish".
+ */
+export function isDocumentRender(): boolean {
+  if (!isServer) return false;
+  const url = getRequestEvent()?.request.url ?? '';
+  return !url.includes('/_server/');
+}
+
 const ACK_TIMEOUT_MS = 10_000;
 
+export type Engine<S> = {
+  view: () => S;
+  status: () => SyncStatus;
+  ops: () => PendingOp[];
+  failed: () => PendingOp[];
+  mutate: (spec: OpSpec<S>) => string;
+  retry: (opId: string) => void;
+  dismiss: (opId: string) => void;
+  isSaving: (entityId: string) => boolean;
+  /** A locally created entity whose real id hasn't been echoed yet. */
+  isTemp: (entityId: string) => boolean;
+};
+
+/**
+ * The generic outbox engine over any snapshot shape: instant local apply,
+ * guard-based local-wins-until-echo, replay-based guard release. The board
+ * page and the dashboard's board list run this same machinery.
+ */
+export function createEngine<S extends object>(options: {
+  streamSource: (key: string) => AsyncIterable<S>;
+  key: Accessor<string>;
+  empty: S;
+  /** Fold the durable snapshot into the view. `keep` = entities to protect. */
+  merge: (draft: S, snapshot: S, keep: ReadonlySet<string>) => void;
+  /** Fresh-identity copy of a snapshot (replay passes need one). */
+  clone: (snapshot: S) => S;
+  /** Optional reactive wire state (a liveQuery's `status()`), mapped onto
+   *  the engine's status words. Absent → the source's onstatus hook. */
+  status?: () => string;
+}): Engine<S> {
+  return createEngineBody(
+    options.streamSource,
+    options.key,
+    options.empty,
+    options.merge,
+    options.clone,
+    options.status,
+  );
+}
+
+/** Merge two keyed row lists: server rows first, guarded locals appended. */
+function mergeRows<T extends { id: string }>(
+  local: T[],
+  server: T[],
+  keep: ReadonlySet<string>,
+): T[] {
+  const kept = local.filter((row) => keep.has(row.id));
+  const keptIds = new Set(kept.map((row) => row.id));
+  return [...server.filter((row) => !keptIds.has(row.id)), ...kept];
+}
+
+/** The board engine: the original snapshot shape + its merge. */
 export function createBoardEngine(
   streamSource: (boardId: string) => AsyncIterable<BoardSnapshot>,
   boardId: Accessor<string>,
   empty: BoardSnapshot,
+  status?: () => string,
+): Engine<BoardSnapshot> {
+  return createEngine<BoardSnapshot>({
+    streamSource,
+    key: boardId,
+    empty,
+    clone: (snapshot) => ({
+      ...snapshot,
+      lists: snapshot.lists.slice(),
+      cards: snapshot.cards.slice(),
+    }),
+    merge: mergeBoardSnapshot,
+    ...(status ? { status } : {}),
+  });
+}
+
+/** Fold a durable board snapshot into the view (server state minus guards). */
+function mergeBoardSnapshot(
+  draft: BoardSnapshot,
+  snapshot: BoardSnapshot,
+  keep: ReadonlySet<string>,
 ) {
+  const lists = mergeRows(draft.lists, snapshot.lists, keep).sort((a, b) => a.position - b.position);
+  const listIndex = new Map(lists.map((list, index) => [list.id, index]));
+  const cards = mergeRows(draft.cards, snapshot.cards, keep).sort(
+    (a, b) => (listIndex.get(a.list_id) ?? 0) - (listIndex.get(b.list_id) ?? 0) || a.position - b.position,
+  );
+  draft.board = keep.has(BOARD_ENTITY) ? draft.board : snapshot.board;
+  draft.lists = lists;
+  draft.cards = cards;
+  draft.revision = snapshot.revision;
+  draft.myAccess = snapshot.myAccess;
+}
+
+function createEngineBody<S extends object>(
+  streamSource: (key: string) => AsyncIterable<S>,
+  boardId: Accessor<string>,
+  empty: S,
+  merge: (draft: S, snapshot: S, keep: ReadonlySet<string>) => void,
+  clone: (snapshot: S) => S,
+  wireStatus?: () => string,
+): Engine<S> {
   // ── durable source + transport status ─────────────────────────────────
-  const [status, setStatus] = createSignal<SyncStatus>('connecting');
+  const [statusSignal, setStatus] = createSignal<SyncStatus>('connecting');
+  const status = (): SyncStatus => {
+    if (wireStatus) {
+      const wire = wireStatus();
+      if (wire === 'connected') return 'live';
+      if (wire === 'reconnecting') return 'reconnecting';
+      if (wire === 'closed') return 'offline';
+      return 'connecting';
+    }
+    return statusSignal();
+  };
 
   // View writes land only inside a durable-emission pass (Solid 2's async
   // write scoping), so the engine wraps the source in a replayable
@@ -85,17 +201,31 @@ export function createBoardEngine(
     replayResolve?.();
   };
 
-  async function* replayable(): AsyncGenerator<BoardSnapshot> {
-    const source = streamSource(boardId());
-    (source as { onstatus?: (next: string) => void }).onstatus = (next: string) => {
-      if (next === 'connected') setStatus('live');
-      else if (next === 'reconnecting') setStatus('reconnecting');
-      else if (next === 'closed') setStatus('offline');
-    };
+  async function* replayable(): AsyncGenerator<S> {
+    // live() sources arrive through an async wrapper (in-process or over
+    // the wire) — the source itself resolves from a promise.
+    const source = await streamSource(boardId());
+    if (!wireStatus) {
+      (source as { onstatus?: (next: string) => void }).onstatus = (next: string) => {
+        if (next === 'connected') setStatus('live');
+        else if (next === 'reconnecting') setStatus('reconnecting');
+        else if (next === 'closed') setStatus('offline');
+      };
+    }
     const iterator = source[Symbol.asyncIterator]();
-    let current: BoardSnapshot | undefined;
-    let pendingNext: Promise<IteratorResult<BoardSnapshot>> | undefined;
+    let current: S | undefined;
+    let pendingNext: Promise<IteratorResult<S>> | undefined;
     const nextValue = () => (pendingNext ??= iterator.next());
+    if (isServer && isDocumentRender()) {
+      // The DOCUMENT render only needs the first value: SSR renders it,
+      // hydration adopts it, and the client re-connects the channel over
+      // its own wire. Pulling further here would hold the response open
+      // forever. (Only for document renders — the live-wire producers
+      // below also run on the server, and they must keep streaming.)
+      const first = await nextValue();
+      if (!first.done) yield first.value;
+      return;
+    }
     while (true) {
       const gate = new Promise<void>((resolve) => {
         replayResolve = resolve;
@@ -109,13 +239,7 @@ export function createBoardEngine(
         // A replay request: re-emit the current snapshot (fresh identity)
         // so the merge pass runs.
         replayQueued = false;
-        if (current) {
-          yield {
-            ...current,
-            lists: current.lists.slice(),
-            cards: current.cards.slice(),
-          };
-        }
+        if (current) yield clone(current);
         continue;
       }
       pendingNext = undefined;
@@ -124,20 +248,25 @@ export function createBoardEngine(
       yield current;
       if (replayQueued) {
         replayQueued = false;
-        yield {
-          ...current,
-          lists: current.lists.slice(),
-          cards: current.cards.slice(),
-        };
+        yield clone(current);
       }
     }
   }
 
-  const stream = createMemo(() => replayable(), { loadingValue: empty });
-  const durable = createMemo<BoardSnapshot>(() => stream());
+  // Lazy: the source's pull starts on the first read — and that first read
+  // is deferred to the settle below. An eager pull races the hydration
+  // adoption: the $R write lands while the generator's first value is in
+  // flight, the dirty-skip drops that landing (and with it the callback
+  // that continues the pull), and the stream silently stops. Starting
+  // post-settle means landings hit a clean node — deterministic.
+  const stream = createMemo(() => replayable(), { loadingValue: empty, lazy: true });
+  const durable = createMemo<S>(() => stream(), { lazy: true });
 
   // ── state ────────────────────────────────────────────────────────────
-  const [view, setView] = createStore<BoardSnapshot>(empty);
+  // `as never` — Solid's overload excludes function values (NoFn<T>), and TS
+  // can't prove a naked generic `S extends object` is never callable. The
+  // public createEngine boundary already constrains S to object.
+  const [view, setView] = createStore<S>(empty as never);
   const [ops, setOps] = createStore<{ list: PendingOp[] }>({ list: [] });
   // Async continuations request a re-merge through this signal, carrying
   // the guard set to release (reads lag writes, so a re-merge can never
@@ -145,8 +274,8 @@ export function createBoardEngine(
   // itself always runs in the effect below — the context where view writes
   // reliably land.
 
-  let lastDurable: BoardSnapshot = empty;
-  const specs = new Map<string, OpSpec>();
+  let lastDurable: S = empty;
+  const specs = new Map<string, OpSpec<S>>();
 
   /** Entities protected right now (read before any write in the same pass). */
   const keepSet = () => {
@@ -159,39 +288,23 @@ export function createBoardEngine(
     return keep;
   };
 
-  /** Merge the durable snapshot into the view. `release` un-guards entities
-   *  (retired or failed ops) so the server's state wins for them again. */
-  function merge(snapshot: BoardSnapshot, release?: ReadonlySet<string>) {
-    lastDurable = snapshot;
-    const keep = keepSet();
-    if (release) for (const id of release) keep.delete(id);
-    setView((draft) => {
-      const lists = mergeRows(draft.lists, snapshot.lists, keep).sort(
-        (a, b) => a.position - b.position,
-      );
-      const listIndex = new Map(lists.map((list, index) => [list.id, index]));
-      const cards = mergeRows(draft.cards, snapshot.cards, keep).sort(
-        (a, b) =>
-          (listIndex.get(a.list_id) ?? 0) - (listIndex.get(b.list_id) ?? 0) ||
-          a.position - b.position,
-      );
-      draft.board = keep.has(BOARD_ENTITY) ? draft.board : snapshot.board;
-      draft.lists = lists;
-      draft.cards = cards;
-      draft.revision = snapshot.revision;
-    });
-  }
-
-  function mergeRows<T extends { id: string }>(local: T[], server: T[], keep: Set<string>): T[] {
-    const kept = local.filter((row) => keep.has(row.id));
-    const keptIds = new Set(kept.map((row) => row.id));
-    return [...server.filter((row) => !keptIds.has(row.id)), ...kept];
-  }
 
   // THE merge driver: every view write happens here, inside a durable
   // emission pass. Retirements are decided from data read BEFORE any
   // write (reads lag writes), then applied with the merge in one pass.
-  createEffect(() => durable(), (snapshot) => {
+  //
+  // The first pull is gated until the initial settle: an eager pull races
+  // the hydration adoption ($R's write lands while the generator's first
+  // value is in flight, the dirty-skip drops the landing along with the
+  // callback that continues the pull, and the stream silently stops).
+  // Reading `durable()` for the first time AFTER the settle means the
+  // landings hit a clean node — deterministic on reload and first load.
+  const [started, setStarted] = createSignal(false);
+  onSettled(() => {
+    setStarted(true);
+  });
+  createEffect(() => (started() ? durable() : undefined), (snapshot) => {
+    if (snapshot === undefined) return; // pre-settle: nothing to merge yet
     const retiring = new Set<string>();
     for (const op of [...ops.list]) {
       const spec = specs.get(op.id);
@@ -203,7 +316,7 @@ export function createBoardEngine(
   });
 
   /** Shared retire + merge pass (writes ops first, then merges once). */
-  function applyWithRetire(snapshot: BoardSnapshot, retiring: ReadonlySet<string>) {
+  function applyWithRetire(snapshot: S, retiring: ReadonlySet<string>) {
     if (retiring.size > 0) {
       setOps((draft) => {
         for (const op of [...draft.list]) {
@@ -216,11 +329,17 @@ export function createBoardEngine(
         }
       });
     }
-    merge(snapshot, retiring);
+    // The guard set is read before any write (reads lag writes); released
+    // guards let the durable state win again for those entities.
+    const keep = keepSet();
+    for (const id of retiring) keep.delete(id);
+    setView((draft) => {
+      merge(draft, snapshot, keep);
+    });
   }
 
   // ── mutation entry point ──────────────────────────────────────────────
-  function mutate(spec: OpSpec): string {
+  function mutate(spec: OpSpec<S>): string {
     const id = crypto.randomUUID();
     specs.set(id, spec);
     // 1. Instant local apply — nothing waits on this.
@@ -328,7 +447,6 @@ export function createBoardEngine(
   function retry(opId: string) {
     const spec = specs.get(opId);
     if (!spec) return;
-    const full = specs.get(opId) as OpSpec | undefined;
     setOps((draft) => {
       const op = draft.list.find((entry) => entry.id === opId);
       if (op) {
@@ -337,10 +455,10 @@ export function createBoardEngine(
         op.at = Date.now();
       }
     });
-    if (full) {
+    if (spec) {
       // The revert undid the local change on failure — re-apply it.
       setView((draft) => {
-        full.apply(draft);
+        spec.apply(draft);
       });
     }
     spec.send().then(

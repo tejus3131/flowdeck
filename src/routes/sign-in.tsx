@@ -22,7 +22,7 @@ import { browserClient } from '../lib/supabase-client';
  * delegation can submit blindly.
  */
 export default function SignIn() {
-  const [search] = useSearchParams<{ sent?: string; error?: string }>();
+  const [search] = useSearchParams<{ sent?: string; error?: string; next?: string }>();
   const navigate = useNavigate();
   const [busy, setBusy] = createSignal<false | 'check' | 'passkey' | 'link'>(false);
   const [notice, setNotice] = createSignal<string | null>(null);
@@ -56,8 +56,9 @@ export default function SignIn() {
       setNotice(error.message);
       return;
     }
-    // The ceremony wrote the session cookies; go home signed in.
-    navigate('/');
+    // The ceremony wrote the session cookies; land where the flow asked
+    // (invite acceptance) or home.
+    navigate(search.next && search.next.startsWith('/') ? search.next : '/');
   };
 
   const continueFlow = async () => {
@@ -137,6 +138,9 @@ export default function SignIn() {
               >
                 {search.error || notice()}
               </p>
+            </Show>
+            <Show when={search.next && search.next.startsWith('/')}>
+              <input type="hidden" name="next" value={search.next} />
             </Show>
             <button
               type="button"

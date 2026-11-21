@@ -6,6 +6,7 @@ import { paths, Router } from './router';
 import { getMe, signOut } from './lib/auth';
 import { ThemeSync } from './components/ThemeSync';
 import { UserMenu } from './components/UserMenu';
+import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import './app.css';
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
                 </span>
                 <span class="text-sm font-semibold tracking-tight">Flowdeck</span>
               </a>
+              <WorkspaceSwitcher />
               {/* The auth area reads getMe() — a pending read — so it sits
                   inside its own hold rather than the page-level one. */}
               <Loading fallback={<span />}>

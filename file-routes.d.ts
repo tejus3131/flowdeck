@@ -67,6 +67,12 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
+      path: "/invite/:token";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/invite/[token]"), Extract<"default", keyof typeof import("./src/routes/invite/[token]")>>>;
+      $$route?: undefined;
+    },
+    {
       path: "/profile";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/profile"), Extract<"default", keyof typeof import("./src/routes/profile")>>>;
@@ -76,6 +82,12 @@ declare module "virtual:file-routes" {
       path: "/sign-in";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/sign-in"), Extract<"default", keyof typeof import("./src/routes/sign-in")>>>;
+      $$route?: undefined;
+    },
+    {
+      path: "/w/:workspaceId/members";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/members"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/members")>>>;
       $$route?: undefined;
     }
   ];
@@ -120,6 +132,22 @@ declare module "virtual:file-routes" {
       id: "/b/:boardId";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/b/[boardId]"), Extract<"default", keyof typeof import("./src/routes/b/[boardId]")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/invite/:token";
+      id: "/invite/:token";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/invite/[token]"), Extract<"default", keyof typeof import("./src/routes/invite/[token]")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/w/:workspaceId/members";
+      id: "/w/:workspaceId/members";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/members"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/members")>>>;
       $$route?: undefined;
       children?: undefined;
     }

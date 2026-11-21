@@ -34,6 +34,7 @@ const snapshot = (cards: CardRow[], ls = lists()): BoardSnapshot => ({
   lists: ls,
   cards,
   revision: 1,
+  myAccess: 'edit',
 });
 
 const EMPTY: BoardSnapshot = {
@@ -41,6 +42,7 @@ const EMPTY: BoardSnapshot = {
   lists: [],
   cards: [],
   revision: 0,
+  myAccess: null,
 };
 
 // ── harness ───────────────────────────────────────────────────────────────
@@ -116,7 +118,7 @@ describe('sync engine', () => {
     const h = makeHarness(snapshot([card('c1', 'l1', 1), card('c2', 'l1', 2)]));
     await settle();
 
-    const move = (id: string, toList: string): OpSpec => ({
+    const move = (id: string, toList: string): OpSpec<BoardSnapshot> => ({
       kind: 'moveCard',
       guards: [id],
       apply: (draft) => {

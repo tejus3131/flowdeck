@@ -20,6 +20,11 @@ export default {
     // The secret (service role) key — server-only; used solely for
     // administrative calls (signed storage URLs etc.), never for user reads.
     SUPABASE_SECRET_KEY: v.pipe(v.string(), v.minLength(20)),
+    // Optional: Resend API key for workspace invite emails. Without it,
+    // invites still work — the UI shows a copyable accept link instead.
+    RESEND_API_KEY: v.optional(v.string()),
+    // Optional: the verified Resend sender for invite emails.
+    RESEND_FROM: v.optional(v.string(), 'Flowdeck <flowdeck@tejusgupta.dev>'),
   },
   client: {
     VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Flowdeck'),

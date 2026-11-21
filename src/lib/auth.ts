@@ -5,6 +5,7 @@
 // same request-scoped client so every row obeys the caller's policies.
 import { formAction, query } from '@solidjs/router';
 import { getRequestEvent, redirect } from '@solidjs/web';
+import { stringifySetCookie } from 'cookie';
 
 import { createSupabaseRequestClient } from '../server/supabase';
 import type { Database } from '../types/database.generated';
@@ -59,6 +60,20 @@ export const signIn = formAction(async (formData: FormData) => {
   const request = getRequestEvent()?.request;
   if (!request) throw new Error('signIn: no request event');
   const origin = new URL(request.url).origin;
+
+  // Where to land after the link is redeemed (invite flow); same-origin
+  // paths only. It rides a short-lived cookie: the email's redirect_to
+  // must stay EXACTLY `${origin}/auth/confirm` to match the auth
+  // allowlist — a query string would break the match and GoTrue would
+  // fall back to its site URL.
+  const rawNext = String(formData.get('next') ?? '');
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null;
+  if (next) {
+    getRequestEvent()?.response.headers.append(
+      'set-cookie',
+      stringifySetCookie({ name: 'fd_next', value: next, path: '/', sameSite: 'lax', maxAge: 3600 }),
+    );
+  }
 
   const supabase = createSupabaseRequestClient();
   const { error } = await supabase.auth.signInWithOtp({

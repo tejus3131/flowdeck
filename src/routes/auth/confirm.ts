@@ -8,6 +8,7 @@
 import type { APIHandler } from 'filesystem-routing/api';
 import type { RequestEvent, ResponseStub } from '@solidjs/web';
 import type { VerifyOtpParams } from '@supabase/supabase-js';
+import { stringifySetCookie } from 'cookie';
 
 import { createSupabaseRequestClient } from '../../server/supabase';
 
@@ -53,5 +54,17 @@ export const GET: APIHandler = async (event) => {
   if (error) {
     return redirectTo(e, `/sign-in?error=${encodeURIComponent(error.message)}`);
   }
-  return redirectTo(e, '/');
+  // One-hop landing from the sign-in cookie (invite flow): same-origin
+  // paths only, consumed on use.
+  const next = e.request.headers
+    .get('cookie')
+    ?.match(/(?:^|;\s*)fd_next=(\/[^\s;]*)/)?.[1];
+  const safeNext = next && !next.startsWith('//') ? decodeURIComponent(next) : '/';
+  if (safeNext !== '/') {
+    e.response.headers.append(
+      'set-cookie',
+      stringifySetCookie({ name: 'fd_next', value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
+    );
+  }
+  return redirectTo(e, safeNext);
 };

@@ -7,6 +7,7 @@
 // live stream carries so clients can tell when a change has been echoed
 // by the database (see board-store.ts's `until` guards).
 import { query } from '@solidjs/router';
+import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
 
 import { createSupabaseRequestClient } from '../server/supabase';
@@ -24,6 +25,8 @@ export type BoardSnapshot = {
   cards: CardRow[];
   /** Latest activity id — monotonic per board, bumped by every mutation. */
   revision: number;
+  /** This viewer's effective access (edit / view / null when gone). */
+  myAccess: 'edit' | 'view' | null;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,13 +48,114 @@ function cleanText(value: unknown, what: string, max: number): string {
 export const getBoards = query(async (): Promise<BoardSummary[]> => {
   'use server';
   const supabase = createSupabaseRequestClient();
+  // The current workspace (cookie choice, validated against membership):
+  // the dashboard shows this workspace's boards.
+  const workspaceId = await currentWorkspaceId(supabase);
+  const queryBuilder = supabase
+    .from('boards')
+    .select('id, name, owner_id, workspace_id, created_at, updated_at');
+  const { data, error } = workspaceId
+    ? await queryBuilder.eq('workspace_id', workspaceId).order('updated_at', { ascending: false })
+    : await queryBuilder.order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}, 'boards');
+
+/** The dashboard's live unit: the current workspace's boards. */
+export type BoardsSnapshot = { boards: BoardSummary[] };
+
+export const EMPTY_BOARDS: BoardsSnapshot = { boards: [] };
+
+/**
+ * The user's boards as a live source: the first yield is the current list,
+ * and every board row change (teammates creating, renaming, deleting)
+ * re-emits. No workspace filter: the dashboard filters client-side, so
+ * switching workspaces is instant (no resubscribe). Same contract as
+ * boardStream — per-viewer producer, caller's JWT, RLS filters rows.
+ */
+export const boardsStream = live(async function* (): AsyncGenerator<BoardsSnapshot> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+
+  // Session must be resident before subscribing (the boardStream lesson).
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error('Sign in to see boards');
+
+  const control = producerControls();
+
+  const channel = supabase
+    .channel('boards:all')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'boards' }, control.onChanged);
+  channel.subscribe((status, err) => {
+    if (err) console.error('boardsStream channel error:', err);
+    if (status === 'CHANNEL_ERROR') console.error('boardsStream channel error status');
+    if (status === 'TIMED_OUT') console.error('boardsStream channel timed out');
+  });
+
+  try {
+    yield await boardsSnapshot(supabase);
+    console.log('[boardsStream] first value yielded (wire)');
+    while (true) {
+      if (!control.pending) {
+        await new Promise<void>((resolve) => {
+          control.wake = resolve;
+        });
+      }
+      if (control.dead) return; // client went away — drop the channel
+      control.pending = false;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      if (!control.pending) {
+        console.log('[boardsStream] change detected — re-snapshotting');
+        yield await boardsSnapshot(supabase);
+      }
+    }
+  } finally {
+    await supabase.removeChannel(channel);
+  }
+});
+
+/**
+ * Wake handoff + disconnect wiring shared by the live producers. The
+ * loop sleeps until `onChanged` pings it (a database change, or the
+ * transport's death); `dead` ends the loop so the caller's `finally`
+ * releases the realtime channel — without it a producer whose consumer
+ * vanished would hold the channel (and its socket) forever.
+ */
+function producerControls() {
+  const control = {
+    wake: undefined as (() => void) | undefined,
+    pending: false,
+    dead: false,
+    onChanged: () => {
+      control.pending = true;
+      if (control.wake) {
+        const w = control.wake;
+        control.wake = undefined;
+        w();
+      }
+    },
+  };
+  // The platform Request's abort signal fires when the client disconnects
+  // (Workers cancels streams); some dev middleware never aborts, in which
+  // case this is inert and the socket idles out on its own.
+  const signal = getRequestEvent()?.request.signal;
+  signal?.addEventListener('abort', () => {
+    control.dead = true;
+    control.onChanged();
+  });
+  return control;
+}
+
+async function boardsSnapshot(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+): Promise<BoardsSnapshot> {
   const { data, error } = await supabase
     .from('boards')
     .select('id, name, owner_id, workspace_id, created_at, updated_at')
     .order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
-  return data ?? [];
-}, 'boards');
+  return { boards: data ?? [] };
+}
 
 /** One board snapshot, for tests and one-off reads. */
 export async function getBoardSnapshot(
@@ -89,38 +193,31 @@ export const boardStream = live(async function* (
 
   // Change notifications coalesced through a tiny promise handoff: the
   // loop sleeps until a postgres_changes event pings it.
-  let wake: (() => void) | undefined;
-  let pending = false;
-  const onChanged = () => {
-    pending = true;
-    if (wake) {
-      const w = wake;
-      wake = undefined;
-      w();
-    }
-  };
+  const control = producerControls();
 
   const channel = supabase
     .channel(`board:${id}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'lists', filter: `board_id=eq.${id}` },
-      onChanged,
+      control.onChanged,
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'cards', filter: `board_id=eq.${id}` },
-      onChanged,
+      control.onChanged,
     )
+    // Per-board access overrides matter here too: a view→edit change
+    // re-shapes what RLS lets this caller see.
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'board_members', filter: `board_id=eq.${id}` },
-      onChanged,
+      { event: '*', schema: 'public', table: 'board_access', filter: `board_id=eq.${id}` },
+      control.onChanged,
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'boards', filter: `id=eq.${id}` },
-      onChanged,
+      control.onChanged,
     )
     .subscribe((status, err) => {
       // Observability: connection problems surface in dev logs and Workers
@@ -134,15 +231,16 @@ export const boardStream = live(async function* (
     // Current value first — the reconnect contract.
     yield await snapshot(supabase, id);
     while (true) {
-      if (!pending) {
+      if (!control.pending) {
         await new Promise<void>((resolve) => {
-          wake = resolve;
+          control.wake = resolve;
         });
       }
-      pending = false;
+      if (control.dead) return; // viewer went away — drop the channel
+      control.pending = false;
       // Debounce bursts: one snapshot for a flurry of changes.
       await new Promise((resolve) => setTimeout(resolve, 80));
-      if (!pending) {
+      if (!control.pending) {
         yield await snapshot(supabase, id);
       }
       // A change that landed mid-snapshot leaves `pending` set and the
@@ -159,7 +257,7 @@ async function snapshot(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
   boardId: string,
 ): Promise<BoardSnapshot> {
-  const [boards, lists, cards, activity] = await Promise.all([
+  const [boards, lists, cards, activity, access] = await Promise.all([
     supabase.from('boards').select('*').eq('id', boardId).maybeSingle(),
     supabase.from('lists').select('*').eq('board_id', boardId).order('position', { ascending: true }),
     supabase.from('cards').select('*').eq('board_id', boardId).order('position', { ascending: true }),
@@ -170,6 +268,7 @@ async function snapshot(
       .order('id', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase.rpc('user_board_access', { p_board_id: boardId }),
   ]);
   if (!boards.data) throw new Error('Board not found');
   return {
@@ -177,6 +276,7 @@ async function snapshot(
     lists: lists.data ?? [],
     cards: cards.data ?? [],
     revision: activity.data?.id ?? 0,
+    myAccess: (access.data as 'edit' | 'view' | null) ?? null,
   };
 }
 
@@ -191,18 +291,15 @@ export async function createBoard(name: string): Promise<string> {
   const user = await requireUser(supabase);
   const boardName = cleanText(name, 'Board name', 80);
 
-  // Boards belong to a workspace; until the workspace switcher lands, the
-  // caller's first workspace (their personal one) is the target.
-  const { data: workspace } = await supabase
-    .from('workspaces')
-    .select('id')
-    .limit(1)
-    .maybeSingle();
-  if (!workspace) throw new Error('No workspace found for this account');
+  // Boards belong to the current workspace (the cookie choice), falling
+  // back to the caller's first workspace.
+  const workspaceId = await currentWorkspaceId(supabase);
+  const workspaceTarget = workspaceId ?? (await firstWorkspaceId(supabase));
+  if (!workspaceTarget) throw new Error('No workspace found for this account');
 
   const { data: board, error } = await supabase
     .from('boards')
-    .insert({ name: boardName, workspace_id: workspace.id, owner_id: user.id })
+    .insert({ name: boardName, workspace_id: workspaceTarget, owner_id: user.id })
     .select('id')
     .single();
   if (error) throw new Error(error.message);
@@ -416,6 +513,45 @@ async function requireUser(supabase: ReturnType<typeof createSupabaseRequestClie
   const { data } = await supabase.auth.getUser();
   if (!data.user) throw new Error('Sign in first');
   return data.user;
+}
+
+/**
+ * The workspace this device is pointed at: the cookie choice when it names
+ * a workspace the caller belongs to, else null.
+ */
+async function currentWorkspaceId(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+): Promise<string | null> {
+  const event = getRequestEvent();
+  const header = event?.request.headers.get('cookie') ?? '';
+  const match = header.match(/(?:^|;\s*)fd_ws=([0-9a-f-]{36})/);
+  const candidate = match?.[1];
+  if (!candidate) return null;
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('workspace_id', candidate)
+    .maybeSingle();
+  return data?.workspace_id ?? null;
+}
+
+/** The caller's earliest workspace (their personal one). */
+async function firstWorkspaceId(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+): Promise<string | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    // RLS also shows peers' rows — only the caller's own membership counts.
+    .eq('user_id', user.id)
+    .order('created_at')
+    .limit(1)
+    .maybeSingle();
+  return data?.workspace_id ?? null;
 }
 
 async function logActivity(
