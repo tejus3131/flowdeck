@@ -227,9 +227,20 @@ export function createBoardEngine(
     setView((draft) => {
       spec.apply(draft);
     });
-    // 2. Queue with guards.
+    // 2. Queue with guards. An in-flight op on the same entity is
+    //    SUPERSEDED: its server call still lands, but the newest intent
+    //    owns the guard — sequential drags never wedge on the first one.
     setOps((draft) => {
-      draft.list.push({
+      const shared = new Set([...(spec.guards ?? []), ...(spec.tempIds ?? [])]);
+      const survivors = draft.list.filter(
+        (entry) =>
+          !(
+            entry.status === 'inFlight' &&
+            [...entry.guards, ...entry.tempIds].some((id) => shared.has(id))
+          ),
+      );
+      draft.list = survivors;
+      survivors.push({
         id,
         kind: spec.kind,
         guards: spec.guards ?? [],
@@ -370,5 +381,10 @@ export function createBoardEngine(
     dismiss,
     isSaving: (entityId: string) =>
       ops.list.some((op) => op.status === 'inFlight' && op.guards.includes(entityId)),
+    /** A locally created entity whose real id hasn't been echoed yet. */
+    isTemp: (entityId: string) =>
+      ops.list.some(
+        (op) => op.status === 'inFlight' && op.tempIds.includes(entityId),
+      ),
   };
 }
