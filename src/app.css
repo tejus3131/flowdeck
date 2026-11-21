@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* Flowdeck global styles. Design tokens (colors, fonts) will live here as
+   Tailwind v4 @theme variables once the app shell lands. */
