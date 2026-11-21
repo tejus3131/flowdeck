@@ -14,46 +14,51 @@ export default function App() {
         // Router context — App's body is outside it.
         const me = createMemo(() => getMe());
         return (
-        <>
-          <Title>{env.VITE_APP_NAME}</Title>
-          <nav class="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-            <a href={paths()} class="text-sm font-semibold tracking-tight">
-              Flowdeck
-            </a>
-            {/* The auth area reads getMe() — a pending read — so it sits
-                inside its own hold rather than the page-level one. */}
-            <Loading fallback={<span />}>
-              <Show
-                when={me()}
-                fallback={
-                  <a
-                    href={paths['sign-in']()}
-                    class="text-sm text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-                  >
-                    Sign in
-                  </a>
-                }
-              >
-                {(profile) => (
-                  <div class="flex items-center gap-3 text-sm">
-                    <span class="text-neutral-500 dark:text-neutral-400">
-                      {profile().email}
-                    </span>
-                    <form action={signOut} method="post">
-                      <button
-                        type="submit"
-                        class="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-                      >
-                        Sign out
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </Show>
+          <>
+            <Title>{env.VITE_APP_NAME}</Title>
+            <nav class="sticky top-0 z-40 flex h-12 items-center justify-between border-b border-neutral-200 bg-white/80 px-4 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
+              <a href={paths()} class="flex items-center gap-2">
+                <span class="flex h-5 w-5 items-center justify-center rounded bg-indigo-600 text-[11px] font-bold text-white">
+                  F
+                </span>
+                <span class="text-sm font-semibold tracking-tight">Flowdeck</span>
+              </a>
+              {/* The auth area reads getMe() — a pending read — so it sits
+                  inside its own hold rather than the page-level one. */}
+              <Loading fallback={<span />}>
+                <Show
+                  when={me()}
+                  fallback={
+                    <a
+                      href={paths['sign-in']()}
+                      class="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                    >
+                      Sign in
+                    </a>
+                  }
+                >
+                  {(profile) => (
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                        {profile().email}
+                      </span>
+                      <form action={signOut} method="post">
+                        <button
+                          type="submit"
+                          class="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+                        >
+                          Sign out
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </Show>
+              </Loading>
+            </nav>
+            <Loading fallback={<main class="p-6 text-sm text-neutral-400">Loading…</main>}>
+              {props.children}
             </Loading>
-          </nav>
-          <Loading fallback={<main>Loading…</main>}>{props.children}</Loading>
-        </>
+          </>
         );
       }}
     </Router>

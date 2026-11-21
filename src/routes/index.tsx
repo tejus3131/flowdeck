@@ -1,22 +1,30 @@
 import { Title } from '@solidjs/meta';
 import { useNavigate } from '@solidjs/router';
-import { For, Loading, Show, action, createMemo } from 'solid-js';
+import { For, Loading, Show, action, createMemo, createSignal } from 'solid-js';
 
 import { getMe } from '../lib/auth';
-import { createBoard, getBoards } from '../lib/boards';
+import { createBoard, deleteBoard, getBoards } from '../lib/boards';
 
 export default function Home() {
   const me = createMemo(() => getMe());
   const boards = createMemo(() => getBoards());
   const navigate = useNavigate();
+  const [confirmingDelete, setConfirmingDelete] = createSignal<string | null>(null);
 
   const create = action(function* (name: string) {
     const boardId = yield createBoard(name);
     navigate(`/b/${boardId}`);
   });
 
+  // The router revalidates the boards query when the call settles, so the
+  // list refreshes on its own.
+  const remove = action(function* (boardId: string) {
+    yield deleteBoard(boardId);
+    setConfirmingDelete(null);
+  });
+
   return (
-    <main class="mx-auto max-w-4xl px-4 py-8">
+    <main class="mx-auto max-w-4xl px-4 py-10">
       <Title>Flowdeck</Title>
       <h1 class="text-2xl font-semibold tracking-tight">Flowdeck</h1>
       <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
@@ -26,8 +34,8 @@ export default function Home() {
       <Show
         when={me()}
         fallback={
-          <p class="mt-6 text-sm text-neutral-500 dark:text-neutral-400">
-            <a href="/sign-in" class="underline">
+          <p class="mt-8 text-sm text-neutral-500 dark:text-neutral-400">
+            <a href="/sign-in" class="font-medium text-indigo-600 underline dark:text-indigo-400">
               Sign in
             </a>{' '}
             with a magic link to get started.
@@ -35,23 +43,23 @@ export default function Home() {
         }
       >
         {(profile) => (
-          <div class="mt-8 space-y-8">
+          <div class="mt-8 space-y-10">
             <form
               class="flex gap-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                const name = String(new FormData(event.currentTarget).get('name') ?? '').trim();
-                if (name) create(name);
+                const form = event.currentTarget;
+                const name = String(new FormData(form).get('name') ?? '').trim();
+                if (name) {
+                  create(name);
+                  form.reset();
+                }
               }}
             >
-              <input
-                name="name"
-                placeholder="New board name…"
-                class="flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-              />
+              <input name="name" placeholder="New board name…" class="flex-1" />
               <button
                 type="submit"
-                class="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-white dark:text-neutral-900"
+                class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
               >
                 Create board
               </button>
@@ -73,11 +81,8 @@ export default function Home() {
                   <ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <For each={boards()}>
                       {(board) => (
-                        <li>
-                          <a
-                            href={`/b/${board.id}`}
-                            class="block rounded-xl border border-neutral-200 p-4 hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
-                          >
+                        <li class="group relative rounded-2xl border border-neutral-200 bg-white p-4 transition hover:border-indigo-300 hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-indigo-700">
+                          <a href={`/b/${board.id}`} class="block">
                             <p class="font-medium">{board.name}</p>
                             <p class="mt-1 text-xs text-neutral-400">
                               updated{' '}
@@ -87,6 +92,27 @@ export default function Home() {
                               })}
                             </p>
                           </a>
+                          <Show
+                            when={confirmingDelete() === board.id}
+                            fallback={
+                              <button
+                                type="button"
+                                title="Delete board"
+                                class="absolute right-3 top-3 hidden rounded-md px-1.5 text-neutral-300 hover:text-red-500 group-hover:block dark:text-neutral-600"
+                                onClick={() => setConfirmingDelete(board.id)}
+                              >
+                                ×
+                              </button>
+                            }
+                          >
+                            <button
+                              type="button"
+                              class="absolute right-3 top-3 rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-600 dark:bg-red-950 dark:text-red-400"
+                              onClick={() => remove(board.id)}
+                            >
+                              Delete?
+                            </button>
+                          </Show>
                         </li>
                       )}
                     </For>
@@ -95,9 +121,7 @@ export default function Home() {
               </section>
             </Loading>
 
-            <p class="text-xs text-neutral-400">
-              Signed in as {profile().email}.
-            </p>
+            <p class="text-xs text-neutral-400">Signed in as {profile().email}.</p>
           </div>
         )}
       </Show>

@@ -9,55 +9,60 @@ export default function SignIn() {
   const [search] = useSearchParams<{ sent?: string; error?: string }>();
 
   return (
-    <main class="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center gap-6 px-4">
+    <main class="mx-auto flex min-h-[80vh] max-w-sm flex-col justify-center px-4">
       <Title>Sign in - Flowdeck</Title>
-      <div class="space-y-2">
-        <h1 class="text-2xl font-semibold tracking-tight">Sign in to Flowdeck</h1>
-        <p class="text-sm text-neutral-500 dark:text-neutral-400">
+      <div class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        <h1 class="text-xl font-semibold tracking-tight">Welcome to Flowdeck</h1>
+        <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
           No passwords — we email you a one-time sign-in link.
         </p>
-      </div>
 
-      <Show when={search.error}>
-        {(error) => (
-          <p
-            class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
-            role="alert"
+        <div class="mt-6">
+          <Show when={search.error}>
+            {(error) => (
+              <p
+                class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950 dark:text-red-400"
+                role="alert"
+              >
+                {error()}
+              </p>
+            )}
+          </Show>
+
+          <Show
+            when={search.sent}
+            fallback={
+              <form action={signIn} method="post" class="flex flex-col gap-3">
+                <label class="text-sm font-medium" for="email">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  autocomplete="email"
+                  placeholder="you@example.com"
+                />
+                <button
+                  type="submit"
+                  class="mt-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                >
+                  Send magic link
+                </button>
+              </form>
+            }
           >
-            {error()}
-          </p>
-        )}
-      </Show>
-
-      <Show
-        when={search.sent}
-        fallback={
-          <form action={signIn} method="post" class="flex flex-col gap-3">
-            <label class="text-sm font-medium" for="email">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autocomplete="email"
-              placeholder="you@example.com"
-              class="rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            />
-            <button
-              type="submit"
-              class="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-            >
-              Send magic link
-            </button>
-          </form>
-        }
-      >
-        <p class="rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-          Check your inbox — we sent a sign-in link. It's valid for one hour.
-        </p>
-      </Show>
+            <div class="rounded-lg bg-indigo-50 px-3 py-3 text-sm text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+              <p class="font-medium">Check your inbox</p>
+              <p class="mt-1">We sent a sign-in link. It's valid for one hour.</p>
+            </div>
+          </Show>
+        </div>
+      </div>
+      <p class="mt-4 text-center text-xs text-neutral-400">
+        Sessions persist — you won't need a new link every visit.
+      </p>
     </main>
   );
 }

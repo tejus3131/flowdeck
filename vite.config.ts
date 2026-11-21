@@ -10,7 +10,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 // (miniflare), which Supabase Realtime needs — so `pnpm dev:node` drops
 // the plugin for local dev and runs the SSR in Node instead. Builds keep
 // the plugin regardless: `vite build` always emits the Workers artifact.
-const edgeDev = process.env.DEV_EDGE !== '0';
+const edgeDev = process.env.DEV_EDGE !== '0' && !process.env.VITEST;
 
 export default defineConfig({
   // Turnkey streaming SSR: no index.html and no entry files — the plugin

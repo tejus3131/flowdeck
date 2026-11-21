@@ -117,6 +117,11 @@ export const boardStream = live(async function* (
       { event: '*', schema: 'public', table: 'board_members', filter: `board_id=eq.${id}` },
       onChanged,
     )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'boards', filter: `id=eq.${id}` },
+      onChanged,
+    )
     .subscribe((status, err) => {
       // Observability: connection problems surface in dev logs and Workers
       // observability instead of failing silently.
@@ -357,6 +362,24 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
 }
 
 // ── comments ─────────────────────────────────────────────────────────────
+
+/** A card's comments with author names, newest last. */
+export const getCardComments = query(async (cardId: string) => {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const { data, error } = await supabase
+    .from('card_comments')
+    .select('id, body, created_at, profiles(display_name)')
+    .eq('card_id', assertId(cardId, 'card id'))
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    body: row.body,
+    created_at: row.created_at,
+    author: row.profiles?.display_name ?? 'Someone',
+  }));
+}, 'card-comments');
 
 export async function addComment(cardId: string, body: string) {
   'use server';

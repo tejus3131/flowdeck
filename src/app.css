@@ -1,4 +1,37 @@
 @import "tailwindcss";
 
-/* Flowdeck global styles. Design tokens (colors, fonts) will live here as
-   Tailwind v4 @theme variables once the app shell lands. */
+/* Flowdeck design tokens & base. Native form controls and scrollbars match
+   the active theme; every interactive element gets explicit colors (the
+   original black-on-black input bug was missing text colors in dark mode). */
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+}
+
+/* Inputs share a baseline so dark mode never renders invisible text. */
+input,
+textarea,
+select,
+button {
+  @apply text-neutral-900 dark:text-neutral-100;
+}
+
+input,
+textarea {
+  @apply rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none
+    placeholder:text-neutral-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20
+    dark:border-neutral-700 dark:bg-neutral-900;
+}
+
+/* Slim scrollbars that match the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-300) transparent;
+}
+.dark * {
+  scrollbar-color: var(--color-neutral-700) transparent;
+}
