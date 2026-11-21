@@ -233,14 +233,14 @@ isOneToOne: false
                   ]
                 },"profiles": {
                   Row: {
-                    "avatar_url": string | null,"created_at": string,"display_name": string,"email": string,"id": string,"theme": string,"username": string | null
+                    "avatar_url": string | null,"created_at": string,"display_name": string,"email": string,"has_passkey": boolean,"id": string,"theme": string,"username": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email": string,"id": string,"theme"?: string,"username"?: string | null
+                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email": string,"has_passkey"?: boolean,"id": string,"theme"?: string,"username"?: string | null
                   }
                   Update: {
-                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email"?: string,"id"?: string,"theme"?: string,"username"?: string | null
+                    "avatar_url"?: string | null,"created_at"?: string,"display_name"?: string,"email"?: string,"has_passkey"?: boolean,"id"?: string,"theme"?: string,"username"?: string | null
                   }
                   Relationships: [
                     
@@ -325,6 +325,9 @@ isOneToOne: false
           Functions: {
             "accept_workspace_invite":
 { Args: { "p_token": string }; Returns: string
+                           },
+"auth_check_email":
+{ Args: { "p_email": string }; Returns: Json
                            },
 "user_board_access":
 { Args: { "p_board_id": string }; Returns: string
