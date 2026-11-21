@@ -17,5 +17,10 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["vite/client"]
-  }
+  },
+
+  // The Supabase edge function runs on Deno (its own toolchain), and the
+  // flowdeck-mcp CLI is a standalone package — neither belongs to the app
+  // build.
+  "exclude": ["supabase", "packages"]
 }
