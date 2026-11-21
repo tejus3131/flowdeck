@@ -1,9 +1,12 @@
-// TEMPORARY probe: can workerd dev open an outbound WebSocket to the local
-// Supabase realtime endpoint? Answers {ok, detail} — removed after debugging.
+// TEMPORARY probe: can this runtime open an outbound WebSocket to the
+// Supabase realtime endpoint? Answers {ok, detail} — answers the
+// "does realtime work on this host" question in one request.
 import type { APIHandler } from 'filesystem-routing/api';
+import { env } from 'virtual:solid-env/server';
 
 export const GET: APIHandler = async () => {
-  const url = 'ws://127.0.0.1:54321/realtime/v1/websocket?vsn=1.0.0';
+  const http = env.SUPABASE_URL.replace(/\/$/, '');
+  const url = `${http.replace(/^http/, 'ws')}/realtime/v1/websocket?vsn=1.0.0`;
   const outcome = await new Promise<{ ok: boolean; detail: string }>((resolve) => {
     let settled = false;
     try {
