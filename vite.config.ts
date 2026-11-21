@@ -3,6 +3,7 @@ import { fileRoutes } from 'filesystem-routing/vite';
 import { defineConfig } from 'vitest/config';
 import solid from '@solidjs/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
+import { cloudflare } from '@cloudflare/vite-plugin';
 
 export default defineConfig({
   // Turnkey streaming SSR: no index.html and no entry files — the plugin
@@ -11,6 +12,10 @@ export default defineConfig({
   // to dist/server, plus the Node server (dist/server/node.js) `npm start` runs.
   plugins: [
     tailwindcss(),
+    // Cloudflare's plugin adopts Solid's `ssr` environment before solid()
+    // claims it: dev runs the server build in workerd, and `vite build`
+    // emits the Worker + assets wrangler deploys. No adapter layer.
+    cloudflare({ viteEnvironment: { name: 'ssr' } }),
     solid({
       start: {
         middleware: './src/middleware.ts',

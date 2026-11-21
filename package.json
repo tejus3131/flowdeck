@@ -13,6 +13,7 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.70.1",
     "@solidjs/diagnostics": "^2.0.0",
     "@solidjs/start-devtools": "^1.0.0-next.4",
     "@solidjs/testing-library": "^1.0.0-rc.2",
@@ -27,7 +28,8 @@
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "wrangler": "^4.165.0"
   },
   "dependencies": {
     "@remix-run/cookie": "^1.0.2",

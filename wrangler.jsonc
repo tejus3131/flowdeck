@@ -1,0 +1,19 @@
+{
+  // Solid start mode on Cloudflare Workers: the Cloudflare Vite plugin
+  // resolves Solid's ssr environment to its Fetchable handler and runs it
+  // in workerd (dev) / deploys it as the Worker (build). Static assets are
+  // served by the platform from dist/client; everything else hits the
+  // Solid handler.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "flowdeck",
+  "main": "virtual:solid-ssr-handler",
+  "compatibility_date": "2026-07-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
