@@ -5,6 +5,13 @@ import solid from '@solidjs/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 
+// The Cloudflare plugin runs the ssr environment in workerd during dev.
+// Outbound websockets to loopback addresses are blocked in local workerd
+// (miniflare), which Supabase Realtime needs — so `pnpm dev:node` drops
+// the plugin for local dev and runs the SSR in Node instead. Builds keep
+// the plugin regardless: `vite build` always emits the Workers artifact.
+const edgeDev = process.env.DEV_EDGE !== '0';
+
 export default defineConfig({
   // Turnkey streaming SSR: no index.html and no entry files — the plugin
   // generates the entries around src/App.tsx, wrapped in src/Document.tsx.
@@ -15,7 +22,11 @@ export default defineConfig({
     // Cloudflare's plugin adopts Solid's `ssr` environment before solid()
     // claims it: dev runs the server build in workerd, and `vite build`
     // emits the Worker + assets wrangler deploys. No adapter layer.
-    cloudflare({ viteEnvironment: { name: 'ssr' } }),
+    ...(edgeDev
+      ? [
+          cloudflare({ viteEnvironment: { name: 'ssr' } }),
+        ]
+      : []),
     solid({
       start: {
         middleware: './src/middleware.ts',
