@@ -1,11 +1,20 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: the theme lives in the database (profiles.theme),
+   applied to <html> server-side from a mirror cookie plus an inline head
+   script, so there is no flash and the choice follows the user across
+   devices via realtime. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Flowdeck design tokens & base. Native form controls and scrollbars match
    the active theme; every interactive element gets explicit colors (the
    original black-on-black input bug was missing text colors in dark mode). */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+:root.dark {
+  color-scheme: dark;
 }
 
 body {

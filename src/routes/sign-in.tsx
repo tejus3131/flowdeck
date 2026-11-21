@@ -1,6 +1,6 @@
 import { Title } from '@solidjs/meta';
 import { useNavigate, useSearchParams } from '@solidjs/router';
-import { Show, createSignal } from 'solid-js';
+import { Show, createSignal, onSettled } from 'solid-js';
 
 import { checkEmail, signIn } from '../lib/auth';
 import { browserClient } from '../lib/supabase-client';
@@ -13,7 +13,13 @@ import { browserClient } from '../lib/supabase-client';
  *   - New emails get a magic link (one-time; the account is created on
  *     first sign-in and the app immediately prompts to add a passkey).
  *   - "Email me a link" is always available as the fallback.
- * Without JavaScript the form falls back to the magic-link server action.
+ *
+ * The form carries the magic-link server action (that's the no-JS path —
+ * and the router's own delegation runs our fetch when JavaScript is on).
+ * "Continue" is a plain button that branches on checkEmail instead of
+ * submitting, and a capture-phase submit listener reroutes Enter-key
+ * submits through the same branch before the router's bubble-phase form
+ * delegation can submit blindly.
  */
 export default function SignIn() {
   const [search] = useSearchParams<{ sent?: string; error?: string }>();
@@ -23,8 +29,13 @@ export default function SignIn() {
 
   let form: HTMLFormElement | undefined;
 
+  // Set right before our own requestSubmit so the capture-phase handler
+  // lets that one pass through to the router's action delegation.
+  let wantMagicPost = false;
+
   const sendMagicLink = () => {
     setBusy('link');
+    wantMagicPost = true;
     form?.requestSubmit();
   };
 
@@ -49,14 +60,9 @@ export default function SignIn() {
     navigate('/');
   };
 
-  const onSubmit = async (event: SubmitEvent) => {
-    // The no-JS fallback: let the form post the magic-link server action.
-    event.preventDefault();
-    const target = event.currentTarget;
-    if (!(target instanceof HTMLFormElement)) return;
-    const email = String(new FormData(target).get('email') ?? '').trim();
+  const continueFlow = async () => {
+    const email = String(new FormData(form!).get('email') ?? '').trim();
     if (!email) return;
-
     setBusy('check');
     setNotice(null);
     try {
@@ -73,6 +79,23 @@ export default function SignIn() {
       setNotice(error instanceof Error ? error.message : 'Something went wrong');
     }
   };
+
+  onSettled(() => {
+    if (!form) return;
+    // Capture phase: runs before the router's document-level (bubble)
+    // form-action delegation, so Enter never posts the action blindly.
+    const onNativeSubmit = (event: SubmitEvent) => {
+      if (wantMagicPost) {
+        wantMagicPost = false; // our own requestSubmit → let it submit
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void continueFlow();
+    };
+    form.addEventListener('submit', onNativeSubmit, { capture: true });
+    return () => form?.removeEventListener('submit', onNativeSubmit, { capture: true });
+  });
 
   return (
     <main class="mx-auto flex min-h-[80vh] max-w-sm flex-col justify-center px-4">
@@ -93,7 +116,7 @@ export default function SignIn() {
             Passwordless: passkeys by default, a one-time email link for new accounts.
           </p>
 
-          <form ref={form} action={signIn} method="post" class="mt-6 flex flex-col gap-3" onSubmit={onSubmit}>
+          <form ref={form} action={signIn} method="post" class="mt-6 flex flex-col gap-3">
             <label class="text-sm font-medium" for="email">
               Email
             </label>
@@ -116,12 +139,28 @@ export default function SignIn() {
               </p>
             </Show>
             <button
-              type="submit"
+              type="button"
               disabled={busy() !== false}
               class="mt-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+              onClick={() => void continueFlow()}
             >
-              {busy() === 'check' ? 'Checking…' : busy() === 'passkey' ? 'Waiting for your passkey…' : 'Continue'}
+              {busy() === 'check'
+                ? 'Checking…'
+                : busy() === 'passkey'
+                  ? 'Waiting for your passkey…'
+                  : busy() === 'link'
+                    ? 'Sending your link…'
+                    : 'Continue'}
             </button>
+            {/* No JavaScript: the plain form post is the whole flow. */}
+            <noscript>
+              <button
+                type="submit"
+                class="mt-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
+              >
+                Continue (email me a sign-in link)
+              </button>
+            </noscript>
           </form>
 
           <div class="mt-4 flex items-center gap-3">
@@ -140,7 +179,8 @@ export default function SignIn() {
           </button>
           <button
             type="button"
-            class="mt-2 w-full rounded-lg px-3 py-2 text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            disabled={busy() !== false}
+            class="mt-2 w-full rounded-lg px-3 py-2 text-xs font-medium text-neutral-500 hover:text-neutral-700 disabled:opacity-60 dark:hover:text-neutral-300"
             onClick={() => {
               const email = String(new FormData(form!).get('email') ?? '').trim();
               if (email) sendMagicLink();

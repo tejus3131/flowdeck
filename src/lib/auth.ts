@@ -12,7 +12,7 @@ import type { Database } from '../types/database.generated';
 export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type MeProfile = Pick<
   Profile,
-  'id' | 'email' | 'display_name' | 'avatar_url' | 'has_passkey' | 'theme'
+  'id' | 'email' | 'display_name' | 'username' | 'avatar_url' | 'has_passkey' | 'theme' | 'created_at'
 >;
 
 /** Who is signed in, from their profile row (RLS: own + peers). */
@@ -24,7 +24,7 @@ export const getMe = query(async (): Promise<MeProfile | null> => {
   if (!user) return null;
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, email, display_name, avatar_url, has_passkey, theme')
+    .select('id, email, display_name, username, avatar_url, has_passkey, theme, created_at')
     .eq('id', user.id)
     .maybeSingle();
   // The profiles trigger mirrors every new auth user; the fallback covers
@@ -34,9 +34,11 @@ export const getMe = query(async (): Promise<MeProfile | null> => {
       id: user.id,
       email: user.email ?? '',
       display_name: user.email?.split('@')[0] ?? '',
+      username: null,
       avatar_url: null,
       has_passkey: false,
       theme: 'system',
+      created_at: user.created_at ?? new Date().toISOString(),
     }
   );
 }, 'me');

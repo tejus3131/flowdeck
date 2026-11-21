@@ -4,6 +4,8 @@ import { Loading, Show, createMemo } from 'solid-js';
 import { env } from 'virtual:solid-env/client';
 import { paths, Router } from './router';
 import { getMe, signOut } from './lib/auth';
+import { ThemeSync } from './components/ThemeSync';
+import { UserMenu } from './components/UserMenu';
 import './app.css';
 
 export default function App() {
@@ -16,6 +18,7 @@ export default function App() {
         return (
           <>
             <Title>{env.VITE_APP_NAME}</Title>
+            <ThemeSync me={me} />
             <nav class="sticky top-0 z-40 flex h-12 items-center justify-between border-b border-neutral-200 bg-white/80 px-4 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
               <a href={paths()} class="flex items-center gap-2">
                 <span class="flex h-5 w-5 items-center justify-center rounded bg-indigo-600 text-[11px] font-bold text-white">
@@ -37,21 +40,7 @@ export default function App() {
                     </a>
                   }
                 >
-                  {(profile) => (
-                    <div class="flex items-center gap-3">
-                      <span class="text-xs text-neutral-500 dark:text-neutral-400">
-                        {profile().email}
-                      </span>
-                      <form action={signOut} method="post">
-                        <button
-                          type="submit"
-                          class="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-                        >
-                          Sign out
-                        </button>
-                      </form>
-                    </div>
-                  )}
+                  {(profile) => <UserMenu profile={profile} />}
                 </Show>
               </Loading>
             </nav>
