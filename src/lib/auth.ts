@@ -12,7 +12,7 @@ import type { Database } from '../types/database.generated';
 export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type MeProfile = Pick<
   Profile,
-  'id' | 'email' | 'display_name' | 'avatar_url'
+  'id' | 'email' | 'display_name' | 'avatar_url' | 'has_passkey' | 'theme'
 >;
 
 /** Who is signed in, from their profile row (RLS: own + peers). */
@@ -24,7 +24,7 @@ export const getMe = query(async (): Promise<MeProfile | null> => {
   if (!user) return null;
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, email, display_name, avatar_url')
+    .select('id, email, display_name, avatar_url, has_passkey, theme')
     .eq('id', user.id)
     .maybeSingle();
   // The profiles trigger mirrors every new auth user; the fallback covers
@@ -35,6 +35,8 @@ export const getMe = query(async (): Promise<MeProfile | null> => {
       email: user.email ?? '',
       display_name: user.email?.split('@')[0] ?? '',
       avatar_url: null,
+      has_passkey: false,
+      theme: 'system',
     }
   );
 }, 'me');
@@ -73,3 +75,31 @@ export const signOut = formAction(async () => {
   await supabase.auth.signOut();
   throw redirect('/');
 });
+
+/**
+ * The sign-in branch: does this email belong to an existing account, and
+ * does that account have a passkey? New users get a magic link; returning
+ * users with a passkey get the passkey ceremony by default.
+ */
+export async function checkEmail(email: string): Promise<{ exists: boolean; hasPasskey: boolean }> {
+  'use server';
+  const clean = String(email ?? '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+    throw new Error('Enter a valid email address');
+  }
+  const supabase = createSupabaseRequestClient();
+  const { data, error } = await supabase.rpc('auth_check_email', { p_email: clean });
+  if (error) throw new Error(error.message);
+  const result = (data ?? {}) as { exists?: boolean; has_passkey?: boolean };
+  return { exists: !!result.exists, hasPasskey: !!result.has_passkey };
+}
+
+/**
+ * A no-op server call whose settle revalidates the route's queries — used
+ * after client-side-only changes (passkey registration, theme switch) so
+ * the signed-in profile refreshes without a reload.
+ */
+export async function touch(): Promise<boolean> {
+  'use server';
+  return true;
+}
