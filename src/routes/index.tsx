@@ -4,6 +4,7 @@ import { For, Loading, Show, action, createMemo, createSignal } from 'solid-js';
 
 import { getMe } from '../lib/auth';
 import { createBoard, deleteBoard, getBoards } from '../lib/boards';
+import { PasskeyPrompt } from '../components/PasskeyPrompt';
 
 export default function Home() {
   const me = createMemo(() => getMe());
@@ -44,6 +45,7 @@ export default function Home() {
       >
         {(profile) => (
           <div class="mt-8 space-y-10">
+            <PasskeyPrompt profile={profile} />
             <form
               class="flex gap-2"
               onSubmit={(event) => {
