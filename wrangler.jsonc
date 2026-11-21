@@ -15,5 +15,8 @@
   },
   "observability": {
     "enabled": true
+  },
+  "vars": {
+    "SUPABASE_URL": "https://ylarhvcbpppujpjnpxkq.supabase.co"
   }
 }

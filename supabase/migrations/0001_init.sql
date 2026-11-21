@@ -19,7 +19,7 @@
 --   * api_tokens stores only a sha256 hash; the plaintext token is shown
 --     once at creation and never persisted.
 
-create extension if not exists pgcrypto;
+-- (gen_random_uuid is built into Postgres 13+; no extension needed.)
 
 -- ── profiles ──────────────────────────────────────────────────────────────
 
@@ -100,7 +100,7 @@ create table public.board_invites (
   board_id   uuid not null references public.boards (id) on delete cascade,
   email      text not null,
   role       text not null default 'editor' check (role in ('editor', 'viewer')),
-  token      text not null unique default encode(gen_random_bytes(24), 'hex'),
+  token      text not null unique default replace(gen_random_uuid()::text, '-', ''),
   invited_by uuid not null references public.profiles (id),
   status     text not null default 'pending' check (status in ('pending', 'accepted', 'revoked')),
   created_at timestamptz not null default now(),
