@@ -23,5 +23,10 @@ export default {
   },
   client: {
     VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Flowdeck'),
+    // Public by design; used by the browser Supabase client (presence,
+    // passkey ceremonies, avatar uploads). Absent → those features
+    // gracefully no-op (e.g. a build without presence).
+    VITE_SUPABASE_URL: v.optional(v.pipe(v.string(), v.url())),
+    VITE_SUPABASE_PUBLISHABLE_KEY: v.optional(v.pipe(v.string(), v.minLength(20))),
   },
 };

@@ -3,6 +3,8 @@ import type { RouteProps } from '@solidjs/router';
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 
 import { createBoardEngine, BOARD_ENTITY } from '../../lib/sync';
+import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
+import { getMe } from '../../lib/auth';
 import {
   addComment,
   boardStream,
@@ -56,6 +58,8 @@ const OP_LABELS: Record<string, string> = {
 export default function Board(props: RouteProps<'/b/:boardId'>) {
   const engine = createBoardEngine(boardStream, () => props.params.boardId, EMPTY);
   const view = engine.view;
+  const me = createMemo(() => getMe());
+  const presence = createBoardPresence(props.params.boardId, () => me());
 
   const [dragging, setDragging] = createSignal<string | null>(null);
   const [dropHint, setDropHint] = createSignal<{ listId: string; index: number } | null>(null);
@@ -253,6 +257,23 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           </Show>
 
           <span class="ml-auto flex items-center gap-2 text-xs text-neutral-400">
+            <Show when={presence.others().length > 0}>
+              <span class="flex -space-x-2">
+                <For each={presence.others()}>
+                  {(other) => (
+                    <span
+                      title={other.name}
+                      class="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-white text-[10px] font-semibold text-white dark:border-neutral-950"
+                      style={{ 'background-color': presenceColor(other.userId) }}
+                    >
+                      <Show when={other.avatarUrl} fallback={other.name.slice(0, 2).toUpperCase()}>
+                        <img src={other.avatarUrl!} alt={other.name} class="h-full w-full object-cover" />
+                      </Show>
+                    </span>
+                  )}
+                </For>
+              </span>
+            </Show>
             <Show when={syncing()}>
               <span class="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">
                 <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />
@@ -285,12 +306,17 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 list={list}
                 cards={view().cards.filter((card) => card.list_id === list.id)}
                 dragging={dragging()}
+                remoteDrag={presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()}
                 dropHint={dropHint()?.listId === list.id ? dropHint()!.index : null}
                 isTemp={engine.isTemp(list.id)}
-                onDragStart={(cardId) => setDragging(cardId)}
+                onDragStart={(cardId) => {
+                  setDragging(cardId);
+                  presence.broadcastDrag(cardId, me()?.display_name || 'Someone');
+                }}
                 onDragEnd={() => {
                   setDragging(null);
                   setDropHint(null);
+                  presence.broadcastDrag(null, '');
                 }}
                 onDrop={(index, cardId) => {
                   setDragging(null);
@@ -298,8 +324,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   // Cards still materializing can't be dragged yet (their
                   // real id hasn't been echoed) — the drop is a no-op.
                   if (cardId && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
-                }}
-                onHover={(index) => setDropHint({ listId: list.id, index })}
+                }}                onHover={(index) => setDropHint({ listId: list.id, index })}
                 adding={addingIn() === list.id}
                 onAdd={() => setAddingIn(list.id)}
                 onCancelAdd={() => setAddingIn(null)}
@@ -348,6 +373,7 @@ function BoardColumn(props: {
   list: ListRow;
   cards: CardRow[];
   dragging: string | null;
+  remoteDrag: RemoteDrag | null;
   dropHint: number | null;
   isTemp: boolean;
   adding: boolean;
@@ -482,8 +508,14 @@ function BoardColumn(props: {
                 class={[
                   'group relative cursor-pointer rounded-xl border border-neutral-200/80 bg-white p-3 text-sm shadow-xs transition hover:border-indigo-300 hover:shadow-sm active:cursor-grabbing dark:border-neutral-700/80 dark:bg-neutral-900 dark:hover:border-indigo-700',
                   { 'opacity-40': props.dragging === card.id },
+                  { 'ring-2 ring-amber-400': props.remoteDrag?.cardId === card.id },
                 ]}
               >
+                <Show when={props.remoteDrag?.cardId === card.id}>
+                  <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                    {props.remoteDrag!.name} moving…
+                  </span>
+                </Show>
                 <p class="pr-5">{card.title}</p>
                 <Show when={card.description}>
                   <p class="mt-1 line-clamp-2 text-xs text-neutral-400">{card.description}</p>
