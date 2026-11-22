@@ -194,6 +194,129 @@ const TOOLS: ToolDef[] = [
     },
     op: 'list_comments',
   },
+  {
+    name: 'get_me',
+    description: 'Your own profile (display name, email, avatar) and current status.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    op: 'get_me',
+  },
+  {
+    name: 'list_workspaces',
+    description: 'Every workspace you belong to, with your role in each.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    op: 'list_workspaces',
+  },
+  {
+    name: 'create_workspace',
+    description: 'Create a workspace (you become its owner).',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', maxLength: 80 } },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    op: 'create_workspace',
+  },
+  {
+    name: 'list_teams',
+    description: "A workspace's teams with their members (ids and team roles).",
+    inputSchema: {
+      type: 'object',
+      properties: { workspace_id: { type: 'string', format: 'uuid' } },
+      required: ['workspace_id'],
+      additionalProperties: false,
+    },
+    op: 'list_teams',
+  },
+  {
+    name: 'create_team',
+    description:
+      'Create a team in a workspace (workspace owners/admins only; owners are not auto-added as members — they manage via workspace powers).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_id: { type: 'string', format: 'uuid' },
+        name: { type: 'string', maxLength: 60 },
+        description: { type: 'string', maxLength: 500 },
+      },
+      required: ['workspace_id', 'name'],
+      additionalProperties: false,
+    },
+    op: 'create_team',
+  },
+  {
+    name: 'add_team_member',
+    description: 'Add (or change the role of) a person on a team. The person must already be a workspace member.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        team_id: { type: 'string', format: 'uuid' },
+        user_id: { type: 'string', format: 'uuid' },
+        role: { type: 'string', enum: ['member', 'admin'] },
+      },
+      required: ['team_id', 'user_id'],
+      additionalProperties: false,
+    },
+    op: 'add_team_member',
+  },
+  {
+    name: 'remove_team_member',
+    description: 'Remove a person from a team.',
+    inputSchema: {
+      type: 'object',
+      properties: { team_id: { type: 'string', format: 'uuid' }, user_id: { type: 'string', format: 'uuid' } },
+      required: ['team_id', 'user_id'],
+      additionalProperties: false,
+    },
+    op: 'remove_team_member',
+  },
+  {
+    name: 'post_board_message',
+    description: 'Post a message to a board chat.',
+    inputSchema: {
+      type: 'object',
+      properties: { board_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 4000 } },
+      required: ['board_id', 'body'],
+      additionalProperties: false,
+    },
+    op: 'post_board_message',
+  },
+  {
+    name: 'invite_member',
+    description:
+      'Invite an email to a workspace (owners/admins; the domain allowlist applies). Returns the accept path to share.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_id: { type: 'string', format: 'uuid' },
+        email: { type: 'string' },
+        role: { type: 'string', enum: ['member', 'admin'] },
+      },
+      required: ['workspace_id', 'email'],
+      additionalProperties: false,
+    },
+    op: 'invite_member',
+  },
+  {
+    name: 'list_notifications',
+    description: 'Your latest 50 notifications (mentions, assignments, invites, access requests).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    op: 'list_notifications',
+  },
+  {
+    name: 'set_status',
+    description: 'Set your status (emoji, short text, do-not-disturb). Clear with empty values.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        emoji: { type: 'string', maxLength: 4 },
+        label: { type: 'string', maxLength: 60 },
+        dnd: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+    op: 'set_status',
+  },
 ];
 
 const CORS = {

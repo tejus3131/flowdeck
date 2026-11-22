@@ -18,10 +18,17 @@ export async function addPasskey(): Promise<{ ok: boolean; error?: string }> {
   return { ok: true };
 }
 
-/** Has the person dismissed the "add a passkey" prompt this session? */
+/** Has the person dismissed the "add a passkey" prompt recently?
+ * "Maybe later" means exactly that — not "never ask again" — so the
+ * dismissal persists in localStorage for 24 hours, surviving refreshes
+ * and new tabs; after that the prompt comes back. */
+const DISMISS_KEY = 'flowdeck:passkey-prompt-dismissed-at';
+const DISMISS_MS = 24 * 60 * 60 * 1000;
+
 export function passkeyPromptDismissed(): boolean {
   try {
-    return sessionStorage.getItem('flowdeck:passkey-prompt') === 'dismissed';
+    const at = Number(localStorage.getItem(DISMISS_KEY) ?? '0');
+    return Number.isFinite(at) && Date.now() - at < DISMISS_MS;
   } catch {
     return false;
   }
@@ -29,8 +36,8 @@ export function passkeyPromptDismissed(): boolean {
 
 export function dismissPasskeyPrompt(): void {
   try {
-    sessionStorage.setItem('flowdeck:passkey-prompt', 'dismissed');
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
   } catch {
-    // Session storage is best-effort; the prompt just reappears.
+    // Storage is best-effort; the prompt just reappears sooner.
   }
 }

@@ -3,12 +3,15 @@
 import { revalidate } from '@solidjs/router';
 import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
 
-import { getMyWorkspaces, switchWorkspace } from '../lib/workspaces';
+import { createWorkspace, getMyWorkspaces, switchWorkspace } from '../lib/workspaces';
 
 export function WorkspaceSwitcher() {
   const workspaces = createMemo(() => getMyWorkspaces());
   const [open, setOpen] = createSignal(false);
   const [busy, setBusy] = createSignal<string | null>(null);
+  const [creating, setCreating] = createSignal(false);
+  const [newName, setNewName] = createSignal('');
+  const [createError, setCreateError] = createSignal<string | null>(null);
   let root: HTMLDivElement | undefined;
 
   onSettled(() => {
@@ -46,9 +49,26 @@ export function WorkspaceSwitcher() {
     }
   };
 
+  const create = async () => {
+    if (!newName().trim() || busy()) return;
+    setBusy('create');
+    setCreateError(null);
+    try {
+      await createWorkspace(newName());
+      revalidate('workspaces');
+      revalidate('boards');
+      setCreating(false);
+      setNewName('');
+      setOpen(false);
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : 'Could not create the workspace');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
-    <Show when={workspaces().length > 0}>
-      <div ref={root} class="relative">
+    <div ref={root} class="relative">
         <button
           type="button"
           aria-haspopup="menu"
@@ -57,7 +77,7 @@ export function WorkspaceSwitcher() {
           class="flex max-w-44 items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
           onClick={() => setOpen(!open())}
         >
-          <span class="truncate">{current()?.name ?? 'Workspace'}</span>
+          <span class="truncate">{current()?.name ?? (workspaces().length > 0 ? 'Workspace' : 'Create workspace')}</span>
           <span class="text-[10px] text-neutral-400">▼</span>
         </button>
 
@@ -116,9 +136,60 @@ export function WorkspaceSwitcher() {
                 Members &amp; invites
               </a>
             </Show>
+            <div class="my-1 h-px bg-neutral-200 dark:bg-neutral-800" />
+            <Show
+              when={!creating()}
+              fallback={
+                <form
+                  class="px-1 py-1"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void create();
+                  }}
+                >
+                  <input
+                    class="w-full text-sm"
+                    placeholder="Workspace name…"
+                    value={newName()}
+                    onInput={(event) => setNewName(event.currentTarget.value)}
+                    autofocus
+                  />
+                  <Show when={createError()}>
+                    <p class="mt-1 text-xs text-red-500">{createError()}</p>
+                  </Show>
+                  <div class="mt-1.5 flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={!newName().trim() || busy() !== null}
+                      class="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      {busy() === 'create' ? 'Creating…' : 'Create'}
+                    </button>
+                    <button
+                      type="button"
+                      class="text-xs font-medium text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                      onClick={() => {
+                        setCreating(false);
+                        setCreateError(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              }
+            >
+              <button
+                type="button"
+                role="menuitem"
+                class="block w-full rounded-xl px-2 py-2 text-left text-sm font-medium text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                onClick={() => setCreating(true)}
+              >
+                + New workspace
+              </button>
+            </Show>
           </div>
         </Show>
       </div>
-    </Show>
   );
 }

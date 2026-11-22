@@ -44,3 +44,156 @@ textarea {
 .dark * {
   scrollbar-color: var(--color-neutral-700) transparent;
 }
+
+/* ── .prose-card: GitHub-PR-style rendered markdown (descriptions,
+   comments) — the output of lib/markdown.ts. Self-contained typography for
+   the sanitized HTML; safe in light and dark. */
+.prose-card {
+  @apply break-words text-neutral-800 dark:text-neutral-200;
+}
+.prose-card > *:first-child {
+  margin-top: 0;
+}
+.prose-card > *:last-child {
+  margin-bottom: 0;
+}
+.prose-card p,
+.prose-card ul,
+.prose-card ol,
+.prose-card blockquote,
+.prose-card pre {
+  @apply my-2;
+}
+.prose-card h1,
+.prose-card h2,
+.prose-card h3 {
+  @apply mb-1 mt-4 font-semibold tracking-tight;
+}
+.prose-card h1 {
+  @apply text-base;
+}
+.prose-card h2 {
+  @apply text-sm;
+}
+.prose-card h3 {
+  @apply text-sm;
+}
+.prose-card ul {
+  @apply list-disc pl-5;
+}
+.prose-card ol {
+  @apply list-decimal pl-5;
+}
+.prose-card li {
+  @apply my-0.5;
+}
+.prose-card a {
+  @apply font-medium text-indigo-600 underline decoration-indigo-300 hover:decoration-indigo-500 dark:text-indigo-400 dark:decoration-indigo-700;
+}
+.prose-card code {
+  @apply rounded bg-neutral-100 px-1 py-0.5 font-mono text-[0.85em] dark:bg-neutral-800;
+}
+.prose-card pre {
+  @apply overflow-x-auto rounded-lg bg-neutral-100 p-3 text-xs dark:bg-neutral-800;
+}
+.prose-card pre code {
+  @apply bg-transparent p-0;
+}
+.prose-card blockquote {
+  @apply border-l-2 border-neutral-300 pl-3 text-neutral-500 dark:border-neutral-700 dark:text-neutral-400;
+}
+.prose-card img {
+  @apply my-2 max-w-full rounded-lg border border-neutral-200 dark:border-neutral-800;
+}
+.prose-card table {
+  @apply my-2 w-full border-collapse text-xs;
+}
+.prose-card th,
+.prose-card td {
+  @apply border border-neutral-200 px-2 py-1 text-left dark:border-neutral-700;
+}
+.prose-card hr {
+  @apply my-3 border-neutral-200 dark:border-neutral-800;
+}
+/* Embedded video (markdown.ts renders whitelisted hosts as sandboxed
+   iframes — the aspect ratio rides inline on the element). */
+.prose-card iframe {
+  @apply my-2 max-w-full rounded-lg;
+}
+/* #number citations to other cards — chip-like, distinct from links. */
+.prose-card a[data-card-ref] {
+  @apply inline-flex items-center rounded-full bg-indigo-50 px-1.5 py-0.5 font-mono text-[0.8em] font-semibold text-indigo-700 no-underline hover:bg-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:hover:bg-indigo-500/25;
+}
+/* @mentions — team tags read as tags. */
+.prose-card .fd-mention {
+  @apply inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[0.85em] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300;
+}
+/* @all — the broadcast chip reads louder than a normal mention. */
+.prose-card .fd-all-ref {
+  @apply inline-flex items-center rounded-full bg-violet-50 px-1.5 py-0.5 text-[0.85em] font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300;
+}
+/* The composer's @all chip. */
+.fd-chip-all {
+  @apply rounded-md bg-violet-100 px-1 py-0.5 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200;
+}
+
+/* ── The smart composer's chips (SmartTextarea backdrop tokens) ──────────
+   The textarea's own text is transparent; this layer renders mentions
+   and citations as colored tokens so the box reads like Slack. */
+.fd-tok-user {
+  @apply rounded-md bg-amber-100 px-1 py-0.5 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200;
+}
+.fd-tok-card {
+  @apply rounded-md bg-indigo-100 px-1 py-0.5 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200;
+}
+/* Rendered mention chips invite a hover (the detail card). */
+.prose-card .fd-mention {
+  @apply cursor-help;
+}
+.prose-card a[data-card-ref] {
+  @apply cursor-help;
+}
+/* Cross-board card + tag chips (rendered markdown). */
+.prose-card .fd-card-ref {
+  @apply inline-flex items-center rounded-md bg-indigo-100 px-1.5 py-0.5 text-[0.85em] font-semibold text-indigo-700 no-underline hover:bg-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300;
+}
+.prose-card .fd-tag-ref {
+  @apply inline-flex items-center rounded-md bg-sky-100 px-1.5 py-0.5 text-[0.85em] font-semibold text-sky-700 no-underline hover:bg-sky-200 dark:bg-sky-500/20 dark:text-sky-300;
+}
+/* The smart composer's tag + cross-board tokens (backdrop layer). */
+.fd-tok-tag {
+  @apply rounded-md bg-sky-100 px-1 py-0.5 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200;
+}
+.fd-tok-cross {
+  @apply rounded-md bg-indigo-100 px-1 py-0.5 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200;
+}
+/* A reference the viewer can't reach — board name and number stay hidden. */
+.prose-card .fd-locked-ref {
+  @apply inline-flex items-center rounded-md bg-neutral-100 px-1.5 py-0.5 text-[0.85em] font-medium text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500;
+}
+
+/* ── The mention composer (contenteditable chips) ─────────────────────
+   Mentions/citations are real non-editable nodes: one Backspace removes
+   a whole chip, and the raw markdown is never visible while typing. */
+.fd-composer {
+  @apply cursor-text;
+}
+.fd-composer:empty::before,
+.fd-composer.no-text::before {
+  content: attr(data-placeholder);
+  @apply text-neutral-400;
+  pointer-events: none;
+}
+.fd-chip {
+  @apply inline-flex items-center rounded-md px-1.5 py-0.5 text-[0.9em] font-semibold;
+  user-select: all; /* a click selects the whole chip */
+}
+.fd-chip-user {
+  @apply bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200;
+}
+.fd-chip-card {
+  @apply bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200;
+}
+.fd-chip-tag {
+  @apply bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200;
+}

@@ -25,6 +25,12 @@ export default {
     RESEND_API_KEY: v.optional(v.string()),
     // Optional: the verified Resend sender for invite emails.
     RESEND_FROM: v.optional(v.string(), 'Flowdeck <flowdeck@tejusgupta.dev>'),
+    // Optional: web-push VAPID credentials (base64url). The public key is
+    // served to clients for pushManager.subscribe; the private one signs
+    // pushes. Without them notifications still work — just in-app only.
+    VAPID_PUBLIC_KEY: v.optional(v.string()),
+    VAPID_PRIVATE_KEY: v.optional(v.string()),
+    VAPID_SUBJECT: v.optional(v.string(), 'mailto:notifications@flowdeck.local'),
   },
   client: {
     VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Flowdeck'),

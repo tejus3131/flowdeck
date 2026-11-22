@@ -1,5 +1,5 @@
 import { revalidate } from '@solidjs/router';
-import { Show, createSignal } from 'solid-js';
+import { Show, createSignal, onSettled } from 'solid-js';
 
 import { MeProfile } from '../lib/auth';
 import { addPasskey, dismissPasskeyPrompt, passkeyPromptDismissed } from '../lib/passkey';
@@ -14,6 +14,15 @@ export function PasskeyPrompt(props: { profile: () => MeProfile }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [done, setDone] = createSignal(false);
+
+  // Client-only: the dismissal state lives in localStorage, which the
+  // server render can't see — rendering it during SSR would ship a card
+  // the client then removes, leaving a dead ghost behind (the "maybe
+  // later stops working" bug). Mount after hydration settles instead.
+  const [mounted, setMounted] = createSignal(false);
+  onSettled(() => {
+    setMounted(true);
+  });
 
   const register = async () => {
     setBusy(true);
@@ -38,7 +47,7 @@ export function PasskeyPrompt(props: { profile: () => MeProfile }) {
   return (
     <Show
       when={
-        !dismissed() && !props.profile().has_passkey && !done()
+        mounted() && !dismissed() && !props.profile().has_passkey && !done()
       }
     >
       <div class="flex flex-col gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4 sm:flex-row sm:items-center dark:border-indigo-800 dark:bg-indigo-950">

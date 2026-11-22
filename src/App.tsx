@@ -1,12 +1,15 @@
 import { Title } from '@solidjs/meta';
-import { Loading, Show, createMemo } from 'solid-js';
+import { Loading, Show, createMemo, onSettled } from 'solid-js';
 // Typed client env, validated and baked in at build time (see env.ts).
 import { env } from 'virtual:solid-env/client';
 import { paths, Router } from './router';
-import { getMe, signOut } from './lib/auth';
+import { getMe } from './lib/auth';
 import { ThemeSync } from './components/ThemeSync';
 import { UserMenu } from './components/UserMenu';
 import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
+import { NotificationFeed } from './components/NotificationFeed';
+import { NotificationBell } from './components/NotificationBell';
+import { PushSetup } from './components/PushSetup';
 import './app.css';
 
 export default function App() {
@@ -42,13 +45,22 @@ export default function App() {
                     </a>
                   }
                 >
-                  {(profile) => <UserMenu profile={profile} />}
+                  {(profile) => (
+                    <span class="flex items-center gap-2">
+                      <NotificationBell />
+                      <UserMenu profile={profile} />
+                    </span>
+                  )}
                 </Show>
               </Loading>
             </nav>
             <Loading fallback={<main class="p-6 text-sm text-neutral-400">Loading…</main>}>
               {props.children}
             </Loading>
+            <Show when={me()}>
+              <NotificationFeed />
+              <PushSetup />
+            </Show>
           </>
         );
       }}

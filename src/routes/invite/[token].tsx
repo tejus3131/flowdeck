@@ -8,11 +8,22 @@ import { revalidate } from '@solidjs/router';
 import type { RouteProps } from '@solidjs/router';
 import { Show, createSignal, onSettled } from 'solid-js';
 
-import { acceptInvite } from '../../lib/workspaces';
+import { acceptInvite, myProfileForRelay } from '../../lib/workspaces';
+import { broadcastMemberJoined } from '../../lib/workspace-relay';
 
 export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
   const navigate = useNavigate();
   const [error, setError] = createSignal<string | null>(null);
+
+  /** Best-effort announcement of THIS member to the workspace's viewers. */
+  const broadcastMemberJoinedFor = async (workspaceId: string) => {
+    try {
+      const member = await myProfileForRelay(workspaceId);
+      if (member) await broadcastMemberJoined(workspaceId, member);
+    } catch {
+      // Best effort — the echo covers a missed announce.
+    }
+  };
 
   onSettled(() => {
     void (async () => {
@@ -29,6 +40,9 @@ export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
           // workspace list (the "current" flag reads the cookie) and land
           // on the dashboard.
           revalidate('workspaces');
+          // Tell everyone already viewing the workspace: the member list
+          // gains this row NOW (provisional until the echo retires it).
+          void broadcastMemberJoinedFor(result.workspaceId);
           navigate('/');
         }
       } catch (err) {

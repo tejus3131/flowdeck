@@ -1,8 +1,9 @@
 import { Title } from '@solidjs/meta';
 import { useNavigate, useSearchParams } from '@solidjs/router';
-import { Show, createSignal, onSettled } from 'solid-js';
+import { revalidate } from '@solidjs/router';
+import { Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
 
-import { checkEmail, signIn } from '../lib/auth';
+import { checkEmail, getMe, signIn } from '../lib/auth';
 import { browserClient } from '../lib/supabase-client';
 
 /**
@@ -27,6 +28,19 @@ export default function SignIn() {
   const [busy, setBusy] = createSignal<false | 'check' | 'passkey' | 'link'>(false);
   const [notice, setNotice] = createSignal<string | null>(null);
 
+  // Already signed in? The sign-in page is for the signed-out — bounce to
+  // the dashboard (the query refreshes post-ceremony, so this also covers
+  // a passkey login landing back here).
+  const me = createMemo(() => getMe());
+  createEffect(
+    () => me()?.id,
+    (id) => {
+      if (id) {
+        navigate(search.next && search.next.startsWith('/') ? search.next : '/');
+      }
+    },
+  );
+
   let form: HTMLFormElement | undefined;
 
   // Set right before our own requestSubmit so the capture-phase handler
@@ -48,16 +62,21 @@ export default function SignIn() {
     setBusy('passkey');
     setNotice(null);
     const { error } = await client.auth.signInWithPasskey({
-      // "modal" is a spec-valid mediation value; TS's DOM lib lags behind it.
-      options: { mediation: 'modal' as CredentialMediationRequirement },
+      options: { mediation: 'optional' as CredentialMediationRequirement },
     });
     setBusy(false);
     if (error) {
       setNotice(error.message);
       return;
     }
-    // The ceremony wrote the session cookies; land where the flow asked
-    // (invite acceptance) or home.
+    // The ceremony wrote the session cookies; the page's cached queries
+    // still think this visitor is signed out (me/workspaces were read
+    // before the session existed) — refresh them BEFORE navigating, or
+    // the landing renders one more time and the dashboard needs a manual
+    // reload.
+    revalidate('me');
+    revalidate('workspaces');
+    // Land where the flow asked (invite acceptance) or home.
     navigate(search.next && search.next.startsWith('/') ? search.next : '/');
   };
 

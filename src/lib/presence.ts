@@ -8,7 +8,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { browserClient } from './supabase-client';
 import type { MeProfile } from './auth';
-
+import type { BoardOp, BoardOpFail } from './board-ops';
 export interface PresenceUser {
   userId: string;
   name: string;
@@ -20,13 +20,16 @@ export interface RemoteDrag {
   name: string;
 }
 
-export function createBoardPresence(boardId: string, me: () => MeProfile | null) {
+export function createBoardPresence(
+  boardId: string,
+  me: () => MeProfile | null,
+  onOp?: (op: BoardOp | BoardOpFail) => void,
+) {
   const [others, setOthers] = createSignal<PresenceUser[]>([]);
   const [remoteDrag, setRemoteDrag] = createSignal<RemoteDrag | null>(null);
 
   let channel: RealtimeChannel | null = null;
   let client: ReturnType<typeof browserClient> = null;
-
   // Subscribe once the signed-in profile resolves (the async model holds
   // the effect until then; signed-out boards never subscribe).
   createEffect(
@@ -40,8 +43,7 @@ export function createBoardPresence(boardId: string, me: () => MeProfile | null)
       channel = self;
 
       self
-        .on('presence', { event: 'sync' }, () => {
-          const state = self.presenceState<Record<string, unknown>>();
+        .on('presence', { event: 'sync' }, () => {          const state = self.presenceState<Record<string, unknown>>();
           const users: PresenceUser[] = [];
           for (const [key, metas] of Object.entries(state)) {
             if (key === profile.id) continue;
@@ -61,12 +63,22 @@ export function createBoardPresence(boardId: string, me: () => MeProfile | null)
           } else if (data.cardId) {
             setRemoteDrag(data);
             setTimeout(() => {
-              // Ghosts expire if the drag-end broadcast is lost.
+              // Ghosts expire if the drag-end is lost.
               if (remoteDrag()?.cardId === data.cardId) setRemoteDrag(null);
             }, 4000);
           }
+        })
+        // Provisional ops: another viewer changed something — apply it as a
+        // prediction now; the durable echo reconciles it. The fail relay
+        // drops the prediction when the author's write didn't land.
+        .on('broadcast', { event: 'op' }, ({ payload }) => {
+          const op = payload as BoardOp | null;
+          if (op?.opId) onOp?.(op);
+        })
+        .on('broadcast', { event: 'op-fail' }, ({ payload }) => {
+          const fail = payload as BoardOpFail | null;
+          if (fail?.opId) onOp?.(fail);
         });
-
       void self.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           void self.track({
@@ -87,11 +99,22 @@ export function createBoardPresence(boardId: string, me: () => MeProfile | null)
     });
   };
 
+  /** Relay an op to the other viewers (provisional application on arrival;
+   *  the durable echo remains the source of truth). */
+  const broadcastOp = (op: BoardOp) => {
+    void channel?.send({ type: 'broadcast', event: 'op', payload: op });
+  };
+
+  /** Tell the other viewers the write failed: drop the prediction. */
+  const broadcastOpFail = (opId: string) => {
+    void channel?.send({ type: 'broadcast', event: 'op-fail', payload: { opId } });
+  };
+
   onCleanup(() => {
     if (client && channel) void client.removeChannel(channel);
   });
 
-  return { others, remoteDrag, broadcastDrag };
+  return { others, remoteDrag, broadcastDrag, broadcastOp, broadcastOpFail };
 }
 
 /** An avatar: the image when present, otherwise initials on a color. */

@@ -27,6 +27,9 @@ declare module 'virtual:solid-env/server' {
     readonly "SUPABASE_SECRET_KEY": __Out<__Schema["server"]["SUPABASE_SECRET_KEY"]>;
     readonly "RESEND_API_KEY": __Out<__Schema["server"]["RESEND_API_KEY"]>;
     readonly "RESEND_FROM": __Out<__Schema["server"]["RESEND_FROM"]>;
+    readonly "VAPID_PUBLIC_KEY": __Out<__Schema["server"]["VAPID_PUBLIC_KEY"]>;
+    readonly "VAPID_PRIVATE_KEY": __Out<__Schema["server"]["VAPID_PRIVATE_KEY"]>;
+    readonly "VAPID_SUBJECT": __Out<__Schema["server"]["VAPID_SUBJECT"]>;
     readonly "VITE_APP_NAME": __Out<__Schema["client"]["VITE_APP_NAME"]>;
     readonly "VITE_SUPABASE_URL": __Out<__Schema["client"]["VITE_SUPABASE_URL"]>;
     readonly "VITE_SUPABASE_PUBLISHABLE_KEY": __Out<__Schema["client"]["VITE_SUPABASE_PUBLISHABLE_KEY"]>;

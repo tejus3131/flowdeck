@@ -5,44 +5,53 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createRoot, flush } from 'solid-js';
 
 import { createBoardEngine, type OpSpec } from './sync';
+import type { CardView } from './boards';
+import { applyBoardOp, echoBoardOp, guardsFor, tempIdsFor, type BoardOpPayload } from './board-ops';
 import type { BoardSnapshot, CardRow, ListRow } from './boards';
-
 // ── fixtures ──────────────────────────────────────────────────────────────
 
 const lists = (over: ListRow[] = []): ListRow[] => [
-  { id: 'l1', board_id: 'b1', name: 'To do', position: 1, created_at: '' },
-  { id: 'l2', board_id: 'b1', name: 'Doing', position: 2, created_at: '' },
-  { id: 'l3', board_id: 'b1', name: 'Done', position: 3, created_at: '' },
+  { id: 'l1', board_id: 'b1', name: 'To do', position: 1, created_at: '', client_op: null, description: '' },
+  { id: 'l2', board_id: 'b1', name: 'Doing', position: 2, created_at: '', client_op: null, description: '' },
+  { id: 'l3', board_id: 'b1', name: 'Done', position: 3, created_at: '', client_op: null, description: '' },
   ...over,
 ];
 
-const card = (id: string, listId: string, position: number, title = id): CardRow => ({
+const card = (id: string, listId: string, position: number, title = id): CardView => ({
   id,
   board_id: 'b1',
   list_id: listId,
   title,
   description: '',
   position,
-  assignee_id: null,
   created_by: 'u1',
   created_at: '',
   updated_at: '',
+  client_op: null,
+  number: null,
+  comment_count: 0,
+  last_comment_at: null,
+  priority: null,
+  tags: [],
+  assignees: [],
 });
 
-const snapshot = (cards: CardRow[], ls = lists()): BoardSnapshot => ({
-  board: { id: 'b1', name: 'Board', owner_id: 'u1', workspace_id: null, created_at: '', updated_at: '' },
+const snapshot = (cards: CardView[], ls = lists()): BoardSnapshot => ({
+  board: { id: 'b1', name: 'Board', owner_id: 'u1', workspace_id: null, created_at: '', updated_at: '', client_op: null, description: '', access_delegation: false },
   lists: ls,
   cards,
   revision: 1,
   myAccess: 'edit',
+  denied: false,
 });
 
 const EMPTY: BoardSnapshot = {
-  board: { id: '', name: '', owner_id: '', workspace_id: null, created_at: '', updated_at: '' },
+  board: { id: '', name: '', owner_id: '', workspace_id: null, created_at: '', updated_at: '', client_op: null, description: '', access_delegation: false },
   lists: [],
   cards: [],
   revision: 0,
   myAccess: null,
+  denied: false,
 };
 
 // ── harness ───────────────────────────────────────────────────────────────
@@ -263,6 +272,35 @@ describe('sync engine', () => {
     h.dispose();
   });
 
+  it('a failed op reverts WITHOUT a follow-up wire emission', async () => {
+    // Regression: the store used to share row objects with the wire
+    // snapshot, so the in-place local edit poisoned the durable state and
+    // the re-merge "confirmed" the local change; the revert only ever
+    // landed when a later wire emission delivered fresh objects. The
+    // engine must restore the durable state on its own, immediately.
+    const h = makeHarness(snapshot([card('c1', 'l1', 1)]));
+    await settle();
+
+    h.engine.mutate({
+      kind: 'moveCard',
+      guards: ['c1'],
+      apply: (draft) => {
+        const target = draft.cards.find((c) => c.id === 'c1');
+        if (target) target.list_id = 'l2';
+      },
+      send: deferredSend(h.sent),
+      echo: (d) => d.cards.find((c) => c.id === 'c1')?.list_id === 'l2',
+    });
+    flush();
+    expect(h.engine.view().cards.find((c) => c.id === 'c1')?.list_id).toBe('l2');
+
+    h.sent[0].reject(new Error('not allowed'));
+    await settle();
+    expect(h.engine.view().cards.find((c) => c.id === 'c1')?.list_id).toBe('l1');
+    expect(h.engine.failed().length).toBe(1);
+    h.dispose();
+  });
+
   it('deletes are instant and revert on failure', async () => {
     const h = makeHarness(snapshot([card('c1', 'l1', 1)]));
     await settle();
@@ -283,6 +321,131 @@ describe('sync engine', () => {
     await settle();
     expect(h.engine.view().cards.length).toBe(1); // restored
     expect(h.engine.failed().length).toBe(1);
+    h.dispose();
+  });
+
+  // ── provisional (relayed) ops: another viewer's change, predicted ──────
+
+  /** A registry-shaped remote op over the board snapshot. */
+  const remoteSpec = (payload: BoardOpPayload) => ({
+    kind: payload.kind,
+    guards: guardsFor(payload),
+    tempIds: tempIdsFor(payload),
+    apply: (draft: BoardSnapshot) => applyBoardOp(draft, payload, 'now'),
+    echo: (durable: BoardSnapshot) => echoBoardOp(durable, payload),
+  });
+
+  it('a relayed op predicts instantly, guards intermediates, retires on echo', async () => {
+    const h = makeHarness(snapshot([card('c1', 'l1', 1)]));
+    await settle();
+
+    // The author (elsewhere) creates a card; we receive the relay.
+    const payload: BoardOpPayload = {
+      kind: 'create-card',
+      tempId: 'tmp-9',
+      listId: 'l1',
+      title: 'Relayed',
+      position: 2,
+      clientOp: 'op-77',
+    };
+    expect(h.engine.applyRemote(remoteSpec(payload), 'op-77')).toBe('op-77');
+    flush();
+    expect(h.engine.view().cards.some((c) => c.id === 'tmp-9')).toBe(true);
+    expect(h.engine.saving()).toBe(false); // provisional, not our write
+
+    // An INTERMEDIATE durable snapshot (some other change, before the
+    // author's write landed) must not clobber the prediction.
+    h.push(snapshot([card('c1', 'l1', 1), card('c2', 'l2', 1)]));
+    await settle();
+    expect(h.engine.view().cards.some((c) => c.id === 'tmp-9')).toBe(true);
+
+    // The echo arrives: the durable row the author stamped retires the
+    // prediction and swaps the temp id for the real one.
+    h.push(snapshot([card('c1', 'l1', 1), card('real-9', 'l1', 2, 'Relayed')]));
+    // (the durable fixture lacks client_op — stamp it via the payload check)
+    h.push({
+      ...snapshot([card('c1', 'l1', 1), card('real-9', 'l1', 2, 'Relayed')]),
+      cards: [
+        card('c1', 'l1', 1),
+        { ...card('real-9', 'l1', 2, 'Relayed'), client_op: 'op-77' },
+      ],
+    });
+    await settle();
+    expect(h.engine.view().cards.some((c) => c.id === 'real-9')).toBe(true);
+    expect(h.engine.view().cards.some((c) => c.id === 'tmp-9')).toBe(false);
+    expect(h.engine.ops().some((op) => op.tempIds.includes('tmp-9'))).toBe(false);
+    h.dispose();
+  });
+
+  it("the author's fail relay drops the prediction immediately", async () => {
+    const h = makeHarness(snapshot([]));
+    await settle();
+
+    const payload: BoardOpPayload = {
+      kind: 'create-list',
+      tempId: 'tmp-list',
+      name: 'Ghost list',
+      position: 1,
+      clientOp: 'op-88',
+    };
+    h.engine.applyRemote(remoteSpec(payload), 'op-88');
+    flush();
+    expect(h.engine.view().lists.some((l) => l.id === 'tmp-list')).toBe(true);
+
+    // Duplicate relay is a no-op.
+    expect(h.engine.applyRemote(remoteSpec(payload), 'op-88')).toBe(null);
+
+    h.engine.failRemote('op-88');
+    await settle();
+    expect(h.engine.view().lists.some((l) => l.id === 'tmp-list')).toBe(false);
+    expect(h.engine.failed().length).toBe(0); // never the receiver's failure
+    h.dispose();
+  });
+
+  it('a provisional move lands EXACTLY where the echo will put it (order invariant)', async () => {
+    // Regression: the apply used to mutate position without re-sorting the
+    // view array, so a moved card showed at its old array slot ("top of the
+    // list") until the durable merge sorted it a beat later.
+    const h = makeHarness(
+      snapshot([card('c1', 'l1', 1), card('c2', 'l1', 2), card('c3', 'l1', 3)]),
+    );
+    await settle();
+
+    const move: BoardOpPayload = { kind: 'move-card', cardId: 'c1', listId: 'l1', position: 50 };
+    h.engine.applyRemote(remoteSpec(move), 'op-sort');
+    flush();
+    const order = () =>
+      h.engine.view().cards.filter((c) => c.list_id === 'l1').map((c) => c.id);
+    expect(order()).toEqual(['c2', 'c3', 'c1']); // c1 LAST — where the echo will keep it
+
+    // And the durable echo retires without any visual change.
+    h.push(snapshot([card('c2', 'l1', 2), card('c3', 'l1', 3), card('c1', 'l1', 50)]));
+    await settle();
+    expect(order()).toEqual(['c2', 'c3', 'c1']);
+    expect(h.engine.ops().length).toBe(0);
+    h.dispose();
+  });
+
+  it('a relayed move guards against an older echo, then retires on its own', async () => {    const h = makeHarness(snapshot([card('c1', 'l1', 1)]));
+    await settle();
+
+    // A→x chain: the author moved the card to l2; we predict it.
+    const move: BoardOpPayload = { kind: 'move-card', cardId: 'c1', listId: 'l2', position: 5 };
+    h.engine.applyRemote(remoteSpec(move), 'op-m1');
+    flush();
+    expect(h.engine.view().cards.find((c) => c.id === 'c1')?.list_id).toBe('l2');
+
+    // An OLDER durable snapshot (the card still in l1 — the echo of an
+    // earlier change) must not snap the prediction back.
+    h.push(snapshot([card('c1', 'l1', 1)]));
+    await settle();
+    expect(h.engine.view().cards.find((c) => c.id === 'c1')?.list_id).toBe('l2');
+
+    // The author's write lands: retire silently.
+    h.push(snapshot([card('c1', 'l2', 5)]));
+    await settle();
+    expect(h.engine.view().cards.find((c) => c.id === 'c1')?.list_id).toBe('l2');
+    expect(h.engine.ops().length).toBe(0);
     h.dispose();
   });
 });

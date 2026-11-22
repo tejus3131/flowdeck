@@ -5,9 +5,9 @@
 // same request-scoped client so every row obeys the caller's policies.
 import { formAction, query } from '@solidjs/router';
 import { getRequestEvent, redirect } from '@solidjs/web';
-import { stringifySetCookie } from 'cookie';
+import { parseCookie, stringifySetCookie } from 'cookie';
 
-import { createSupabaseRequestClient } from '../server/supabase';
+import { createSupabaseRequestClient, createSupabaseServiceClient } from '../server/supabase';
 import type { Database } from '../types/database.generated';
 
 export type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -92,6 +92,71 @@ export const signOut = formAction(async () => {
   await supabase.auth.signOut();
   throw redirect('/');
 });
+
+/**
+ * Delete the account and everything it owns. The database cascades from
+ * auth.users: profile, memberships, boards, personal workspaces and their
+ * content all go. Shared workspaces the account OWNS would cascade away
+ * for everyone — deletion is refused until those are transferred or
+ * shrunk to solo. The response clears the auth cookies so this device
+ * signs out even though GoTrue no longer knows the session.
+ */
+export async function deleteAccount(): Promise<boolean> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('You need to sign in first');
+
+  // Refuse when an owned workspace still has other members: its cascade
+  // would delete THEIR boards and content with the account.
+  const { data: owned } = await supabase
+    .from('workspace_members')
+    .select('workspace_id, workspaces(name)')
+    .eq('user_id', user.id)
+    .eq('role', 'owner');
+  const shared: string[] = [];
+  for (const row of owned ?? []) {
+    const ws = row.workspaces as { id: string; name: string } | null;
+    if (!ws) continue;
+    const { count } = await supabase
+      .from('workspace_members')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('workspace_id', ws.id)
+      .neq('user_id', user.id);
+    if ((count ?? 0) > 0) shared.push(ws.name);
+  }
+  if (shared.length > 0) {
+    throw new Error(
+      `Transfer ownership of ${shared.map((n) => `“${n}”`).join(', ')} first — deleting your account would remove it for everyone`,
+    );
+  }
+
+  const service = createSupabaseServiceClient();
+  const { error } = await service.auth.admin.deleteUser(user.id);
+  if (error) throw new Error(error.message);
+
+  // The session is gone server-side; clear this device's cookies too
+  // (signOut would 404 against a deleted user).
+  const event = getRequestEvent();
+  if (event) {
+    const jar = Object.keys(parseCookie(event.request.headers.get('cookie') ?? '')).filter(
+      (name) => /^sb-.*-auth-token(\.\d+)?$/.test(name),
+    );
+    for (const name of jar) {
+      event.response.headers.append(
+        'set-cookie',
+        stringifySetCookie({ name, value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
+      );
+    }
+    event.response.headers.append(
+      'set-cookie',
+      stringifySetCookie({ name: 'fd_ws', value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
+    );
+  }
+  return true;
+}
 
 /**
  * The sign-in branch: does this email belong to an existing account, and

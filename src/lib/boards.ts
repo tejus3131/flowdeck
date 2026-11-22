@@ -11,6 +11,14 @@ import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
 
 import { createSupabaseRequestClient } from '../server/supabase';
+import {
+  filterInaccessible,
+  mentionedTeams,
+  mentionedUsers,
+  mentionsAll,
+  notifyChatActivity,
+  notifyUsers,
+} from '../server/notify';
 import type { Database } from '../types/database.generated';
 
 export type BoardSummary = Database['public']['Tables']['boards']['Row'];
@@ -18,15 +26,30 @@ export type ListRow = Database['public']['Tables']['lists']['Row'];
 export type CardRow = Database['public']['Tables']['cards']['Row'];
 export type ActivityRow = Database['public']['Tables']['activity']['Row'];
 
+/** A card row plus the derived stats the UI shows (unseen badges). */
+/** A tag chip: a stable, workspace-scoped row (cards reference it by id). */
+export type TagView = { id: string; name: string };
+
+export type CardView = CardRow & {
+  comment_count: number;
+  last_comment_at: string | null;
+  /** Profiles assigned to this card (user ids — resolve against members). */
+  assignees: string[];
+  /** Tags linked to this card (stable rows — same name, same id). */
+  tags: TagView[];
+};
+
 /** One consistent view of a board — the unit the live stream yields. */
 export type BoardSnapshot = {
   board: BoardSummary;
   lists: ListRow[];
-  cards: CardRow[];
+  cards: CardView[];
   /** Latest activity id — monotonic per board, bumped by every mutation. */
   revision: number;
-  /** This viewer's effective access (edit / view / null when gone). */
+  /** This viewer's effective access (edit / view / null when none). */
   myAccess: 'edit' | 'view' | null;
+  /** True when the caller has NO access at all (the row is invisible). */
+  denied: boolean;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,7 +76,7 @@ export const getBoards = query(async (): Promise<BoardSummary[]> => {
   const workspaceId = await currentWorkspaceId(supabase);
   const queryBuilder = supabase
     .from('boards')
-    .select('id, name, owner_id, workspace_id, created_at, updated_at');
+    .select('id, name, description, owner_id, workspace_id, created_at, updated_at, client_op, access_delegation');
   const { data, error } = workspaceId
     ? await queryBuilder.eq('workspace_id', workspaceId).order('updated_at', { ascending: false })
     : await queryBuilder.order('updated_at', { ascending: false });
@@ -62,9 +85,21 @@ export const getBoards = query(async (): Promise<BoardSummary[]> => {
 }, 'boards');
 
 /** The dashboard's live unit: the current workspace's boards. */
-export type BoardsSnapshot = { boards: BoardSummary[] };
+/** Who's on a board, for the dashboard cards: people with explicit
+ *  overrides and teams with grants (admins see everyone's; plain members
+ *  see what RLS lets them). */
+export type BoardAccessInfo = {
+  users: { userId: string; access: 'edit' | 'view' }[];
+  teams: { teamId: string; name: string; access: 'edit' | 'view' }[];
+};
 
-export const EMPTY_BOARDS: BoardsSnapshot = { boards: [] };
+export type BoardsSnapshot = {
+  boards: BoardSummary[];
+  /** boardId → who has access (what the viewer may see). */
+  access: Record<string, BoardAccessInfo>;
+};
+
+export const EMPTY_BOARDS: BoardsSnapshot = { boards: [], access: {} };
 
 /**
  * The user's boards as a live source: the first yield is the current list,
@@ -85,7 +120,25 @@ export const boardsStream = live(async function* (): AsyncGenerator<BoardsSnapsh
 
   const channel = supabase
     .channel('boards:all')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'boards' }, control.onChanged);
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'boards' }, control.onChanged)
+    // Access grants are part of the list's shape: a board another admin
+    // grants me appears the moment the override row lands (and disappears
+    // on revoke) — no refresh needed.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'board_access' }, control.onChanged)
+    // Role changes and team grants reshape the whole list too (made admin
+    // → every workspace board appears, live) — the "whatever screen I'm
+    // on updates" rule.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, control.onChanged)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, control.onChanged)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, control.onChanged)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'board_team_access' }, control.onChanged)
+    // See boardStream: a rejected binding surfaces only as a `system`
+    // error after the join reply. Log it loudly.
+    .on('system', {}, (payload: { status?: string; message?: string }) => {
+      if (payload?.status === 'error') {
+        console.error('[boardsStream] realtime system error:', payload.message);
+      }
+    });
   channel.subscribe((status, err) => {
     if (err) console.error('boardsStream channel error:', err);
     if (status === 'CHANNEL_ERROR') console.error('boardsStream channel error status');
@@ -121,7 +174,7 @@ export const boardsStream = live(async function* (): AsyncGenerator<BoardsSnapsh
  * releases the realtime channel — without it a producer whose consumer
  * vanished would hold the channel (and its socket) forever.
  */
-function producerControls() {
+export function producerControls() {
   const control = {
     wake: undefined as (() => void) | undefined,
     pending: false,
@@ -151,10 +204,37 @@ async function boardsSnapshot(
 ): Promise<BoardsSnapshot> {
   const { data, error } = await supabase
     .from('boards')
-    .select('id, name, owner_id, workspace_id, created_at, updated_at')
+    .select('id, name, description, owner_id, workspace_id, created_at, updated_at, client_op, access_delegation')
     .order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
-  return { boards: data ?? [] };
+  // Who's on each board (what RLS shows this viewer — admins see all
+  // overrides, editors see their own; team grants show for team members
+  // and board editors).
+  const [accessRows, teamAccessRows, teamRows] = await Promise.all([
+    supabase.from('board_access').select('board_id, user_id, access'),
+    supabase.from('board_team_access').select('board_id, team_id, access'),
+    supabase.from('teams').select('id, name'),
+  ]);
+  const teamNames = new Map((teamRows.data ?? []).map((row) => [row.id as string, row.name]));
+  const access: Record<string, BoardAccessInfo> = {};
+  for (const row of (accessRows.data ?? []) as { board_id: string; user_id: string; access: 'edit' | 'view' }[]) {
+    const bucket = access[row.board_id] ?? { users: [], teams: [] };
+    bucket.users.push({ userId: row.user_id, access: row.access });
+    access[row.board_id] = bucket;
+  }
+  for (const row of (teamAccessRows.data ?? []) as { board_id: string; team_id: string; access: 'edit' | 'view' }[]) {
+    const bucket = access[row.board_id] ?? { users: [], teams: [] };
+    bucket.teams.push({ teamId: row.team_id, name: teamNames.get(row.team_id) ?? 'team', access: row.access });
+    access[row.board_id] = bucket;
+  }
+  return { boards: data ?? [], access };
+}
+
+/** All boards + who's on them, for the sync engine's refresh path. */
+export async function getBoardsSnapshot(): Promise<BoardsSnapshot> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  return boardsSnapshot(supabase);
 }
 
 /** One board snapshot, for tests and one-off reads. */
@@ -214,11 +294,36 @@ export const boardStream = live(async function* (
       { event: '*', schema: 'public', table: 'board_access', filter: `board_id=eq.${id}` },
       control.onChanged,
     )
+    // Team grants reach this board the same way (a team this viewer is in
+    // gains access → the page flips live).
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_team_access', filter: `board_id=eq.${id}` },
+      control.onChanged,
+    )
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, control.onChanged)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'boards', filter: `id=eq.${id}` },
       control.onChanged,
     )
+    // Assignments reshape the board too (avatars on cards): re-snapshot.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_assignees' }, control.onChanged)
+    // Same for the tag links and the workspace's tag vocabulary.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_tags' }, control.onChanged)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, control.onChanged)
+    // Comment stats ride the snapshot: agents and API writes (which skip
+    // the relay) still bump the unseen badges live.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_comments' }, control.onChanged)
+    // A rejected postgres_changes binding (a table missing from the
+    // supabase_realtime publication, for one) arrives as a `system` error
+    // AFTER the join reply — the channel still reports SUBSCRIBED and no
+    // events ever flow. Log it loudly: it's invisible anywhere else.
+    .on('system', {}, (payload: { status?: string; message?: string }) => {
+      if (payload?.status === 'error') {
+        console.error('[boardStream] realtime system error:', payload.message);
+      }
+    })
     .subscribe((status, err) => {
       // Observability: connection problems surface in dev logs and Workers
       // observability instead of failing silently.
@@ -241,6 +346,7 @@ export const boardStream = live(async function* (
       // Debounce bursts: one snapshot for a flurry of changes.
       await new Promise((resolve) => setTimeout(resolve, 80));
       if (!control.pending) {
+        console.log(`[boardStream ${id.slice(0, 8)}] change detected — re-snapshotting`);
         yield await snapshot(supabase, id);
       }
       // A change that landed mid-snapshot leaves `pending` set and the
@@ -257,10 +363,14 @@ async function snapshot(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
   boardId: string,
 ): Promise<BoardSnapshot> {
-  const [boards, lists, cards, activity, access] = await Promise.all([
+  const [boards, lists, cards, activity, access, stats] = await Promise.all([
     supabase.from('boards').select('*').eq('id', boardId).maybeSingle(),
     supabase.from('lists').select('*').eq('board_id', boardId).order('position', { ascending: true }),
-    supabase.from('cards').select('*').eq('board_id', boardId).order('position', { ascending: true }),
+    supabase
+      .from('cards')
+      .select('*, card_tags(tag_id, tags(id, name))')
+      .eq('board_id', boardId)
+      .order('position', { ascending: true }),
     supabase
       .from('activity')
       .select('id')
@@ -269,23 +379,100 @@ async function snapshot(
       .limit(1)
       .maybeSingle(),
     supabase.rpc('user_board_access', { p_board_id: boardId }),
+    supabase.rpc('board_card_comment_stats', { p_board_id: boardId }),
   ]);
-  if (!boards.data) throw new Error('Board not found');
+  // Assignees live in a join table — fetched per board card (RLS-scoped).
+  const assignees = await supabase
+    .from('card_assignees')
+    .select('card_id, user_id')
+    .in(
+      'card_id',
+      (cards.data ?? []).map((card) => card.id).length > 0
+        ? (cards.data ?? []).map((card) => card.id)
+        : ['00000000-0000-0000-0000-000000000000'],
+    );
+  // RLS hides the row from access-less callers: that's "no access", not an
+  // error — the stream keeps running so a later grant flips the page live.
+  // A transient query ERROR (timeout, socket hiccup) is the opposite: data
+  // is null but error is set — surfacing that as "no access" would bounce
+  // an authorized viewer off the board until the next snapshot. Throw; the
+  // stream retries and the previous snapshot stays on screen.
+  if (boards.error) throw new Error(boards.error.message);
+  if (!boards.data) {
+    return {
+      board: { ...EMPTY_BOARD, id: boardId },
+      lists: [],
+      cards: [],
+      revision: 0,
+      myAccess: null,
+      denied: true,
+    };
+  }
+  const statMap = new Map(
+    ((stats.data ?? []) as { card_id: string; comment_count: number; last_comment_at: string }[]).map(
+      (row) => [row.card_id, row],
+    ),
+  );
+  const assigneeMap = new Map<string, string[]>();
+  for (const row of (assignees.data ?? []) as { card_id: string; user_id: string }[]) {
+    const list = assigneeMap.get(row.card_id) ?? [];
+    list.push(row.user_id);
+    assigneeMap.set(row.card_id, list);
+  }
   return {
     board: boards.data,
     lists: lists.data ?? [],
-    cards: cards.data ?? [],
+    cards: (
+      cards.data as unknown as (CardRow & {
+        card_tags?: { tag_id: string; tags: { id: string; name: string } | null }[];
+      })[]
+    ).map((card) => {
+      const stat = statMap.get(card.id);
+      const { card_tags: _links, ...row } = card;
+      return {
+        ...row,
+        comment_count: Number(stat?.comment_count ?? 0),
+        last_comment_at: stat?.last_comment_at ?? null,
+        assignees: assigneeMap.get(card.id) ?? [],
+        tags: (_links ?? [])
+          .map((link) => link.tags)
+          .filter((tag): tag is { id: string; name: string } => tag !== null)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      };
+    }),
     revision: activity.data?.id ?? 0,
     myAccess: (access.data as 'edit' | 'view' | null) ?? null,
+    denied: false,
   };
 }
+
+const EMPTY_BOARD: BoardSummary = {
+  id: '',
+  access_delegation: false,
+  name: '',
+  owner_id: '',
+  workspace_id: null,
+  created_at: '',
+  updated_at: '',
+  client_op: null,
+  description: '',
+};
 
 // ── board mutations ───────────────────────────────────────────────────────
 
 const DEFAULT_LISTS = ['To do', 'In progress', 'Done'];
 
-/** Create a board with default lists. Returns the new board id. */
-export async function createBoard(name: string): Promise<string> {
+/** Create a board with default lists. Returns the new board id.
+ *  The workspace's board_creation policy gates who may call this
+ *  (owners/admins always; team admins and members per the setting), and
+ *  team admins can create FOR one of their teams — it gets access
+ *  immediately. */
+export async function createBoard(
+  name: string,
+  clientOp?: string | null,
+  description?: string,
+  teamId?: string | null,
+): Promise<string> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const user = await requireUser(supabase);
@@ -297,9 +484,51 @@ export async function createBoard(name: string): Promise<string> {
   const workspaceTarget = workspaceId ?? (await firstWorkspaceId(supabase));
   if (!workspaceTarget) throw new Error('No workspace found for this account');
 
+  // Who may create boards here? (The GitHub org setting.)
+  const [{ data: me }, { data: myAdminTeams }] = await Promise.all([
+    supabase
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', workspaceTarget)
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    supabase
+      .from('team_members')
+      .select('team_id, teams!inner(id, workspace_id)')
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
+      .eq('teams.workspace_id', workspaceTarget),
+  ]);
+  const isWsAdmin = me?.role === 'owner' || me?.role === 'admin';
+  const adminTeamIds = (myAdminTeams ?? []).map((row) => row.team_id as string);
+  if (!isWsAdmin) {
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('board_creation')
+      .eq('id', workspaceTarget)
+      .maybeSingle();
+    const policy = (workspace?.board_creation as string | undefined) ?? 'team_admins';
+    const allowed =
+      policy === 'everyone' || (policy === 'team_admins' && adminTeamIds.length > 0);
+    if (!allowed) {
+      throw new Error('You need the owner or an admin to create boards in this workspace');
+    }
+  }
+  // A team-targeted creation: must be one of MY teams (or I'm a ws admin).
+  const targetTeam = teamId && UUID.test(teamId) ? teamId : null;
+  if (targetTeam && !isWsAdmin && !adminTeamIds.includes(targetTeam)) {
+    throw new Error('You can only create boards for teams you administer');
+  }
+
   const { data: board, error } = await supabase
     .from('boards')
-    .insert({ name: boardName, workspace_id: workspaceTarget, owner_id: user.id })
+    .insert({
+      name: boardName,
+      workspace_id: workspaceTarget,
+      owner_id: user.id,
+      description: String(description ?? '').slice(0, 4000),
+      ...(clientOp ? { client_op: clientOp } : {}),
+    })
     .select('id')
     .single();
   if (error) throw new Error(error.message);
@@ -311,18 +540,57 @@ export async function createBoard(name: string): Promise<string> {
     })),
   );
   await logActivity(supabase, user.id, board!.id, 'board.created', { name: boardName });
+  // Team-scoped creation: the team gets access immediately (and each
+  // member hears about it — the setBoardTeamAccess grant path notifies).
+  if (targetTeam) {
+    try {
+      const { setBoardTeamAccess } = await import('./teams');
+      await setBoardTeamAccess({ boardId: board!.id, teamId: targetTeam, access: 'edit' });
+    } catch (grantError) {
+      console.error('team board grant failed:', grantError);
+    }
+  }
   return board!.id;
 }
 
-export async function renameBoard(boardId: string, name: string) {
+/** Board settings: rename and/or set the description (editors only).
+ *  The access-delegation switch — "anyone with access may grant others"
+ *  — is owners/admins only, and enforced server-side. */
+export async function updateBoard(
+  boardId: string,
+  patch: { name?: string; description?: string; accessDelegation?: boolean },
+) {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
   const user = await requireUser(supabase);
-  const boardName = cleanText(name, 'Board name', 80);
-  const { error } = await supabase.from('boards').update({ name: boardName }).eq('id', id);
+  const update: Partial<Pick<BoardSummary, 'name' | 'description' | 'access_delegation'>> = {};
+  if (patch.name !== undefined) update.name = cleanText(patch.name, 'Board name', 80);
+  if (patch.description !== undefined)
+    update.description = String(patch.description).slice(0, 4000);
+  if (patch.accessDelegation !== undefined) {
+    const { data: boardRow } = await supabase
+      .from('boards')
+      .select('workspace_id')
+      .eq('id', id)
+      .maybeSingle();
+    const { data: me } = await supabase
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', boardRow?.workspace_id ?? '')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (me?.role !== 'owner' && me?.role !== 'admin') {
+      throw new Error('Only owners and admins can change who may grant board access');
+    }
+    update.access_delegation = patch.accessDelegation;
+  }
+  if (Object.keys(update).length === 0) return;
+  const { error } = await supabase.from('boards').update(update).eq('id', id);
   if (error) throw new Error(error.message);
-  await logActivity(supabase, user.id, id, 'board.renamed', { name: boardName });
+  if (update.name) {
+    await logActivity(supabase, user.id, id, 'board.renamed', { name: update.name });
+  }
 }
 
 export async function deleteBoard(boardId: string) {
@@ -336,7 +604,7 @@ export async function deleteBoard(boardId: string) {
 
 // ── list mutations ────────────────────────────────────────────────────────
 
-export async function createList(boardId: string, name: string) {
+export async function createList(boardId: string, name: string, clientOp?: string) {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
@@ -349,20 +617,31 @@ export async function createList(boardId: string, name: string) {
     .order('position', { ascending: false })
     .limit(1)
     .maybeSingle();
-  const { error } = await supabase
-    .from('lists')
-    .insert({ board_id: id, name: listName, position: (last?.position ?? 0) + 1 });
+  const { error } = await supabase.from('lists').insert({
+    board_id: id,
+    name: listName,
+    position: (last?.position ?? 0) + 1,
+    ...(clientOp ? { client_op: clientOp } : {}),
+  });
   if (error) throw new Error(error.message);
   await logActivity(supabase, user.id, id, 'list.created', { name: listName });
 }
 
-export async function renameList(listId: string, name: string) {
+/** List settings: rename and/or set the description (editors only). */
+export async function updateList(
+  listId: string,
+  patch: { name?: string; description?: string },
+) {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(listId, 'list id');
   await requireUser(supabase);
-  const listName = cleanText(name, 'List name', 80);
-  const { error } = await supabase.from('lists').update({ name: listName }).eq('id', id);
+  const update: Partial<Pick<ListRow, 'name' | 'description'>> = {};
+  if (patch.name !== undefined) update.name = cleanText(patch.name, 'List name', 80);
+  if (patch.description !== undefined)
+    update.description = String(patch.description).slice(0, 2000);
+  if (Object.keys(update).length === 0) return;
+  const { error } = await supabase.from('lists').update(update).eq('id', id);
   if (error) throw new Error(error.message);
 }
 
@@ -378,7 +657,7 @@ export async function deleteList(listId: string) {
 // ── card mutations ────────────────────────────────────────────────────────
 
 /** Add a card at the end of a list. Returns the card id. */
-export async function createCard(listId: string, title: string): Promise<string> {
+export async function createCard(listId: string, title: string, clientOp?: string): Promise<string> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(listId, 'list id');
@@ -408,35 +687,366 @@ export async function createCard(listId: string, title: string): Promise<string>
       title: cardTitle,
       position: (last?.position ?? 0) + 1,
       created_by: user.id,
+      ...(clientOp ? { client_op: clientOp } : {}),
     })
     .select('id')
     .single();
   if (error) throw new Error(error.message);
   await logActivity(supabase, user.id, list.board_id, 'card.created', { title: cardTitle });
+  await logCardEvent(supabase, {
+    cardId: card.id,
+    boardId: list.board_id,
+    actorId: user.id,
+    kind: 'created',
+    detail: { title: cardTitle },
+  });
   return card!.id;
 }
 
 export async function updateCard(
   cardId: string,
-  patch: { title?: string; description?: string },
+  patch: {
+    title?: string;
+    description?: string;
+    priority?: string | null;
+    /** Stable tag ids (the workspace's shared vocabulary). */
+    tagIds?: string[];
+    assignees?: string[];
+  },
+  clientOp?: string | null,
 ) {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(cardId, 'card id');
-  await requireUser(supabase);
-  const update: Partial<Pick<CardRow, 'title' | 'description'>> = {};
+  const user = await requireUser(supabase);
+  const update: Partial<Pick<CardRow, 'title' | 'description' | 'priority'>> = {};
   if (patch.title !== undefined) update.title = cleanText(patch.title, 'Card title', 200);
   if (patch.description !== undefined)
     update.description = String(patch.description).slice(0, 8000);
-  const { error } = await supabase.from('cards').update(update).eq('id', id);
+  if (patch.priority !== undefined) {
+    if (patch.priority !== null && !['low', 'medium', 'high', 'urgent'].includes(patch.priority)) {
+      throw new Error('Unknown priority');
+    }
+    update.priority = patch.priority;
+  }
+  // A card opened mid-provisional still carries its temp id — the durable
+  // row (same client_op) is already in the database; resolve to it.
+  const resolved = await resolveCardId(supabase, id, clientOp);
+  // The timeline needs the BEFORE state (diffs read "from → to").
+  const { data: card } = await supabase
+    .from('cards')
+    .select('board_id, title, priority')
+    .eq('id', resolved)
+    .maybeSingle();
+  if (Object.keys(update).length > 0) {
+    const { error } = await supabase.from('cards').update(update).eq('id', resolved);
+    if (error) throw new Error(error.message);
+  }
+  // Timeline: renames and priority changes (after the write above — the
+  // "from" side was captured in `card`).
+  if (card?.board_id) {
+    if (update.title !== undefined && update.title !== card.title) {
+      await logCardEvent(supabase, {
+        cardId: resolved,
+        boardId: card.board_id,
+        actorId: user.id,
+        kind: 'renamed',
+        detail: { from: card.title, to: update.title },
+      });
+    }
+    if (update.priority !== undefined && update.priority !== card.priority) {
+      await logCardEvent(supabase, {
+        cardId: resolved,
+        boardId: card.board_id,
+        actorId: user.id,
+        kind: 'priority',
+        detail: { from: card.priority, to: update.priority },
+      });
+    }
+    if (update.description !== undefined) {
+      await logCardEvent(supabase, {
+        cardId: resolved,
+        boardId: card.board_id,
+        actorId: user.id,
+        kind: 'description',
+      });
+    }
+  }
+  // Assignments: replace the set (the assignees live in a join table).
+  if (patch.assignees !== undefined) {
+    const next = [...new Set(patch.assignees)].filter((userId) =>
+      /^[0-9a-f-]{36}$/i.test(userId),
+    );
+    const { data: previous } = await supabase
+      .from('card_assignees')
+      .select('user_id')
+      .eq('card_id', resolved);    const { error: delError } = await supabase
+      .from('card_assignees')
+      .delete()
+      .eq('card_id', resolved);
+    if (delError) throw new Error(delError.message);
+    if (next.length > 0) {
+      const { error: insError } = await supabase
+        .from('card_assignees')
+        .insert(next.map((userId) => ({ card_id: resolved, user_id: userId })));
+      if (insError) throw new Error(insError.message);
+    }
+    // Notify the people newly assigned to this card.
+    const before = new Set((previous ?? []).map((row) => row.user_id as string));
+    const added = next.filter((userId) => !before.has(userId));
+    if (added.length > 0 && card?.board_id) {
+      try {
+        await notifyUsers({
+          recipients: added,
+          kind: 'assignment',
+          cardId: resolved,
+          boardId: card.board_id,
+          actorId: user.id,
+        });
+      } catch (notifyError) {
+        console.error('assignment notifications failed:', notifyError);
+      }
+    }
+    // Timeline: who got assigned / unassigned, by display name.
+    if (card?.board_id) {
+      const removed = [...before].filter((userId) => !next.includes(userId));
+      if (added.length > 0 || removed.length > 0) {
+        const ids = [...new Set([...added, ...removed])];
+        const { data: people } = await supabase
+          .from('profiles')
+          .select('id, display_name, email')
+          .in('id', ids);
+        const nameOf = (personId: string) => {
+          const person = (people ?? []).find((entry) => entry.id === personId);
+          return person?.display_name ?? person?.email?.split('@')[0] ?? 'someone';
+        };
+        await logCardEvent(supabase, {
+          cardId: resolved,
+          boardId: card.board_id,
+          actorId: user.id,
+          kind: 'assignees',
+          detail: {
+            added: added.map(nameOf),
+            removed: removed.map(nameOf),
+          },
+        });
+      }
+    }
+  }
+  // Description mentions: everyone @referenced in a NEW description.
+  if (patch.description !== undefined && card?.board_id) {
+    try {
+      const mentioned = mentionedUsers(patch.description);
+      const teams = mentionedTeams(patch.description);
+      if (mentioned.length > 0 || teams.length > 0) {
+        const invisible = new Set(
+          await filterInaccessible(supabase, card.board_id, mentioned),
+        );
+        const direct = mentioned.filter((userId) => !invisible.has(userId));
+        let teamMentions: string[] = [];
+        if (teams.length > 0) {
+          const { data: teamRows } = await supabase
+            .from('team_members')
+            .select('user_id')
+            .in('team_id', teams);
+          teamMentions = [
+            ...new Set((teamRows ?? []).map((row) => row.user_id as string)),
+          ].filter((userId) => !invisible.has(userId));
+        }
+        // Description mentions respect each person's card level; the
+        // audience is just the mention targets (no quiet rows for edits).
+        await notifyChatActivity(supabase, {
+          scopeType: 'card',
+          boardId: card.board_id,
+          cardId: resolved,
+          actorId: user.id,
+          body: patch.description.slice(0, 200),
+          audience: [...new Set([...direct, ...teamMentions])],
+          directMentions: direct,
+          teamMentions,
+          mentionsAll: mentionsAll(patch.description),
+        });
+      }
+    } catch (notifyError) {
+      console.error('mention notifications failed:', notifyError);
+    }
+  }
+  // Tags: replace the linked set (tags themselves are shared rows).
+  if (patch.tagIds !== undefined) {
+    const next = [...new Set(patch.tagIds)].filter((tagId) => /^[0-9a-f-]{36}$/i.test(tagId));
+    // Timeline: the BEFORE names must be read before the replace lands.
+    const { data: beforeRows } = await supabase
+      .from('card_tags')
+      .select('tags(name)')
+      .eq('card_id', resolved);
+    const beforeNames = new Set(
+      ((beforeRows ?? []) as { tags: { name: string } | null }[])
+        .map((row) => row.tags?.name)
+        .filter((name): name is string => Boolean(name)),
+    );
+    const { error: delError } = await supabase.from('card_tags').delete().eq('card_id', resolved);
+    if (delError) throw new Error(delError.message);
+    if (next.length > 0) {
+      const { error: insError } = await supabase
+        .from('card_tags')
+        .insert(next.map((tagId) => ({ card_id: resolved, tag_id: tagId })));
+      if (insError) throw new Error(insError.message);
+    }
+    // Timeline: tags added / removed, by name.
+    if (card?.board_id) {
+      try {
+        const { data: tagRows } = await supabase
+          .from('tags')
+          .select('id, name')
+          .in('id', next);
+        const namesById = new Map((tagRows ?? []).map((row) => [row.id, row.name]));
+        const afterNames = next.map((tagId) => namesById.get(tagId)).filter(Boolean) as string[];
+        const addedNames = afterNames.filter((name) => !beforeNames.has(name));
+        const removedNames = [...beforeNames].filter((name) => !afterNames.includes(name));
+        if (addedNames.length > 0 || removedNames.length > 0) {
+          await logCardEvent(supabase, {
+            cardId: resolved,
+            boardId: card.board_id,
+            actorId: user.id,
+            kind: 'tags',
+            detail: { added: addedNames, removed: removedNames },
+          });
+        }
+      } catch (cause) {
+        console.error('tag timeline failed:', cause);
+      }
+    }
+  }
+}
+
+/** Find or create a workspace tag by name — the shared vocabulary: the
+ *  same name always resolves to the same stable id. The description only
+ *  rides the CREATE (re-using a tag never clobbers its description). */
+export async function findOrCreateTag(
+  workspaceId: string,
+  rawName: string,
+  description?: string,
+): Promise<{ id: string; name: string; description: string }> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const wsId = assertId(workspaceId, 'workspace id');
+  const name = cleanText(rawName, 'Tag', 24).trim().toLowerCase();
+  if (!name) throw new Error('Tag name is empty');
+  const { data: existing } = await supabase
+    .from('tags')
+    .select('id, name, description')
+    .eq('workspace_id', wsId)
+    .eq('name', name)
+    .maybeSingle();
+  if (existing) return { id: existing.id, name: existing.name, description: existing.description ?? '' };
+  const { data, error } = await supabase
+    .from('tags')
+    .insert({ workspace_id: wsId, name, description: String(description ?? '').slice(0, 500) })
+    .select('id, name, description')
+    .single();
+  if (error || !data) {
+    // A teammate created the same name in the same instant — re-read it.
+    const { data: raced } = await supabase
+      .from('tags')
+      .select('id, name, description')
+      .eq('workspace_id', wsId)
+      .eq('name', name)
+      .maybeSingle();
+    if (raced) return { id: raced.id, name: raced.name, description: raced.description ?? '' };
+    throw new Error(error?.message ?? 'Could not save the tag');
+  }
+  return { id: data.id, name: data.name, description: data.description ?? '' };
+}
+
+/** One entry in the card's activity timeline (the Settings tab streams
+ *  these live). `detail` carries display-ready values (names, not ids) —
+ *  the trail must read correctly long after the rows it describes are
+ *  gone. */
+export type CardEventRow = {
+  id: string;
+  kind: string;
+  detail: Record<string, unknown>;
+  actor_id: string | null;
+  created_at: string;
+};
+
+/** The card's timeline — newest last (a trail reads chronologically). */
+export async function getCardEvents(cardId: string): Promise<CardEventRow[]> {
+  'use server';
+  return fetchCardEvents(cardId);
+}
+
+/** The timeline fetch as a PLAIN function — the live producer calls this
+ *  (a 'use server' function called from producer context resolves as a
+ *  self-RPC that never lands; producers must do plain work). */
+async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
+  const supabase = createSupabaseRequestClient();
+  const { data, error } = await supabase
+    .from('card_events')
+    .select('id, kind, detail, actor_id, created_at')
+    .eq('card_id', assertId(cardId, 'card id'))
+    .order('created_at', { ascending: true })
+    .limit(100);
   if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    detail: (row.detail ?? {}) as Record<string, unknown>,
+    actor_id: row.actor_id,
+    created_at: row.created_at,
+  }));
+}
+
+/** Best-effort event write — an audit row never blocks the mutation. */
+async function logCardEvent(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+  input: {
+    cardId: string;
+    boardId: string;
+    actorId: string;
+    kind: string;
+    detail?: Record<string, unknown>;
+  },
+): Promise<void> {
+  try {
+    const { error } = await supabase.from('card_events').insert({
+      card_id: input.cardId,
+      board_id: input.boardId,
+      actor_id: input.actorId,
+      kind: input.kind,
+      detail: (input.detail ?? {}) as Record<string, unknown> as never,
+    });
+    if (error) console.error('card event failed:', error.message);
+  } catch (cause) {
+    console.error('card event failed:', cause);
+  }
+}
+
+/** The card's durable id: the given id, or — when the caller opened the
+ *  card while its provisional (relayed) row was still in view — the row
+ *  carrying the same client_op. RLS gates the fallback to visible cards. */async function resolveCardId(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+  cardId: string,
+  clientOp?: string | null,
+): Promise<string> {
+  const { data } = await supabase.from('cards').select('id').eq('id', cardId).maybeSingle();
+  if (data) return cardId;
+  if (clientOp) {
+    const fallback = await supabase
+      .from('cards')
+      .select('id')
+      .eq('client_op', clientOp)
+      .maybeSingle();
+    if (fallback.data) return fallback.data.id;
+  }
+  return cardId; // not found — let the caller's write surface the error
 }
 
 export async function deleteCard(cardId: string) {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(cardId, 'card id');
-  await requireUser(supabase);
+  const user = await requireUser(supabase);
   const { error } = await supabase.from('cards').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -456,55 +1066,436 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
   if (!Number.isFinite(position) || position <= 0 || position >= 1e15) {
     throw new Error('Invalid position');
   }
-  const { data: list } = await supabase.from('lists').select('board_id').eq('id', listId).maybeSingle();
-  if (!list) throw new Error('List not found');
+  // Timeline: read the source list BEFORE the write flips it.
+  const [{ data: target }, { data: cardBefore }] = await Promise.all([
+    supabase.from('lists').select('board_id, name').eq('id', listId).maybeSingle(),
+    supabase
+      .from('cards')
+      .select('board_id, lists(name)')
+      .eq('id', id)
+      .maybeSingle(),
+  ]);
+  if (!target) throw new Error('List not found');
+  const fromName =
+    ((cardBefore?.lists as { name: string | null } | null | undefined)?.name as string | undefined) ?? null;
   const { error } = await supabase
     .from('cards')
     .update({ list_id: listId, position })
     .eq('id', id);
   if (error) throw new Error(error.message);
-  await logActivity(supabase, user.id, list.board_id, 'card.moved', {});
+  await logActivity(supabase, user.id, target.board_id, 'card.moved', {});
+  // Only real list changes enter the timeline — same-list reorders are
+  // noise (they'd drown the trail during a sort).
+  if (fromName !== null && fromName !== target.name) {
+    await logCardEvent(supabase, {
+      cardId: id,
+      boardId: target.board_id,
+      actorId: user.id,
+      kind: 'moved',
+      detail: { from: fromName, to: target.name },
+    });
+  }
 }
 
 // ── comments ─────────────────────────────────────────────────────────────
 
-/** A card's comments with author names, newest last. */
-export const getCardComments = query(async (cardId: string) => {
+/** The drawer's comment row. */
+export type CommentRow = {
+  id: string;
+  body: string;
+  author: string;
+  created_at: string;
+  client_op: string | null;
+  /** The author's id + avatar — the chat-style rendering needs both. */
+  author_id: string | null;
+  avatar_url: string | null;
+};
+
+/** One card's comments with author names, newest last. */
+export async function getCardComments(
+  cardId: string,
+  cardClientOp?: string | null,
+  /** Pagination cursor: only comments OLDER than this timestamp (ISO). */
+  before?: string,
+  /** Page size — long discussions load incrementally. */
+  limit = 30,
+): Promise<CommentRow[]> {
   'use server';
   const supabase = createSupabaseRequestClient();
-  const { data, error } = await supabase
+  // A card opened mid-provisional still carries its temp id — resolve the
+  // durable row by client_op (RLS gates the lookup to visible cards).
+  const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
+  let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, profiles(display_name)')
-    .eq('card_id', assertId(cardId, 'card id'))
-    .order('created_at', { ascending: true });
+    .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
+    .eq('card_id', resolved)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (before) query = query.lt('created_at', before);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    body: row.body,
-    created_at: row.created_at,
-    author: row.profiles?.display_name ?? 'Someone',
+  // Newest-first from the database → chronological for display.
+  return (data ?? [])
+    .slice()
+    .reverse()
+    .map((row) => ({
+      id: row.id,
+      body: row.body,
+      created_at: row.created_at,
+      client_op: row.client_op,
+      author_id: row.user_id ?? null,
+      avatar_url:
+        (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
+          ?.avatar_url ?? null,
+      author:
+        (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
   }));
-}, 'card-comments');
+}
 
-export async function addComment(cardId: string, body: string) {
+/**
+ * A card's comments as a live source: newest last, refreshed the moment a
+ * comment lands. The drawer's engine drives this; the board relay makes
+ * posting instant. Same producer pattern as boardStream.
+ */
+export const cardCommentsStream = live(async function* (
+  cardId: string,
+  cardClientOp?: string | null,
+) {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  // The card may still be known by its provisional (temp) id — resolve the
+  // durable row BEFORE binding the channel filter, so the stream lives on
+  // the real card's comments regardless of when the client-side echo swaps.
+  const id = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
+
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error('Sign in to view comments');
+
+  const control = producerControls();
+  const channel = supabase
+    .channel(`comments:${id}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'card_comments', filter: `card_id=eq.${id}` },
+      control.onChanged,
+    )
+    .on('system', {}, (payload: { status?: string; message?: string }) => {
+      if (payload?.status === 'error') {
+        console.error('[cardCommentsStream] realtime system error:', payload.message);
+      }
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('cardCommentsStream channel error:', err);
+      if (status === 'CHANNEL_ERROR') console.error('cardCommentsStream channel error status');
+    });
+
+  async function comments(): Promise<CommentRow[]> {
+    // Latest page only — long discussions load older comments on demand
+    // (the drawer's "load earlier" feeds them through the engine).
+    const { data, error } = await supabase
+      .from('card_comments')
+      .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
+      .eq('card_id', id)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (error) throw new Error(error.message);
+    return (data ?? [])
+      .slice()
+      .reverse()
+      .map((row) => ({
+        id: row.id,
+        body: row.body,
+        created_at: row.created_at,
+        client_op: row.client_op,
+        author_id: row.user_id ?? null,
+        avatar_url:
+          (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
+            ?.avatar_url ?? null,
+        author:
+          (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+      }));
+  }
+
+  try {
+    yield await comments();
+    while (true) {
+      if (!control.pending) {
+        await new Promise<void>((resolve) => {
+          control.wake = resolve;
+        });
+      }
+      if (control.dead) return;
+      control.pending = false;
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      if (!control.pending) {
+        yield await comments();
+      }
+    }
+  } finally {
+    void supabase.removeChannel(channel);
+  }
+});
+
+/** Post a comment. Returns the minted row (for instant relays). */
+export async function addComment(
+  cardId: string,
+  body: string,
+  clientOp?: string,
+  cardClientOp?: string | null,
+): Promise<{ id: string; createdAt: string; author: string; authorId: string; avatarUrl: string | null }> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(cardId, 'card id');
   const text = cleanText(body, 'Comment', 4000);
+  // The card may still be known by its provisional (temp) id — the durable
+  // row carries the same client_op. RLS gates the fallback.
+  const resolved = await resolveCardId(supabase, id, cardClientOp);
   const { data: card } = await supabase
     .from('cards')
-    .select('board_id')
-    .eq('id', id)
+    .select('board_id, created_by')
+    .eq('id', resolved)
     .maybeSingle();
   if (!card) throw new Error('Card not found');
   const user = await requireUser(supabase);
-  const { error } = await supabase.from('card_comments').insert({
-    card_id: id,
-    user_id: user.id,
-    body: text,
-  });
-  if (error) throw new Error(error.message);
+  const { data: comment, error } = await supabase
+    .from('card_comments')
+    .insert({
+      card_id: resolved,
+      user_id: user.id,
+      body: text,
+      ...(clientOp ? { client_op: clientOp } : {}),
+    })
+    .select('id, created_at, user_id, profiles(display_name, avatar_url)')
+    .single();
+  if (error || !comment) throw new Error(error?.message ?? 'Could not post the comment');
   await logActivity(supabase, user.id, card.board_id, 'comment.created', {});
+  // Notifications by each person's CARD level (the same Slack-style
+  // settings as board chat): mentions stay loud; the card's followers
+  // (creator + assignees) default to 'all' — quiet chat rows.
+  try {
+    const { data: assigneeRows } = await supabase
+      .from('card_assignees')
+      .select('user_id')
+      .eq('card_id', resolved);
+    const followers = [
+      card.created_by ?? '',
+      ...(assigneeRows ?? []).map((row) => row.user_id as string),
+    ].filter(Boolean);
+    const mentioned = mentionedUsers(text);
+    const teamIds = mentionedTeams(text);
+    // The audience: everyone who can see the board (blocked people are
+    // surfaced to the AUTHOR instead — the drawer's access panel).
+    const board = await supabase
+      .from('boards')
+      .select('workspace_id')
+      .eq('id', card.board_id)
+      .maybeSingle();
+    const { data: memberRows } = await supabase
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', board.data?.workspace_id ?? '');
+    const candidates = (memberRows ?? []).map((row) => row.user_id as string);
+    const blocked = new Set(await filterInaccessible(supabase, card.board_id, candidates));
+    const audience = candidates.filter((userId) => !blocked.has(userId));
+    let teamMentions: string[] = [];
+    if (teamIds.length > 0) {
+      const { data: teamRows } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .in('team_id', teamIds);
+      teamMentions = [...new Set((teamRows ?? []).map((row) => row.user_id as string))]
+        .filter((userId) => audience.includes(userId));
+    }
+    await notifyChatActivity(supabase, {
+      scopeType: 'card',
+      boardId: card.board_id,
+      cardId: resolved,
+      actorId: user.id,
+      body: text,
+      audience,
+      directMentions: mentioned.filter((userId) => audience.includes(userId)),
+      teamMentions,
+      mentionsAll: mentionsAll(text),
+      followers,
+    });
+  } catch (notifyError) {
+    console.error('comment notifications failed:', notifyError);
+  }
+  return {
+    id: comment.id,
+    createdAt: comment.created_at,
+    authorId: comment.user_id ?? user.id,
+    avatarUrl:
+      (comment.profiles as { avatar_url: string | null } | null)?.avatar_url ?? null,
+    author:
+      (comment.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+  };
+}
+
+// ── board chat ────────────────────────────────────────────────────────────
+
+/** A board-chat row — same shape as a comment, attached to the board. */
+export type BoardMessageRow = {
+  id: string;
+  body: string;
+  author: string;
+  author_id: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  client_op: string | null;
+};
+
+async function boardChatSnapshot(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+  boardId: string,
+): Promise<BoardMessageRow[]> {
+  const { data, error } = await supabase
+    .from('board_messages')
+    .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
+    .eq('board_id', boardId)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .slice()
+    .reverse()
+    .map((row) => ({
+      id: row.id,
+      body: row.body,
+      created_at: row.created_at,
+      client_op: row.client_op,
+      author_id: row.user_id ?? null,
+      avatar_url:
+        (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
+          ?.avatar_url ?? null,
+      author:
+        (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+    }));
+}
+
+/** The board's chat as a live source (same producer pattern as comments). */
+export const boardChatStream = live(async function* (
+  boardId: string,
+): AsyncGenerator<BoardMessageRow[]> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(boardId, 'board id');
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error('Sign in to view this board');
+
+  const control = producerControls();
+  const channel = supabase
+    .channel(`board-chat:${id}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_messages', filter: `board_id=eq.${id}` },
+      control.onChanged,
+    )
+    .on('system', {}, (payload: { status?: string; message?: string }) => {
+      if (payload?.status === 'error') {
+        console.error('[boardChatStream] realtime system error:', payload.message);
+      }
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('boardChatStream channel error:', err);
+      if (status === 'CHANNEL_ERROR') console.error('boardChatStream channel error status');
+    });
+
+  try {
+    yield await boardChatSnapshot(supabase, id);
+    while (true) {
+      if (!control.pending) {
+        await new Promise<void>((resolve) => {
+          control.wake = resolve;
+        });
+      }
+      if (control.dead) return;
+      control.pending = false;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      if (!control.pending) {
+        yield await boardChatSnapshot(supabase, id);
+      }
+    }
+  } finally {
+    void supabase.removeChannel(channel);
+  }
+});
+
+/** The board's chat as a one-shot snapshot (the sync engine's refresh). */
+export async function getBoardChatSnapshot(boardId: string): Promise<BoardMessageRow[]> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  return boardChatSnapshot(supabase, assertId(boardId, 'board id'));
+}
+
+/** Post to the board chat. Returns the minted row (for optimistic adds). */
+export async function postBoardMessage(
+  boardId: string,
+  body: string,
+  clientOp?: string,
+): Promise<{ id: string; createdAt: string; authorId: string; avatarUrl: string | null; author: string }> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(boardId, 'board id');
+  const text = cleanText(body, 'Message', 4000);
+  const user = await requireUser(supabase);
+  const { data: message, error } = await supabase
+    .from('board_messages')
+    .insert({
+      board_id: id,
+      user_id: user.id,
+      body: text,
+      ...(clientOp ? { client_op: clientOp } : {}),
+    })
+    .select('id, created_at, user_id, profiles(display_name, avatar_url)')
+    .single();
+  if (error || !message) throw new Error(error?.message ?? 'Could not post the message');
+  await logActivity(supabase, user.id, id, 'chat.message', {});
+  // Notifications by each person's board-chat level (Slack-style):
+  // mentions stay loud, 'all' subscribers get quiet chat rows.
+  try {
+    const board = await supabase.from('boards').select('workspace_id').eq('id', id).maybeSingle();
+    const { data: memberRows } = await supabase
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', board.data?.workspace_id ?? '');
+    const candidates = (memberRows ?? []).map((row) => row.user_id as string);
+    const blocked = new Set(await filterInaccessible(supabase, id, candidates));
+    const audience = candidates.filter((userId) => !blocked.has(userId));
+    const directMentions = mentionedUsers(text).filter((userId) => audience.includes(userId));
+    const teamIds = mentionedTeams(text);
+    let teamMentions: string[] = [];
+    if (teamIds.length > 0) {
+      const { data: teamRows } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .in('team_id', teamIds);
+      teamMentions = [...new Set((teamRows ?? []).map((row) => row.user_id as string))]
+        .filter((userId) => audience.includes(userId));
+    }
+    await notifyChatActivity(supabase, {
+      scopeType: 'board',
+      boardId: id,
+      cardId: null,
+      actorId: user.id,
+      body: text,
+      audience,
+      directMentions,
+      teamMentions,
+      mentionsAll: mentionsAll(text),
+    });
+  } catch (notifyError) {
+    console.error('board chat notifications failed:', notifyError);
+  }
+  return {
+    id: message.id,
+    createdAt: message.created_at,
+    authorId: message.user_id ?? user.id,
+    avatarUrl:
+      (message.profiles as { avatar_url: string | null } | null)?.avatar_url ?? null,
+    author:
+      (message.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+  };
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -567,4 +1558,184 @@ async function logActivity(
     .from('activity')
     .insert({ board_id: boardId, user_id: userId, type, payload });
   if (error) console.error('activity log failed:', error.message);
+}
+
+// ── cross-board references + workspace search ─────────────────────────────
+
+/** A card reference target: any card on any board this caller can see. */
+export type CrossCard = {
+  id: string;
+  number: number | null;
+  title: string;
+  board_id: string;
+  board_name: string;
+};
+
+/** Every card the caller can see across the workspace's boards — the
+ *  chatbox's # dropdown (cross-board references) searches this list. */
+export async function getCrossBoardCards(workspaceId: string): Promise<CrossCard[]> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const wsId = assertId(workspaceId, 'workspace id');
+  const { data, error } = await supabase
+    .from('cards')
+    .select('id, number, title, boards!inner(id, name, workspace_id)')
+    .eq('boards.workspace_id', wsId)
+    .not('number', 'is', null)
+    .order('updated_at', { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => {
+    const board = row.boards as unknown as { id: string; name: string };
+    return {
+      id: row.id,
+      number: row.number,
+      title: row.title,
+      board_id: board.id,
+      board_name: board.name,
+    };
+  });
+}
+
+/** One search hit: a card across the workspace, with everything the
+ *  results list shows. */
+export type SearchHit = {
+  id: string;
+  number: number | null;
+  title: string;
+  board_id: string;
+  board_name: string;
+  priority: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  assignees: string[];
+  tags: { id: string; name: string }[];
+  comment_count: number;
+};
+
+/** Workspace-wide card search — the GitHub-issues view: any card on any
+ *  board the caller can see, filtered by text, tags, priority, assignee,
+ *  creator, or board. RLS scopes every row. */
+export async function searchCards(filters: {
+  query?: string;
+  tagIds?: string[];
+  /** Legacy single-select values (kept for older callers). */
+  priority?: string;
+  assigneeId?: string;
+  creatorId?: string;
+  /** Multi-select facets; a '__none' entry means "missing this thing". */
+  priorities?: string[];
+  assigneeIds?: string[];
+  creatorIds?: string[];
+  boardId?: string;
+  /** Cardinality filters: cards missing the thing. */
+  unassigned?: boolean;
+  noPriority?: boolean;
+  untagged?: boolean;
+}): Promise<SearchHit[]> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const user = await requireUser(supabase);
+
+  let query = supabase
+    .from('cards')
+    .select(
+      'id, number, title, priority, created_by, created_at, updated_at, boards!inner(id, name), card_assignees(user_id), card_tags(tags(id, name))',
+    )
+    .order('updated_at', { ascending: false })
+    .limit(200);
+
+  const text = filters.query?.trim();
+  if (text) {
+    const asNumber = text.startsWith('#') ? Number(text.slice(1)) : NaN;
+    if (Number.isFinite(asNumber)) {
+      query = query.eq('number', asNumber);
+    } else {
+      query = query.or(`title.ilike.%${text}%,description.ilike.%${text}%`);
+    }
+  }
+  // Creator facet: multi-select union (legacy single value rides along).
+  const creatorIds = [
+    ...(filters.creatorIds ?? []),
+    ...(filters.creatorId ? [filters.creatorId] : []),
+  ].filter((id) => id && id !== '__none');
+  if (creatorIds.length > 0) query = query.in('created_by', creatorIds);
+  if (filters.boardId) query = query.eq('boards.id', filters.boardId);
+  // Priority facet: a set of priorities plus (optionally) "no priority".
+  const priorities = [
+    ...(filters.priorities ?? []),
+    ...(filters.priority && filters.priority !== '__none' ? [filters.priority] : []),
+  ].filter((v) => v && v !== '__none');
+  const includeNoPriority =
+    (filters.priorities ?? []).includes('__none') ||
+    filters.priority === '__none' ||
+    filters.noPriority === true;
+  // The pure "no priority" case is a cheap SQL filter; mixed selections
+  // (some priorities + no priority) resolve in the post-filter below.
+  if (priorities.length === 0 && includeNoPriority) query = query.is('priority', null);
+  // Assignee facet: union of the selected people's cards; '__none' (the
+  // "Unassigned" leading option) adds cards with no assignees. When it's
+  // mixed with people, the SQL pre-filter can't express the union, so the
+  // post-filter settles it.
+  const assigneeIds = [
+    ...(filters.assigneeIds ?? []),
+    ...(filters.assigneeId ? [filters.assigneeId] : []),
+  ].filter((id) => id && id !== '__none');
+  const includeUnassigned =
+    (filters.assigneeIds ?? []).includes('__none') || filters.unassigned === true;
+  if (assigneeIds.length > 0 && !includeUnassigned) {
+    const { data: mine } = await supabase
+      .from('card_assignees')
+      .select('card_id')
+      .in('user_id', assigneeIds);
+    query = query.in(
+      'id',
+      [...new Set((mine ?? []).map((row) => row.card_id as string))],
+    );
+  }
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const tagFilter = new Set(filters.tagIds ?? []);
+  return (data ?? [])
+    .map((row) => {
+      const board = row.boards as unknown as { id: string; name: string };
+      const tags = ((row.card_tags ?? []) as { tags: { id: string; name: string } | null }[])
+        .map((link) => link.tags)
+        .filter((tag): tag is { id: string; name: string } => tag !== null);
+      return {
+        id: row.id,
+        number: row.number,
+        title: row.title,
+        board_id: board.id,
+        board_name: board.name,
+        priority: row.priority,
+        created_by: row.created_by,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        assignees: ((row.card_assignees ?? []) as { user_id: string }[]).map((a) => a.user_id),
+        tags,
+        comment_count: 0,
+      };
+    })
+    .filter((hit) => {
+      if (tagFilter.size > 0 && !hit.tags.some((tag) => tagFilter.has(tag.id))) return false;
+      if (filters.unassigned && hit.assignees.length > 0) return false;
+      if (filters.unassigned === false && hit.assignees.length === 0) return false;
+      if (filters.untagged && hit.tags.length > 0) return false;
+      if (priorities.length > 0 || includeNoPriority) {
+        const ok =
+          priorities.includes(hit.priority ?? '') ||
+          (includeNoPriority && hit.priority == null);
+        if (!ok) return false;
+      }
+      if (assigneeIds.length > 0 || includeUnassigned) {
+        const ok =
+          hit.assignees.some((a) => assigneeIds.includes(a)) ||
+          (includeUnassigned && hit.assignees.length === 0);
+        if (!ok) return false;
+      }
+      return true;
+    });
 }
