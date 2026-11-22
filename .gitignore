@@ -28,3 +28,7 @@ gitignore
 Thumbs.db
 .dev.vars
 .dev.vars.*
+
+# Local credentials / scratch
+cj.txt
+.dev-null
