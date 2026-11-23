@@ -67,7 +67,11 @@ SolidStart to their client model. Extend, don't replace.
    revalidate in the background (stale-while-revalidate). A second open of
    anything costs ~0 ms. First open still fetches cold — the cache only
    helps after the data has been seen once, which is exactly the "3-second
-   timeline" case: every open after the first is instant.
+   timeline" case: every open after the first is instant. Assets get the
+   same posture: the service worker keeps a TTL/LRU-bounded
+   stale-while-revalidate image cache (board card #51), so an avatar
+   rendered in a dozen places loads once and a re-upload's new URL
+   invalidates the old entry.
 2. **Delta sync.** Live producers stop re-sending full snapshots. A client
    that holds revision N asks for "rows since N," and change notifications
    ship the changed rows, not a re-fetch of the world. This fixes both
