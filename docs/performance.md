@@ -68,13 +68,22 @@ SolidStart to their client model. Extend, don't replace.
    anything costs ~0 ms. First open still fetches cold — the cache only
    helps after the data has been seen once, which is exactly the "3-second
    timeline" case: every open after the first is instant.
-2. **Delta sync.** Live producers stop re-sending full snapshots. The
-   `activity` table's id is already a **monotonic per-board revision**
-   (`snapshot()` puts it in `BoardSnapshot.revision`) — a client that holds
-   revision N asks for "rows since N," and change notifications ship the
-   changed rows, not a re-fetch of the world. This fixes both user-perceived
-   latency (echoes land sooner) and server cost (which scales per-viewer
-   today).
+2. **Delta sync.** Live producers stop re-sending full snapshots. A client
+   that holds revision N asks for "rows since N," and change notifications
+   ship the changed rows, not a re-fetch of the world. This fixes both
+   user-perceived latency (echoes land sooner) and server cost (which
+   scales per-viewer today).
+
+   **Prerequisite — the revision must be trustworthy first.** The
+   `activity` table's id *looks* like that cursor (`snapshot()` ships it as
+   `BoardSnapshot.revision`), but today it is **not** a safe resume point:
+   deletions (`deleteList`, `deleteCard`) and list renames never append
+   activity, and `logActivity` is deliberately best-effort — a failed
+   activity insert must never fail a mutation — so a resume from a given
+   id can miss committed changes. Phase 2 therefore **starts by** making
+   the change log complete and transactional (every mutation, deletions
+   included, records its activity row in the same commit) and coordinating
+   the snapshot/cursor read; only then do updates switch to deltas.
 3. **Prefetch by journey.** Warm the cache where the user is *about* to go:
    a notification arrives → its card, board and chats stream into the cache
    on `requestIdleCallback`; a board-grant arrives → the board snapshot
@@ -99,7 +108,7 @@ Each phase lands as its own PR, each leaves the app fully working.
 | --- | --- | --- |
 | 0 | **Profiling** — perf marks on every slow open path (board, chats, timeline, comments), a `?perf=1` debug panel with p50/p95 per label, server-side slow-path logs | in flight |
 | 1 | **Cache layer** — IndexedDB store + stale-while-revalidate hydration for board snapshots, chats, comments, timelines | planned |
-| 2 | **Delta sync** — revision-cursored deltas from the live producers instead of full snapshots | planned |
+| 2 | **Delta sync** — trustworthy transactional change log first (deletions included), then revision-cursored deltas from the live producers instead of full snapshots | planned |
 | 3 | **Prefetch by journey** — notification-driven and grant-driven cache warming | planned |
 | 4 | **Idle refresh + eviction** — TTL/LRU background refresh so cached data stays fresh without user action | planned |
 
