@@ -77,8 +77,9 @@ import {
 import {
   getMyWorkspaces,
   getWorkspaceSnapshot,
+  reserveSwitchIntent,
   setBoardAccess,
-  switchWorkspace,
+  switchWorkspaceOrdered,
   workspaceStream,
   type Member,
   type TeamView,
@@ -282,20 +283,35 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // workspace-scoped page must agree with what's on screen, so the active
   // choice follows the board's workspace. Board-only guests (no membership
   // in the board's workspace) keep their current choice untouched.
+  // The intent is RESERVED before the async membership lookup, so a lookup
+  // that resolves late can never claim the newest token and overwrite a
+  // newer selection; "already active" is decided by the coordinator itself
+  // from the cookie inside its serialized slot (never from a stale cached
+  // snapshot), so a corrective switch is always queued when it matters.
   createEffect(
     () => view().board.workspace_id,
     (boardWorkspaceId) => {
       if (!boardWorkspaceId) return;
+      const intent = reserveSwitchIntent();
       void (async () => {
-        const mine = await getMyWorkspaces();
-        if (!mine.some((ws) => ws.id === boardWorkspaceId)) return;
-        if (mine.some((ws) => ws.current && ws.id === boardWorkspaceId)) return;
         try {
-          await switchWorkspace(boardWorkspaceId);
-          revalidate('workspaces');
-          revalidate('boards');
+          const mine = await getMyWorkspaces();
+          // Board-only guest: no membership in the board's workspace —
+          // the reservation is simply abandoned (it never enters the
+          // request chain), and the active choice stays untouched.
+          if (!mine.some((ws) => ws.id === boardWorkspaceId)) return;
+          const outcome = await switchWorkspaceOrdered(boardWorkspaceId, intent);
+          // 'current' can still need a refresh: a superseded switch may
+          // have written the cookie without any caller revalidating, so
+          // the cached "current" flag can lag behind the cookie. Refresh
+          // on every non-superseded outcome.
+          if (outcome !== 'superseded') {
+            revalidate('workspaces');
+            revalidate('boards');
+          }
         } catch {
-          // Membership raced away mid-view — the board itself still renders.
+          // Best effort: on failure the active choice stays as it was —
+          // the board itself still renders, and the next visit retries.
         }
       })();
     },

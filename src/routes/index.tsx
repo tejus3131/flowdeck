@@ -16,7 +16,7 @@ import {
   type BoardSummary,
 } from '../lib/boards';
 import { createEngine } from '../lib/sync';
-import { getMyWorkspaces, createWorkspace, getWorkspaceSnapshot, switchWorkspace } from '../lib/workspaces';
+import { getMyWorkspaces, createWorkspace, enterWorkspaceOrdered, getWorkspaceSnapshot, switchWorkspaceOrdered } from '../lib/workspaces';
 import { createWorkspaceRelay } from '../lib/workspace-relay';
 import { MembershipWatch } from '../components/MembershipWatch';
 import {
@@ -422,7 +422,10 @@ function WorkspacePickerCard() {
     setBusy(id);
     setPickError(null);
     try {
-      await switchWorkspace(id);
+      const outcome = await switchWorkspaceOrdered(id);
+      // A superseded pick means a newer selection owns the outcome —
+      // don't refresh on its behalf.
+      if (outcome === 'superseded') return;
       revalidate('workspaces');
       revalidate('boards');
     } catch (cause) {
@@ -480,13 +483,20 @@ function CreateWorkspaceCard() {
   const [error, setError] = createSignal<string | null>(null);
 
   const create = async () => {
-    if (!name().trim() || busy()) return;
+    const submitted = name().trim();
+    if (!submitted || busy()) return;
     setBusy(true);
     setError(null);
     try {
-      await createWorkspace(name());
-      revalidate('workspaces');
-      revalidate('boards');
+      const outcome = await enterWorkspaceOrdered(() => createWorkspace(submitted));
+      if (outcome !== 'superseded') {
+        revalidate('workspaces');
+        revalidate('boards');
+      } else {
+        // A newer intent owns the outcome and this card stays mounted —
+        // become usable again instead of stranding on "Creating…".
+        setBusy(false);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create the workspace');
       setBusy(false);

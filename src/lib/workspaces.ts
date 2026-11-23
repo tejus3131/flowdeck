@@ -2,7 +2,7 @@
 // RLS is the security layer for every row op; these server functions add
 // the human rules on top (owner-only actions, self-service limits, friendly
 // errors) and send invite email through Resend when configured.
-import { query } from '@solidjs/router';
+import { query, revalidate } from '@solidjs/router';
 import { getRequestEvent, redirect } from '@solidjs/web';
 import { stringifySetCookie } from 'cookie';
 
@@ -502,6 +502,125 @@ export async function switchWorkspace(workspaceId: string): Promise<boolean> {
     stringifySetCookie({ name: WORKSPACE_COOKIE, value: workspaceId, path: '/', sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 }),
   );
   return true;
+}
+
+// ── client-side switch coordination ─────────────────────────────────────────
+// Every cookie-writing switch funnels through here: one request in flight
+// at a time, and only the LATEST intent reaches the server. Superseded
+// intents are skipped outright, so a stale in-flight response can never
+// overwrite a newer selection (explicit or automatic) — the races the
+// Copilot reviews on PRs #1 and #2 flagged.
+//
+//  - switchToken: ordering of COMMITTED intents (a queued request).
+//  - reservationToken: ordering of RESERVED intents — flows that must run
+//    an async check before deciding (board-page sync). Reserving before
+//    the check means a late-deciding older intent can never claim the
+//    newest token; an immediate (explicit) selection advances it too, so
+//    pending reservations die with the user's pick. An abandoned
+//    reservation (board-only guest) is inert: it doesn't enter the
+//    request chain and can't starve queued switches.
+export type SwitchOutcome = 'switched' | 'current' | 'superseded';
+
+let switchToken = 0;
+let reservationToken = 0;
+let switchChain: Promise<unknown> = Promise.resolve();
+
+/** Run `slot` after every earlier cookie write has settled — the
+ *  serialization point for ALL fd_ws writers on this device. The slot's
+ *  result (or error) is delivered to its caller; the chain itself never
+ *  rejects, so one failure can't starve whatever queues behind it. */
+function enqueueCookieWrite<T>(slot: () => Promise<T>): Promise<T> {
+  const run = switchChain.then(slot, slot);
+  switchChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+/** Reserve a place in the switch ordering WITHOUT committing — for flows
+ *  that must run an async check first (board-page membership lookup).
+ *  The reservation goes stale the moment any newer intent arrives. */
+export function reserveSwitchIntent(): number {
+  return ++reservationToken;
+}
+
+/** The fd_ws cookie as this device last received it — read synchronously
+ *  INSIDE the coordinator's serialized slot, where no other switch can be
+ *  writing it. A fresh read here settles "already active" where a cached
+ *  getMyWorkspaces snapshot can be stale mid-switch. Not httpOnly by
+ *  design (see switchWorkspace). */
+function activeWorkspaceCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${WORKSPACE_COOKIE}=([0-9a-f-]{36})`),
+  );
+  return match?.[1] ?? null;
+}
+
+export function switchWorkspaceOrdered(
+  workspaceId: string,
+  reserved?: number,
+): Promise<SwitchOutcome> {
+  // A stale reservation must be rejected BEFORE it can touch the ordering:
+  // bumping the commit token with a dead intent would cancel newer queued
+  // switches on the way to failing its own check.
+  if (reserved !== undefined && reserved !== reservationToken) {
+    return Promise.resolve('superseded');
+  }
+  const token = ++switchToken;
+  if (reserved === undefined) {
+    // An immediate (explicit) selection outranks every pending
+    // reservation — a reserved intent that decides later must not
+    // resurrect itself after this choice.
+    ++reservationToken;
+  }
+  return enqueueCookieWrite(async (): Promise<SwitchOutcome> => {
+    if (token !== switchToken) return 'superseded'; // a newer commit exists
+    if (reserved !== undefined && reserved !== reservationToken) {
+      return 'superseded'; // a newer reserved intent exists
+    }
+    // Race-free "already active": inside this serialized slot ours is
+    // the only cookie write that can be landing.
+    if (activeWorkspaceCookie() === workspaceId) return 'current';
+    await switchWorkspace(workspaceId);
+    // A newer intent may have committed while our request was in
+    // flight; if so, its outcome owns the UI — report superseded so
+    // callers suppress obsolete navigation and refreshes.
+    if (token !== switchToken) {
+      // Our cookie write DID land though, and the newer intent may yet
+      // fail — reconcile the cache here so it can never lag the cookie.
+      revalidate('workspaces');
+      revalidate('boards');
+      return 'superseded';
+    }
+    return 'switched';
+  });
+}
+
+/** Serialize a workspace-ENTERING operation (create workspace, accept
+ *  invite) whose response writes fd_ws server-side — the cookie writers
+ *  that only learn their target workspace from their own result. Same
+ *  ordering as switches: queued behind any in-flight cookie write, and
+ *  like any explicit choice it cancels pending automatic intents.
+ *  Resolves with the operation's own value, or 'superseded' when a newer
+ *  intent took over before or during it. */
+export function enterWorkspaceOrdered<T>(enter: () => Promise<T>): Promise<T | 'superseded'> {
+  const token = ++switchToken;
+  ++reservationToken; // explicit intent: pending reservations are stale now
+  return enqueueCookieWrite(async (): Promise<T | 'superseded'> => {
+    if (token !== switchToken) return 'superseded';
+    const value = await enter();
+    if (token !== switchToken) {
+      // The enter operation ran and wrote fd_ws, but a newer intent
+      // owns the outcome — reconcile the cache since the newer intent
+      // may yet fail.
+      revalidate('workspaces');
+      revalidate('boards');
+      return 'superseded';
+    }
+    return value;
+  });
 }
 
 /** Create a workspace — the signer becomes its owner. New accounts start
