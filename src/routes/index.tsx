@@ -416,13 +416,17 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
 function WorkspacePickerCard() {
   const workspaces = createMemo(() => getMyWorkspaces());
   const [busy, setBusy] = createSignal<string | null>(null);
+  const [pickError, setPickError] = createSignal<string | null>(null);
   const pick = async (id: string) => {
     if (busy()) return;
     setBusy(id);
+    setPickError(null);
     try {
       await switchWorkspace(id);
       revalidate('workspaces');
       revalidate('boards');
+    } catch (cause) {
+      setPickError(cause instanceof Error ? cause.message : 'Could not open that workspace');
     } finally {
       setBusy(null);
     }
@@ -435,6 +439,9 @@ function WorkspacePickerCard() {
       <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
         You're not in a workspace right now — pick one to open its boards.
       </p>
+      <Show when={pickError()}>
+        <p class="mt-1 text-sm text-red-500">{pickError()}</p>
+      </Show>
       <ul class="mt-4 grid gap-3 sm:grid-cols-2">
         <For each={workspaces()}>
           {(workspace) => (

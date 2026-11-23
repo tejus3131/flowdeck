@@ -1,6 +1,6 @@
 // The workspace switcher: shows the current workspace, switches between the
 // ones you're in, and links to member management for admins/owners.
-import { revalidate } from '@solidjs/router';
+import { revalidate, useNavigate } from '@solidjs/router';
 import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
 
 import { createWorkspace, getMyWorkspaces, switchWorkspace } from '../lib/workspaces';
@@ -9,6 +9,7 @@ export function WorkspaceSwitcher() {
   const workspaces = createMemo(() => getMyWorkspaces());
   const [open, setOpen] = createSignal(false);
   const [busy, setBusy] = createSignal<string | null>(null);
+  const [switchError, setSwitchError] = createSignal<string | null>(null);
   const [creating, setCreating] = createSignal(false);
   const [newName, setNewName] = createSignal('');
   const [createError, setCreateError] = createSignal<string | null>(null);
@@ -31,6 +32,7 @@ export function WorkspaceSwitcher() {
 
   const current = () => workspaces().find((w) => w.current) ?? workspaces()[0];
   const canManage = () => current()?.role === 'owner' || current()?.role === 'admin';
+  const navigate = useNavigate();
 
   const pick = async (id: string) => {
     if (id === current()?.id) {
@@ -38,12 +40,20 @@ export function WorkspaceSwitcher() {
       return;
     }
     setBusy(id);
+    setSwitchError(null);
     try {
       await switchWorkspace(id);
       // Refetch everything workspace-scoped: the list itself and boards.
       revalidate('workspaces');
       revalidate('boards');
       setOpen(false);
+      // Deep pages of the OLD workspace (members, team pages) must not
+      // linger under a new active choice — land on the dashboard instead.
+      navigate('/');
+    } catch (cause) {
+      setSwitchError(
+        cause instanceof Error ? cause.message : 'Could not switch workspace',
+      );
     } finally {
       setBusy(null);
     }
@@ -89,6 +99,9 @@ export function WorkspaceSwitcher() {
             <p class="px-2 pb-1 pt-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
               Workspaces
             </p>
+            <Show when={switchError()}>
+              <p class="px-2 pb-1 text-xs text-red-500">{switchError()}</p>
+            </Show>
             <For each={workspaces()}>
               {(workspace) => (
                 <button
