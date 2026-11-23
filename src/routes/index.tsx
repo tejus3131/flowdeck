@@ -16,7 +16,7 @@ import {
   type BoardSummary,
 } from '../lib/boards';
 import { createEngine } from '../lib/sync';
-import { getMyWorkspaces, createWorkspace, getWorkspaceSnapshot, switchWorkspaceOrdered } from '../lib/workspaces';
+import { getMyWorkspaces, createWorkspace, enterWorkspaceOrdered, getWorkspaceSnapshot, switchWorkspaceOrdered } from '../lib/workspaces';
 import { createWorkspaceRelay } from '../lib/workspace-relay';
 import { MembershipWatch } from '../components/MembershipWatch';
 import {
@@ -487,9 +487,11 @@ function CreateWorkspaceCard() {
     setBusy(true);
     setError(null);
     try {
-      await createWorkspace(name());
-      revalidate('workspaces');
-      revalidate('boards');
+      const outcome = await enterWorkspaceOrdered(() => createWorkspace(name()));
+      if (outcome !== 'superseded') {
+        revalidate('workspaces');
+        revalidate('boards');
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create the workspace');
       setBusy(false);

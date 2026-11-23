@@ -8,7 +8,7 @@ import { revalidate } from '@solidjs/router';
 import type { RouteProps } from '@solidjs/router';
 import { Show, createSignal, onSettled } from 'solid-js';
 
-import { acceptInvite, myProfileForRelay } from '../../lib/workspaces';
+import { acceptInvite, enterWorkspaceOrdered, myProfileForRelay } from '../../lib/workspaces';
 import { broadcastMemberJoined } from '../../lib/workspace-relay';
 
 export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
@@ -31,11 +31,12 @@ export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
         // A redirect carrier (e.g. "sign in first, with next") is applied
         // by the router and the call RESOLVES with no payload — only a
         // real acceptance returns { workspaceId }, and only that navigates.
-        const result = (await acceptInvite(props.params.token)) as
+        const result = (await enterWorkspaceOrdered(() => acceptInvite(props.params.token))) as
           | { workspaceId?: string }
           | null
-          | undefined;
-        if (result?.workspaceId) {
+          | undefined
+          | 'superseded';
+        if (result !== 'superseded' && result?.workspaceId) {
           // Joined + this device's workspace cookie switched. Refresh the
           // workspace list (the "current" flag reads the cookie) and land
           // on the dashboard.

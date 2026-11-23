@@ -301,7 +301,11 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           // request chain), and the active choice stays untouched.
           if (!mine.some((ws) => ws.id === boardWorkspaceId)) return;
           const outcome = await switchWorkspaceOrdered(boardWorkspaceId, intent);
-          if (outcome === 'switched') {
+          // 'current' can still need a refresh: a superseded switch may
+          // have written the cookie without any caller revalidating, so
+          // the cached "current" flag can lag behind the cookie. Refresh
+          // on every non-superseded outcome.
+          if (outcome !== 'superseded') {
             revalidate('workspaces');
             revalidate('boards');
           }

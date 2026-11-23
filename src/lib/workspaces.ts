@@ -523,7 +523,20 @@ export type SwitchOutcome = 'switched' | 'current' | 'superseded';
 
 let switchToken = 0;
 let reservationToken = 0;
-let switchChain: Promise<SwitchOutcome> = Promise.resolve('current');
+let switchChain: Promise<unknown> = Promise.resolve();
+
+/** Run `slot` after every earlier cookie write has settled — the
+ *  serialization point for ALL fd_ws writers on this device. The slot's
+ *  result (or error) is delivered to its caller; the chain itself never
+ *  rejects, so one failure can't starve whatever queues behind it. */
+function enqueueCookieWrite<T>(slot: () => Promise<T>): Promise<T> {
+  const run = switchChain.then(slot, slot);
+  switchChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 /** Reserve a place in the switch ordering WITHOUT committing — for flows
  *  that must run an async check first (board-page membership lookup).
@@ -562,23 +575,39 @@ export function switchWorkspaceOrdered(
     // resurrect itself after this choice.
     ++reservationToken;
   }
-  switchChain = switchChain
-    .catch(() => 'current' as SwitchOutcome)
-    .then(async (): Promise<SwitchOutcome> => {
-      if (token !== switchToken) return 'superseded'; // a newer commit exists
-      if (reserved !== undefined && reserved !== reservationToken) {
-        return 'superseded'; // a newer reserved intent exists
-      }
-      // Race-free "already active": this slot is the only cookie writer.
-      if (activeWorkspaceCookie() === workspaceId) return 'current';
-      await switchWorkspace(workspaceId);
-      // A newer intent may have committed while our request was in
-      // flight; if so, its outcome owns the UI — report superseded so
-      // callers suppress obsolete navigation and refreshes.
-      if (token !== switchToken) return 'superseded';
-      return 'switched';
-    });
-  return switchChain;
+  return enqueueCookieWrite(async (): Promise<SwitchOutcome> => {
+    if (token !== switchToken) return 'superseded'; // a newer commit exists
+    if (reserved !== undefined && reserved !== reservationToken) {
+      return 'superseded'; // a newer reserved intent exists
+    }
+    // Race-free "already active": inside this serialized slot ours is
+    // the only cookie write that can be landing.
+    if (activeWorkspaceCookie() === workspaceId) return 'current';
+    await switchWorkspace(workspaceId);
+    // A newer intent may have committed while our request was in
+    // flight; if so, its outcome owns the UI — report superseded so
+    // callers suppress obsolete navigation and refreshes.
+    if (token !== switchToken) return 'superseded';
+    return 'switched';
+  });
+}
+
+/** Serialize a workspace-ENTERING operation (create workspace, accept
+ *  invite) whose response writes fd_ws server-side — the cookie writers
+ *  that only learn their target workspace from their own result. Same
+ *  ordering as switches: queued behind any in-flight cookie write, and
+ *  like any explicit choice it cancels pending automatic intents.
+ *  Resolves with the operation's own value, or 'superseded' when a newer
+ *  intent took over before or during it. */
+export function enterWorkspaceOrdered<T>(enter: () => Promise<T>): Promise<T | 'superseded'> {
+  const token = ++switchToken;
+  ++reservationToken; // explicit intent: pending reservations are stale now
+  return enqueueCookieWrite(async (): Promise<T | 'superseded'> => {
+    if (token !== switchToken) return 'superseded';
+    const value = await enter();
+    if (token !== switchToken) return 'superseded'; // superseded mid-flight
+    return value;
+  });
 }
 
 /** Create a workspace — the signer becomes its owner. New accounts start

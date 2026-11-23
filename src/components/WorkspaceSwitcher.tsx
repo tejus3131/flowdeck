@@ -3,7 +3,7 @@
 import { revalidate, useNavigate } from '@solidjs/router';
 import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
 
-import { createWorkspace, getMyWorkspaces, switchWorkspaceOrdered } from '../lib/workspaces';
+import { createWorkspace, enterWorkspaceOrdered, getMyWorkspaces, switchWorkspaceOrdered } from '../lib/workspaces';
 
 export function WorkspaceSwitcher() {
   const workspaces = createMemo(() => getMyWorkspaces());
@@ -35,10 +35,9 @@ export function WorkspaceSwitcher() {
   const navigate = useNavigate();
 
   const pick = async (id: string) => {
-    if (id === current()?.id) {
-      setOpen(false);
-      return;
-    }
+    // No "already current" shortcut: the cached list can be stale while
+    // another switch is in flight, and the coordinator's in-slot cookie
+    // check decides "already active" race-free (and without a request).
     setBusy(id);
     setSwitchError(null);
     try {
@@ -67,12 +66,14 @@ export function WorkspaceSwitcher() {
     setBusy('create');
     setCreateError(null);
     try {
-      await createWorkspace(newName());
-      revalidate('workspaces');
-      revalidate('boards');
-      setCreating(false);
-      setNewName('');
-      setOpen(false);
+      const outcome = await enterWorkspaceOrdered(() => createWorkspace(newName()));
+      if (outcome !== 'superseded') {
+        revalidate('workspaces');
+        revalidate('boards');
+        setCreating(false);
+        setNewName('');
+        setOpen(false);
+      }
     } catch (cause) {
       setCreateError(cause instanceof Error ? cause.message : 'Could not create the workspace');
     } finally {
