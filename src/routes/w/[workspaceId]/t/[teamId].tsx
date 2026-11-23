@@ -4,7 +4,7 @@
 // and can be reinstated by workspace admins).
 import { Title } from '@solidjs/meta';
 import { liveQuery, useNavigate, type RouteProps } from '@solidjs/router';
-import { For, Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled } from 'solid-js';
 
 import { Avatar } from '../../../../components/Avatar';
 import { getMe } from '../../../../lib/auth';
@@ -89,21 +89,37 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
   // navigating from one missing team to another re-arms verification —
   // and while a verification is in flight, the page stays in its
   // loading state instead of flashing "doesn't exist" first.
+  // Each attempt is numbered and its timer is cleaned up when the
+  // effect re-runs or the page disposes: only the CURRENT attempt may
+  // fetch and clear the loading state (a stale attempt finishing after
+  // an A → B → A bounce must not unguard the newer verification), and
+  // the stream delivering the team mid-delay cancels the fetch outright.
   const [verifyingMissing, setVerifyingMissing] = createSignal<string | null>(null);
+  let verificationAttempt = 0;
   createEffect(
     () => {
       if (!detail()) return null;
       return team() === null && deactivated() === null ? props.params.teamId : null;
     },
     (missingTeamId) => {
-      if (!missingTeamId) return;
+      if (!missingTeamId) {
+        setVerifyingMissing(null);
+        return;
+      }
       setVerifyingMissing(missingTeamId);
-      setTimeout(() => {
+      const attempt = ++verificationAttempt;
+      const timer = setTimeout(() => {
         void engine
           .refresh()
           .catch(() => {})
-          .finally(() => setVerifyingMissing((current) => (current === missingTeamId ? null : current)));
+          .finally(() => {
+            if (attempt === verificationAttempt) setVerifyingMissing(null);
+          });
       }, 300);
+      onCleanup(() => {
+        clearTimeout(timer);
+        verificationAttempt++;
+      });
     },
   );
 
