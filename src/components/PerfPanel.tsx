@@ -106,7 +106,8 @@ export function PerfPanel() {
       </Show>
       <p class="mt-2 text-[11px] leading-4 text-neutral-500">
         Marks: board-open, board-refresh, board-chat-open, card-comments-open,
-        card-timeline-open. Budgets live in docs/performance.md.
+        card-timeline-open (paint) / card-timeline-fetch (revalidate).
+        Budgets live in docs/performance.md.
       </p>
     </div>
   );

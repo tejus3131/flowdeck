@@ -12,6 +12,7 @@ import { NotificationBell } from './components/NotificationBell';
 import { PushSetup } from './components/PushSetup';
 import { PerfPanel } from './components/PerfPanel';
 import { perfActive } from './lib/perf';
+import { cachePersist } from './lib/cache';
 import './app.css';
 
 export default function App() {
@@ -25,6 +26,11 @@ export default function App() {
         // localStorage); Show reads it below so the panel reacts to the
         // URL param and its own Close button.
         const perfOn = perfActive();
+        // Ask the browser not to evict the cache under storage pressure
+        // (best-effort, client-only — see lib/cache.ts).
+        onSettled(() => {
+          cachePersist();
+        });
         return (
           <>
             <Title>{env.VITE_APP_NAME}</Title>
