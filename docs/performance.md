@@ -79,8 +79,12 @@ SolidStart to their client model. Extend, don't replace.
    transaction as every board-scoped change — deletions included, and
    regardless of which path wrote (server functions, MCP, direct SQL).
    The app-side `activity` log stays as the human-readable audit trail;
-   it no longer powers the revision. Phase 2b switches the live stream
-   protocol to deltas on top of this cursor.
+   it no longer powers the revision. Phase 2b folds realtime change
+   events into a per-connection in-memory snapshot — no database work on
+   the hot path — keeping the wire shape (and the sync engine's echo,
+   guard and revert semantics) untouched. Wire-level delta payloads can
+   follow later if profiling shows the wire matters; the expensive part
+   (six queries × viewers × changes) is gone.
 3. **Prefetch by journey.** Warm the cache where the user is *about* to go:
    a notification arrives → its card, board and chats stream into the cache
    on `requestIdleCallback`; a board-grant arrives → the board snapshot
@@ -105,7 +109,7 @@ Each phase lands as its own PR, each leaves the app fully working.
 | --- | --- | --- |
 | 0 | **Profiling** — perf marks on every slow open path (board, chats, timeline, comments), a `?perf=1` debug panel with p50/p95 per label, server-side slow-path logs | in flight |
 | 1 | **Cache layer** — IndexedDB store + stale-while-revalidate hydration for board snapshots, chats, comments, timelines | in flight |
-| 2 | **Delta sync** — 2a: trustworthy revision (`board_revisions`, migration 0032) · 2b: revision-cursored deltas from the live producers instead of full snapshots | 2a in flight |
+| 2 | **Delta sync** — 2a: trustworthy revision (`board_revisions`, migration 0032) ✓ · 2b: realtime events fold into the per-connection snapshot instead of full re-queries (engine and wire shape unchanged) | 2b in flight |
 | 3 | **Prefetch by journey** — notification-driven and grant-driven cache warming | planned |
 | 4 | **Idle refresh + eviction** — TTL/LRU background refresh so cached data stays fresh without user action | planned |
 

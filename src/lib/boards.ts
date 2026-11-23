@@ -12,6 +12,7 @@ import { query } from '@solidjs/router';
 import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
 
+import { applyFold, planFold, type FoldEvent } from './board-fold';
 import { createSupabaseRequestClient } from '../server/supabase';
 import {
   filterInaccessible,
@@ -286,46 +287,111 @@ export const boardStream = live(async function* (
   // loop sleeps until a postgres_changes event pings it.
   const control = producerControls();
 
+  // The fold (Phase 2b): events land as FoldEvents, the loop debounces a
+  // burst and folds it into the in-memory snapshot instead of re-querying
+  // the board — no database work on the hot path, echoes land in the
+  // debounce window.
+  const batch: FoldEvent[] = [];
+  const push = (event: FoldEvent) => {
+    batch.push(event);
+    control.onChanged();
+  };
+  /** How many folded batches pass before a periodic full re-sync — the
+   *  drift bound for missed events (net four with the client's durable
+   *  poll, the resync events, and reconnect snapshots). */
+  const RESYNC_EVERY_BATCHES = 20;
+  let batches = 0;
+
   const channel = supabase
     .channel(`board:${id}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'lists', filter: `board_id=eq.${id}` },
-      control.onChanged,
+      (payload: { eventType: string; new: unknown; old: { id?: string } }) => {
+        if (payload.eventType === 'DELETE') push({ kind: 'list-delete', id: String(payload.old?.id) });
+        else push({ kind: 'list-upsert', row: payload.new as ListRow });
+      },
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'cards', filter: `board_id=eq.${id}` },
-      control.onChanged,
+      (payload: { eventType: string; new: { id?: string }; old: { id?: string } }) => {
+        if (payload.eventType === 'DELETE') push({ kind: 'card-delete', id: String(payload.old?.id) });
+        else push({ kind: 'card-touch', id: String(payload.new?.id) });
+      },
     )
     // Per-board access overrides matter here too: a view→edit change
     // re-shapes what RLS lets this caller see.
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'board_access', filter: `board_id=eq.${id}` },
-      control.onChanged,
+      () => push({ kind: 'resync' }),
     )
     // Team grants reach this board the same way (a team this viewer is in
     // gains access → the page flips live).
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'board_team_access', filter: `board_id=eq.${id}` },
-      control.onChanged,
+      () => push({ kind: 'resync' }),
     )
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, control.onChanged)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () =>
+      push({ kind: 'resync' }),
+    )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'boards', filter: `id=eq.${id}` },
-      control.onChanged,
+      (payload: { new: unknown }) => {
+        // A DELETE carries no `new` row — nothing to fold. The cascade's
+        // list/card deletes still fold (emptying the view), so without
+        // this the page sits on a vanished board until the 20s poll
+        // flips it to denied. A full re-snapshot answers in ~80ms.
+        if (!payload.new) {
+          push({ kind: 'resync' });
+          return;
+        }
+        push({ kind: 'board-row', row: payload.new as BoardSummary });
+      },
     )
-    // Assignments reshape the board too (avatars on cards): re-snapshot.
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_assignees' }, control.onChanged)
-    // Same for the tag links and the workspace's tag vocabulary.
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_tags' }, control.onChanged)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, control.onChanged)
+    // Assignments reshape the board too (avatars on cards): the card's
+    // view is re-fetched for the touched card only.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'card_assignees' },
+      (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
+        push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
+    )
+    // Same for the tag links; the workspace's tag VOCABULARY (a rename)
+    // reshapes chips on cards we cannot name — full resync.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_tags' }, (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
+      push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
+    )
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () =>
+      push({ kind: 'resync' }),
+    )
     // Comment stats ride the snapshot: agents and API writes (which skip
-    // the relay) still bump the unseen badges live.
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_comments' }, control.onChanged)
+    // the relay) still bump the unseen badges live — re-fetch the card.
+    // (A comment DELETE carries only its own PK in `old` — no card to
+    // touch; the periodic re-sync converges that rare case.)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'card_comments' },
+      (payload: { new: { card_id?: string }; old: { card_id?: string } }) => {
+        const cardId = (payload.new ?? payload.old)?.card_id;
+        if (cardId) push({ kind: 'card-touch', id: String(cardId) });
+      },
+    )
+    // The exact per-board revision (migration 0032) rides every change.
+    // A DELETE carries no `new` (and would push a bogus 0) — skip it; the
+    // boards handler's resync owns board deletion.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_revisions', filter: `board_id=eq.${id}` },
+      (payload: { new: { revision?: number } }) => {
+        if (payload.new?.revision !== undefined) {
+          push({ kind: 'revision', value: Number(payload.new.revision) });
+        }
+      },
+    )
     // A rejected postgres_changes binding (a table missing from the
     // supabase_realtime publication, for one) arrives as a `system` error
     // AFTER the join reply — the channel still reports SUBSCRIBED and no
@@ -345,7 +411,8 @@ export const boardStream = live(async function* (
 
   try {
     // Current value first — the reconnect contract.
-    yield await snapshot(supabase, id);
+    let current = await snapshot(supabase, id);
+    yield current;
     while (true) {
       if (!control.pending) {
         await new Promise<void>((resolve) => {
@@ -354,14 +421,38 @@ export const boardStream = live(async function* (
       }
       if (control.dead) return; // viewer went away — drop the channel
       control.pending = false;
-      // Debounce bursts: one snapshot for a flurry of changes.
+      // Debounce bursts: one fold for a flurry of changes.
       await new Promise((resolve) => setTimeout(resolve, 80));
       if (!control.pending) {
-        console.log(`[boardStream ${id.slice(0, 8)}] change detected — re-snapshotting`);
-        yield await snapshot(supabase, id);
+        const events = batch.splice(0, batch.length);
+        const plan = planFold(events);
+        // Visibility-shaping changes (and the periodic drift bound) fold
+        // to a full re-snapshot; everything else applies in memory.
+        if (plan.resync || ++batches % RESYNC_EVERY_BATCHES === 0) {
+          console.log(
+            `[boardStream ${id.slice(0, 8)}] ${plan.resync ? 'visibility change' : 'periodic re-sync'} — re-snapshotting`,
+          );
+          current = await snapshot(supabase, id);
+        } else {
+          const views = await fetchCardViews(supabase, id, plan.cardTouches);
+          const next: BoardSnapshot = {
+            ...current,
+            lists: current.lists.slice(),
+            cards: current.cards.slice(),
+          };
+          if (applyFold(next, plan, views)) {
+            current = await snapshot(supabase, id);
+          } else {
+            current = next;
+          }
+          console.log(
+            `[boardStream ${id.slice(0, 8)}] folded ${events.length} events — ${plan.cardTouches.size} card fetch, ${plan.cardDeletes.size} delete`,
+          );
+        }
+        yield current;
       }
-      // A change that landed mid-snapshot leaves `pending` set and the
-      // loop takes another turn immediately.
+      // A change that landed mid-fold leaves `pending` set and the loop
+      // takes another turn immediately.
     }
   } finally {
     // The viewer disconnected (or the generator was rejected): close the
@@ -473,6 +564,66 @@ async function snapshot(
   };
   warnSlow(startedAt, `board snapshot (${boardId})`);
   return value;
+}
+
+/** Fresh CardViews for exactly the touched cards — the fold's one small
+ *  query per burst (the join rows — tags, assignees, comment stats — ride
+ *  the view, not the event payload). Board-scoped, so events from other
+ *  boards on the unfiltered card-side channels legitimately miss here. */
+async function fetchCardViews(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+  boardId: string,
+  cardIds: Set<string>,
+): Promise<CardView[]> {
+  if (cardIds.size === 0) return [];
+  const ids = [...cardIds];
+  const [cardsRes, assigneesRes, commentsRes] = await Promise.all([
+    supabase
+      .from('cards')
+      .select('*, card_tags(tag_id, tags(id, name))')
+      .eq('board_id', boardId)
+      .in('id', ids),
+    supabase.from('card_assignees').select('card_id, user_id').in('card_id', ids),
+    supabase.from('card_comments').select('card_id, created_at').in('card_id', ids),
+  ]);
+  if (cardsRes.error) throw new Error(cardsRes.error.message);
+  // Throw-on-error like snapshot(): a transient failure of the assignee
+  // or comment queries must not fold silently-wrong stats — the throw
+  // ends the generator, live() reconnects, and the reconnect's fresh
+  // full snapshot restores truth in ~1s instead of waiting for a resync.
+  if (assigneesRes.error) throw new Error(assigneesRes.error.message);
+  if (commentsRes.error) throw new Error(commentsRes.error.message);
+  const assigneeMap = new Map<string, string[]>();
+  for (const row of (assigneesRes.data ?? []) as { card_id: string; user_id: string }[]) {
+    const list = assigneeMap.get(row.card_id) ?? [];
+    list.push(row.user_id);
+    assigneeMap.set(row.card_id, list);
+  }
+  const statMap = new Map<string, { count: number; last: string | null }>();
+  for (const row of (commentsRes.data ?? []) as { card_id: string; created_at: string }[]) {
+    const stat = statMap.get(row.card_id) ?? { count: 0, last: null };
+    stat.count += 1;
+    if (!stat.last || row.created_at > stat.last) stat.last = row.created_at;
+    statMap.set(row.card_id, stat);
+  }
+  return (
+    (cardsRes.data ?? []) as unknown as (CardRow & {
+      card_tags?: { tag_id: string; tags: { id: string; name: string } | null }[];
+    })[]
+  ).map((card) => {
+    const { card_tags: links, ...row } = card;
+    const stat = statMap.get(card.id);
+    return {
+      ...row,
+      comment_count: stat?.count ?? 0,
+      last_comment_at: stat?.last ?? null,
+      assignees: assigneeMap.get(card.id) ?? [],
+      tags: (links ?? [])
+        .map((link) => link.tags)
+        .filter((tag): tag is { id: string; name: string } => tag !== null)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  });
 }
 
 const EMPTY_BOARD: BoardSummary = {
