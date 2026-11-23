@@ -6,7 +6,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled
 import { Avatar } from '../../components/Avatar';
 import { PriorityPill } from '../../components/PriorityPill';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
-import { perfFirstValue, perfTrack, perfStart, perfEnd } from '../../lib/perf';
+import { perfFirstValue, perfTrack, perfStart, perfEnd, perfCancel } from '../../lib/perf';
 import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
 import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
@@ -162,7 +162,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     // The cached stream seeds the view instantly on a warm open; the live
     // producer revalidates and every yield refreshes the cache.
     (boardId) =>
-      perfFirstValue(cachedStream(`board:${boardId}`, () => boardLive(boardId)), 'board-open'),
+      perfFirstValue(
+        cachedStream(`board:${boardId}`, () => boardLive(boardId), 'board-revalidate'),
+        'board-open',
+      ),
     () => props.params.boardId,
     EMPTY,
     () => boardLive.status(props.params.boardId),
@@ -2658,8 +2661,12 @@ function CardDrawer(props: {
       let alive = true;
       // Perf mark: the settings-tab open ends at the first PAINT — the
       // cached page (a warm open, ~1ms) or the fetch (a cold open). The
-      // fetch itself carries its own mark, card-timeline-fetch.
-      perfStart('card-timeline-open');
+      // fetch itself carries its own mark, card-timeline-fetch. The token
+      // plus the painted flag close two races: a failed cold open still
+      // records (a slow failure is a slow open), and a cache read that
+      // resolves AFTER the fetch never paints stale rows over fresh ones.
+      const openToken = perfStart('card-timeline-open');
+      let painted = false;
       const load = async (first: boolean) => {
         try {
           const rows = first
@@ -2668,20 +2675,25 @@ function CardDrawer(props: {
           if (alive) {
             setEvents(rows);
             cachePut(`card-timeline:${id}`, rows);
-            if (first) perfEnd('card-timeline-open');
+            if (first) {
+              painted = true;
+              perfEnd('card-timeline-open', openToken);
+            }
           }
         } catch {
-          // the timeline is best-effort decoration
+          // The timeline is best-effort decoration — but the open mark
+          // must not dangle on a failed cold fetch.
+          if (first) perfEnd('card-timeline-open', openToken);
         }
       };
       // Stale-while-revalidate: the cache paints instantly when this
       // card's timeline was seen before; the fetch revalidates either
-      // way. Whichever paints first ends the open mark (the second end
-      // no-ops).
+      // way. Whichever paints first ends the open mark (the other end
+      // no-ops on the token).
       void cacheGet<CardEventRow[]>(`card-timeline:${id}`).then((cached) => {
-        if (alive && cached) {
+        if (alive && cached && !painted) {
           setEvents(cached);
-          perfEnd('card-timeline-open');
+          perfEnd('card-timeline-open', openToken);
         }
       });
       void load(true);
@@ -2689,6 +2701,9 @@ function CardDrawer(props: {
       return () => {
         alive = false;
         clearInterval(timer);
+        // An open abandoned before its data arrived is not a sample —
+        // cancel quietly so it does not linger in perfInFlight either.
+        perfCancel('card-timeline-open', openToken);
       };
     },
   );
@@ -2754,7 +2769,11 @@ function CardDrawer(props: {
         // the cached page instantly; the live value revalidates and
         // refreshes the cache.
         for await (const list of await perfFirstValue(
-          cachedStream(`card-comments:${key}`, () => commentsLive(key, props.clientOp ?? null)),
+          cachedStream(
+            `card-comments:${key}`,
+            () => commentsLive(key, props.clientOp ?? null),
+            'card-comments-revalidate',
+          ),
           'card-comments-open',
         )) {
           yield { list };
@@ -3837,7 +3856,7 @@ function BoardChat(props: {
         // Perf mark: chat panel open → first value. Warm opens paint the
         // cached page instantly (cachedStream), the live value revalidates.
         for await (const list of await perfFirstValue(
-          cachedStream(`board-chat:${key}`, () => chatLive(key)),
+          cachedStream(`board-chat:${key}`, () => chatLive(key), 'board-chat-revalidate'),
           'board-chat-open',
         )) {
           yield { list };

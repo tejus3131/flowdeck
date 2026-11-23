@@ -10,8 +10,10 @@ import {
   cacheClear,
   cacheGet,
   cachePut,
+  cacheSetUser,
   cachedStream,
 } from './cache';
+import { perfStats } from './perf';
 
 /** cachePut is fire-and-forget by design; tests wait a macrotask so every
  *  pending write (and any sweep it triggered) has landed. */
@@ -24,6 +26,7 @@ async function* stream<T>(...values: T[]): AsyncGenerator<T> {
 describe('client cache', () => {
   afterEach(async () => {
     cacheClear();
+    cacheSetUser('');
     await settle();
   });
 
@@ -73,7 +76,7 @@ describe('client cache', () => {
     }
     expect(seen).toEqual([7, 8]);
     await settle(); // writes are fire-and-forget
-    expect(await cacheGet<number[]>('cs')).toBe(8);
+    expect(await cacheGet<number>('cs')).toBe(8);
   });
 
   it('cachedStream: warm open seeds the cached page first, live revalidates', async () => {
@@ -86,6 +89,26 @@ describe('client cache', () => {
     expect(seen).toEqual([8, 9]);
     await settle();
     expect(await cacheGet<number[]>('cs2')).toBe(9);
+  });
+
+  it('scopes every key to the current user (stale sessions cannot leak)', async () => {
+    cacheSetUser('u1');
+    cachePut('k', 'v1');
+    await settle();
+    cacheSetUser('u2');
+    expect(await cacheGet('k')).toBeNull(); // u2 cannot read u1's entry
+    cacheSetUser('u1');
+    expect(await cacheGet('k')).toBe('v1'); // untouched for u1
+  });
+
+  it('cachedStream: liveMark ends at the first live value', async () => {
+    const seen: number[] = [];
+    for await (const value of cachedStream('cs4', () => stream(5), 'cs-live')) {
+      seen.push(value);
+    }
+    expect(seen).toEqual([5]);
+    const mark = perfStats().find((row) => row.label === 'cs-live');
+    expect(mark).toMatchObject({ count: 1 });
   });
 
   it('cachedStream: a source error propagates after any seed', async () => {

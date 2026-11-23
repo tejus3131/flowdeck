@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  perfCancel,
   perfClear,
   perfEnd,
   perfFirstValue,
@@ -31,6 +32,14 @@ describe('perf marks', () => {
     expect(ms).toBeGreaterThanOrEqual(0);
     expect(stat('t-pair')).toMatchObject({ count: 1 });
     expect(stat('t-pair')!.last).toBe(ms);
+    expect(perfInFlight()).toEqual([]);
+  });
+
+  it('cancels an open mark without recording (an abandoned open is not a sample)', () => {
+    const token = perfStart('t-cancel');
+    expect(perfInFlight()).toContain('t-cancel');
+    perfCancel('t-cancel', token);
+    expect(stat('t-cancel')).toBeUndefined();
     expect(perfInFlight()).toEqual([]);
   });
 

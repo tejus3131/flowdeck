@@ -1,5 +1,5 @@
 import { Title } from '@solidjs/meta';
-import { Loading, Show, createMemo, onSettled } from 'solid-js';
+import { Loading, Show, createEffect, createMemo, onSettled } from 'solid-js';
 // Typed client env, validated and baked in at build time (see env.ts).
 import { env } from 'virtual:solid-env/client';
 import { paths, Router } from './router';
@@ -12,7 +12,7 @@ import { NotificationBell } from './components/NotificationBell';
 import { PushSetup } from './components/PushSetup';
 import { PerfPanel } from './components/PerfPanel';
 import { perfActive } from './lib/perf';
-import { cachePersist } from './lib/cache';
+import { cachePersist, cacheSetUser } from './lib/cache';
 import './app.css';
 
 export default function App() {
@@ -31,6 +31,11 @@ export default function App() {
         onSettled(() => {
           cachePersist();
         });
+        // Scope the cache to the signed-in user: another account's
+        // entries become unreachable, so a session that ends without the
+        // sign-out form (expiry, a 401 bounce) cannot seed the next
+        // user's warm opens with the previous user's content.
+        createEffect(() => me(), (profile) => cacheSetUser(profile?.id ?? ''));
         return (
           <>
             <Title>{env.VITE_APP_NAME}</Title>

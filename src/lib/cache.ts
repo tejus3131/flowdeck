@@ -16,6 +16,7 @@
 // (old browsers; jsdom). On the server everything is a no-op — the cache
 // is about what the BROWSER waits for.
 import { isServer } from '@solidjs/web';
+import { perfCancel, perfEnd, perfStart } from './perf';
 
 const DB_NAME = 'flowdeck-cache';
 const STORE = 'entries';
@@ -155,43 +156,58 @@ function backend(): Promise<Backend> {
   return backendPromise;
 }
 
+/** The signed-in user's id — every key is scoped to it, so another
+ *  account's entries are unreachable and simply age out (sessions that
+ *  end without the sign-out form — expiry, a 401 bounce, a lost race —
+ *  cannot leak the previous user's content into a warm seed). */
+let userId = '';
+
+/** Scope the store to a user (App watches the session and calls this). */
+export function cacheSetUser(id: string): void {
+  userId = id;
+}
+
+function scoped(key: string): string {
+  return userId ? `${userId}:${key}` : key;
+}
+
 /** Read a cached value. A miss (or an entry past its TTL) is null —
  *  the caller paints nothing and the live producer serves as before. */
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const store = await backend();
-  const entry = await store.get(key);
+  const entry = await store.get(scoped(key));
   if (!entry) return null;
   if (Date.now() - entry.at > TTL_MS) {
-    void store.delete(key);
+    void store.delete(scoped(key));
     return null;
   }
   return entry.value as T;
 }
 
-/** Fire-and-forget write: never blocks, never throws. Every Nth write an
- *  LRU sweep trims the stalest entries past MAX_ENTRIES. */
+/** Fire-and-forget write: never blocks, never throws. Every Nth write a
+ *  sweep retires entries past the TTL and trims the store back to
+ *  MAX_ENTRIES (LRU by last write). */
 export function cachePut(key: string, value: unknown): void {
   void (async () => {
     const store = await backend();
-    await store.put(key, { at: Date.now(), value });
+    await store.put(scoped(key), { at: Date.now(), value });
     writes++;
     if (writes % SWEEP_EVERY === 0) {
+      const now = Date.now();
       const entries = await store.all();
-      if (entries.length > MAX_ENTRIES) {
-        entries.sort((a, b) => a.at - b.at);
-        for (const victim of entries.slice(0, entries.length - MAX_ENTRIES)) {
+      // Age first (the TTL is proactive here, not just lazy on read)…
+      for (const entry of entries) {
+        if (now - entry.at > TTL_MS) await store.delete(entry.key);
+      }
+      // …then count: the stalest beyond the cap age out.
+      const fresh = entries.filter((entry) => now - entry.at <= TTL_MS);
+      if (fresh.length > MAX_ENTRIES) {
+        fresh.sort((a, b) => a.at - b.at);
+        for (const victim of fresh.slice(0, fresh.length - MAX_ENTRIES)) {
           await store.delete(victim.key);
         }
       }
     }
-  })();
-}
-
-/** Drop one key (deletions can retire their cache entry eagerly). */
-export function cacheDelete(key: string): void {
-  void (async () => {
-    const store = await backend();
-    await store.delete(key);
   })();
 }
 
@@ -232,19 +248,40 @@ export async function __testAge(key: string, byMs: number): Promise<void> {
  * protect in-flight ops; live rows replace cached rows), which is exactly
  * the "open from cache, refetch on open, verify" behavior card #45 asks
  * for. Cold opens (no cache) behave exactly like the unwrapped stream.
+ *
+ * `liveMark`, when given, measures the revalidation leg: open → first
+ * LIVE value, regardless of what the seed painted. It ends on the first
+ * live value or on a source error (a slow failure is still a slow open);
+ * a stream that closes without yielding live values cancels it quietly.
  */
 export function cachedStream<S>(
   key: string,
   source: () => AsyncIterable<S> | Promise<AsyncIterable<S>>,
+  liveMark?: string,
 ): AsyncIterable<S> {
   return {
     async *[Symbol.asyncIterator]() {
-      const cached = await cacheGet<S>(key);
-      if (cached !== null) yield cached;
-      const iterable = await source();
-      for await (const value of iterable) {
-        cachePut(key, value);
-        yield value;
+      const token = liveMark ? perfStart(liveMark) : 0;
+      let live = false;
+      try {
+        const cached = await cacheGet<S>(key);
+        if (cached !== null) yield cached;
+        const iterable = await source();
+        for await (const value of iterable) {
+          if (!live && liveMark) {
+            live = true;
+            perfEnd(liveMark, token);
+          }
+          cachePut(key, value);
+          yield value;
+        }
+        // The source ended without a live value (empty stream): quiet.
+        if (liveMark && !live) perfCancel(liveMark, token);
+      } finally {
+        // A source ERROR before the first live value records — the
+        // timeline's rule: a slow failure is still a slow open. (After a
+        // perfCancel above, this is a no-op.)
+        if (liveMark && !live) perfEnd(liveMark, token);
       }
     },
   };
