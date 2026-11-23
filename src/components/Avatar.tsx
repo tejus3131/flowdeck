@@ -33,6 +33,11 @@ export function Avatar(props: {
         <img
           src={src()}
           alt={props.name ?? props.email ?? 'Avatar'}
+          // Anonymous CORS puts the fetch in cors mode, so the service
+          // worker's image cache can store it (opaque responses can't be
+          // validated — see public/sw.js). Supabase storage serves
+          // Access-Control-Allow-Origin: * on public objects.
+          crossorigin="anonymous"
           class={`rounded-full object-cover ring-1 ring-neutral-200 dark:ring-neutral-700 ${SIZES[props.size ?? 'md']}`}
         />
       )}
