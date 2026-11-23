@@ -3106,7 +3106,7 @@ function CardDrawer(props: {
         />
         {/* ── header (fixed) ─────────────────────────────────────────── */}
         <div class="flex shrink-0 items-start justify-between gap-2 border-b border-neutral-100 px-5 pb-3 pt-4 dark:border-neutral-800">
-          <div class="flex flex-1 items-baseline gap-2">
+          <div class="flex min-w-0 flex-1 items-baseline gap-2">
             <Show when={card()?.number}>
               {(num) => (
                 <span class="rounded-md bg-neutral-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
@@ -3116,7 +3116,9 @@ function CardDrawer(props: {
             </Show>
             {/* The title is a plain label here — editing lives in the
                 Settings tab. Reads the live store, so a rename by anyone
-                (this device included) shows up instantly. */}
+                (this device included) shows up instantly. The container
+                must be allowed to shrink (min-w-0) or a long title pushes
+                the close button out of the panel instead of truncating. */}
             <span
               class="min-w-0 flex-1 truncate text-lg font-semibold text-neutral-900 dark:text-white"
               title={card()?.title ?? ''}
@@ -3126,7 +3128,7 @@ function CardDrawer(props: {
           </div>
           <button
             type="button"
-            class="rounded-md px-2 py-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+            class="shrink-0 rounded-md px-2 py-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
             onClick={props.onClose}
           >
             ×
