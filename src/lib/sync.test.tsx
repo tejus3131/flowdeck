@@ -272,6 +272,41 @@ describe('sync engine', () => {
     h.dispose();
   });
 
+  it('captures the message from a plain-object rejection (initial + retry)', async () => {
+    const h = makeHarness(snapshot([card('c1', 'l1', 1)]));
+    await settle();
+
+    // Server-function failures don't always arrive as Error instances —
+    // the RPC layer can hand back a reconstructed plain object. The op's
+    // error must carry its message, not "[object Object]" (card #13).
+    h.engine.mutate({
+      kind: 'moveCard',
+      guards: ['c1'],
+      apply: (draft) => {
+        const target = draft.cards.find((c) => c.id === 'c1');
+        if (target) target.list_id = 'l2';
+      },
+      send: deferredSend(h.sent),
+      echo: (d) => d.cards.find((c) => c.id === 'c1')?.list_id === 'l2',
+    });
+    flush();
+    h.sent[0].reject({ message: 'not allowed' });
+    await settle();
+    expect(h.engine.failed().length).toBe(1);
+    expect(h.engine.failed()[0].error).toBe('not allowed');
+
+    // The retry path captures through its own fail handler — same rule.
+    h.engine.retry(h.engine.failed()[0].id);
+    await settle();
+    expect(h.engine.failed().length).toBe(0);
+    expect(h.engine.ops()[0].status).toBe('inFlight');
+    h.sent[1].reject({ message: 'still not allowed' });
+    await settle();
+    expect(h.engine.failed().length).toBe(1);
+    expect(h.engine.failed()[0].error).toBe('still not allowed');
+    h.dispose();
+  });
+
   it('a failed op reverts WITHOUT a follow-up wire emission', async () => {
     // Regression: the store used to share row objects with the wire
     // snapshot, so the in-place local edit poisoned the durable state and
