@@ -1,6 +1,6 @@
 import { Title } from '@solidjs/meta';
 import { liveQuery, revalidate } from '@solidjs/router';
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
+import { For, Show, createEffect, createMemo, onSettled, createSignal } from 'solid-js';
 
 import { PasskeyPrompt } from '../components/PasskeyPrompt';
 import { Avatar } from '../components/Avatar';
@@ -16,6 +16,7 @@ import {
   type BoardSummary,
 } from '../lib/boards';
 import { createEngine } from '../lib/sync';
+import { warmRecentBoards } from '../lib/prefetch';
 import { getMyWorkspaces, createWorkspace, enterWorkspaceOrdered, getWorkspaceSnapshot, switchWorkspaceOrdered } from '../lib/workspaces';
 import { createWorkspaceRelay } from '../lib/workspace-relay';
 import { MembershipWatch } from '../components/MembershipWatch';
@@ -48,6 +49,13 @@ const OP_LABELS: Record<string, string> = {
 function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile }) {
   const me = createMemo(() => getMe());
   const workspaces = createMemo(() => getMyWorkspaces());
+
+  // The dashboard journey (docs/performance.md, layer 3): warm the boards
+  // the user actually re-opens, idle-time — a click through to a recent
+  // board then paints from cache instantly.
+  onSettled(() => {
+    warmRecentBoards();
+  });
 
   // One shared channel for the board list, request-scoped under SSR.
   const boardsLive = liveQuery(boardsStream, 'boards');

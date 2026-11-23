@@ -8,6 +8,7 @@ import { PriorityPill } from '../../components/PriorityPill';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
 import { perfFirstValue, perfTrack, perfStart, perfEnd, perfCancel } from '../../lib/perf';
 import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
+import { trackRecentBoard, warmBoardActive } from '../../lib/prefetch';
 import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
 import {
@@ -182,6 +183,24 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const view = engine.view;
   const me = createMemo(() => getMe());
   const navigate = useNavigate();
+
+  // Prefetch bookkeeping (docs/performance.md, layer 3): this board is
+  // the user's most-recently-opened (the dashboard warms from that
+  // list), and while it is open its live channel owns the cache — a
+  // late warm finishing over it must not write stale.
+  //
+  // Param-keyed, NOT onSettled: the route is param-reactive — navigating
+  // to another board reuses this component — so the bookkeeping must
+  // follow the param. The cleanup releases the previous board on each
+  // change and at unmount.
+  createEffect(
+    () => props.params.boardId,
+    (boardId) => {
+      trackRecentBoard(boardId);
+      warmBoardActive(boardId, true);
+      return () => warmBoardActive(boardId, false);
+    },
+  );
 
   /** A comment op payload (the drawer's engine consumes these too). */
   type CommentOp = Extract<BoardOpPayload, { kind: 'comment-created' }>;

@@ -18,6 +18,7 @@ import { isChatRow, hrefToPath, notificationHref, notificationLine } from '../li
 import { isScopeOpen } from '../lib/open-scopes';
 import { resolveAccessRequest } from '../lib/access';
 import { getMe } from '../lib/auth';
+import { warmNotificationTarget } from '../lib/prefetch';
 import { dndActive, insideWorkHours, refreshMyStatus } from '../lib/status';
 
 /** A short Slack-style chime via WebAudio (no assets, no network). */
@@ -141,6 +142,11 @@ export function NotificationFeed() {
           const fresh = rows.filter((row) => !seen.has(row.id) && !isChatRow(row));
           if (fresh.length === 0) continue;
           for (const row of fresh) seen.add(row.id);
+          // Prefetch by journey (docs/performance.md, layer 3): every
+          // fresh row warms its target before the click — board first,
+          // then chat and the card's pages. Runs whether or not the row
+          // toasts (DND/work-hours quiet the bell, not the cache).
+          for (const row of fresh) warmNotificationTarget(row);
           // Looking at that chat already? No toast, no sound — the row
           // is quietly read (Slack's "you're already there").
           const visible = fresh.filter(
