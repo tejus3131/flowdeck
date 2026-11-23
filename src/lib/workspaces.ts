@@ -508,18 +508,57 @@ export async function switchWorkspace(workspaceId: string): Promise<boolean> {
 // Every cookie-writing switch funnels through here: one request in flight
 // at a time, and only the LATEST intent reaches the server. Superseded
 // intents are skipped outright, so a stale in-flight response can never
-// overwrite a newer selection (explicit or automatic) — the race the
-// Copilot review flagged on PR #1.
-let switchToken = 0;
-let switchChain: Promise<void> = Promise.resolve();
+// overwrite a newer selection (explicit or automatic) — the races the
+// Copilot reviews on PRs #1 and #2 flagged.
+//
+//  - switchToken: ordering of COMMITTED intents (a queued request).
+//  - reservationToken: ordering of RESERVED intents — flows that must run
+//    an async check before deciding (board-page sync). Reserving before
+//    the check means a late-deciding older intent can never claim the
+//    newest token. An abandoned reservation (board-only guest) is inert:
+//    it doesn't enter the request chain and can't starve queued switches.
+export type SwitchOutcome = 'switched' | 'current' | 'superseded';
 
-export function switchWorkspaceOrdered(workspaceId: string): Promise<void> {
+let switchToken = 0;
+let reservationToken = 0;
+let switchChain: Promise<SwitchOutcome> = Promise.resolve('current');
+
+/** Reserve a place in the switch ordering WITHOUT committing — for flows
+ *  that must run an async check first (board-page membership lookup).
+ *  The reservation goes stale the moment any newer intent arrives. */
+export function reserveSwitchIntent(): number {
+  return ++reservationToken;
+}
+
+/** The fd_ws cookie as this device last received it — read synchronously
+ *  INSIDE the coordinator's serialized slot, where no other switch can be
+ *  writing it. A fresh read here settles "already active" where a cached
+ *  getMyWorkspaces snapshot can be stale mid-switch. Not httpOnly by
+ *  design (see switchWorkspace). */
+function activeWorkspaceCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${WORKSPACE_COOKIE}=([0-9a-f-]{36})`),
+  );
+  return match?.[1] ?? null;
+}
+
+export function switchWorkspaceOrdered(
+  workspaceId: string,
+  reserved?: number,
+): Promise<SwitchOutcome> {
   const token = ++switchToken;
   switchChain = switchChain
-    .catch(() => {})
-    .then(async () => {
-      if (token !== switchToken) return;
+    .catch(() => 'current' as SwitchOutcome)
+    .then(async (): Promise<SwitchOutcome> => {
+      if (token !== switchToken) return 'superseded'; // a newer commit exists
+      if (reserved !== undefined && reserved !== reservationToken) {
+        return 'superseded'; // a newer reserved intent exists
+      }
+      // Race-free "already active": this slot is the only cookie writer.
+      if (activeWorkspaceCookie() === workspaceId) return 'current';
       await switchWorkspace(workspaceId);
+      return 'switched';
     });
   return switchChain;
 }

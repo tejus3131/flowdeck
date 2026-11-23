@@ -77,6 +77,7 @@ import {
 import {
   getMyWorkspaces,
   getWorkspaceSnapshot,
+  reserveSwitchIntent,
   setBoardAccess,
   switchWorkspaceOrdered,
   workspaceStream,
@@ -282,21 +283,28 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // workspace-scoped page must agree with what's on screen, so the active
   // choice follows the board's workspace. Board-only guests (no membership
   // in the board's workspace) keep their current choice untouched.
-  // The ordered switch serializes with every other cookie-writing switch:
-  // a stale in-flight switch from an earlier board visit is superseded
-  // and never lands, so the cookie can't drift from the board on screen.
+  // The intent is RESERVED before the async membership lookup, so a lookup
+  // that resolves late can never claim the newest token and overwrite a
+  // newer selection; "already active" is decided by the coordinator itself
+  // from the cookie inside its serialized slot (never from a stale cached
+  // snapshot), so a corrective switch is always queued when it matters.
   createEffect(
     () => view().board.workspace_id,
     (boardWorkspaceId) => {
       if (!boardWorkspaceId) return;
+      const intent = reserveSwitchIntent();
       void (async () => {
         try {
           const mine = await getMyWorkspaces();
+          // Board-only guest: no membership in the board's workspace —
+          // the reservation is simply abandoned (it never enters the
+          // request chain), and the active choice stays untouched.
           if (!mine.some((ws) => ws.id === boardWorkspaceId)) return;
-          if (mine.some((ws) => ws.current && ws.id === boardWorkspaceId)) return;
-          await switchWorkspaceOrdered(boardWorkspaceId);
-          revalidate('workspaces');
-          revalidate('boards');
+          const outcome = await switchWorkspaceOrdered(boardWorkspaceId, intent);
+          if (outcome === 'switched') {
+            revalidate('workspaces');
+            revalidate('boards');
+          }
         } catch {
           // Best effort: on failure the active choice stays as it was —
           // the board itself still renders, and the next visit retries.

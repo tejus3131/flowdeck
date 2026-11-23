@@ -422,7 +422,10 @@ function WorkspacePickerCard() {
     setBusy(id);
     setPickError(null);
     try {
-      await switchWorkspaceOrdered(id);
+      const outcome = await switchWorkspaceOrdered(id);
+      // A superseded pick means a newer selection owns the outcome —
+      // don't refresh on its behalf.
+      if (outcome === 'superseded') return;
       revalidate('workspaces');
       revalidate('boards');
     } catch (cause) {

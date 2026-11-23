@@ -42,7 +42,10 @@ export function WorkspaceSwitcher() {
     setBusy(id);
     setSwitchError(null);
     try {
-      await switchWorkspaceOrdered(id);
+      const outcome = await switchWorkspaceOrdered(id);
+      // A superseded pick means a newer selection owns the outcome —
+      // don't navigate or refresh on its behalf.
+      if (outcome === 'superseded') return;
       // Refetch everything workspace-scoped: the list itself and boards.
       revalidate('workspaces');
       revalidate('boards');
