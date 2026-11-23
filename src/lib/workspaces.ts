@@ -515,8 +515,10 @@ export async function switchWorkspace(workspaceId: string): Promise<boolean> {
 //  - reservationToken: ordering of RESERVED intents — flows that must run
 //    an async check before deciding (board-page sync). Reserving before
 //    the check means a late-deciding older intent can never claim the
-//    newest token. An abandoned reservation (board-only guest) is inert:
-//    it doesn't enter the request chain and can't starve queued switches.
+//    newest token; an immediate (explicit) selection advances it too, so
+//    pending reservations die with the user's pick. An abandoned
+//    reservation (board-only guest) is inert: it doesn't enter the
+//    request chain and can't starve queued switches.
 export type SwitchOutcome = 'switched' | 'current' | 'superseded';
 
 let switchToken = 0;
@@ -547,7 +549,19 @@ export function switchWorkspaceOrdered(
   workspaceId: string,
   reserved?: number,
 ): Promise<SwitchOutcome> {
+  // A stale reservation must be rejected BEFORE it can touch the ordering:
+  // bumping the commit token with a dead intent would cancel newer queued
+  // switches on the way to failing its own check.
+  if (reserved !== undefined && reserved !== reservationToken) {
+    return Promise.resolve('superseded');
+  }
   const token = ++switchToken;
+  if (reserved === undefined) {
+    // An immediate (explicit) selection outranks every pending
+    // reservation — a reserved intent that decides later must not
+    // resurrect itself after this choice.
+    ++reservationToken;
+  }
   switchChain = switchChain
     .catch(() => 'current' as SwitchOutcome)
     .then(async (): Promise<SwitchOutcome> => {
@@ -558,6 +572,10 @@ export function switchWorkspaceOrdered(
       // Race-free "already active": this slot is the only cookie writer.
       if (activeWorkspaceCookie() === workspaceId) return 'current';
       await switchWorkspace(workspaceId);
+      // A newer intent may have committed while our request was in
+      // flight; if so, its outcome owns the UI — report superseded so
+      // callers suppress obsolete navigation and refreshes.
+      if (token !== switchToken) return 'superseded';
       return 'switched';
     });
   return switchChain;
