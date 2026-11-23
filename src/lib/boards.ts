@@ -340,7 +340,17 @@ export const boardStream = live(async function* (
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'boards', filter: `id=eq.${id}` },
-      (payload: { new: unknown }) => push({ kind: 'board-row', row: payload.new as BoardSummary }),
+      (payload: { new: unknown }) => {
+        // A DELETE carries no `new` row — nothing to fold. The cascade's
+        // list/card deletes still fold (emptying the view), so without
+        // this the page sits on a vanished board until the 20s poll
+        // flips it to denied. A full re-snapshot answers in ~80ms.
+        if (!payload.new) {
+          push({ kind: 'resync' });
+          return;
+        }
+        push({ kind: 'board-row', row: payload.new as BoardSummary });
+      },
     )
     // Assignments reshape the board too (avatars on cards): the card's
     // view is re-fetched for the touched card only.
@@ -371,11 +381,16 @@ export const boardStream = live(async function* (
       },
     )
     // The exact per-board revision (migration 0032) rides every change.
+    // A DELETE carries no `new` (and would push a bogus 0) — skip it; the
+    // boards handler's resync owns board deletion.
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'board_revisions', filter: `board_id=eq.${id}` },
-      (payload: { new: { revision?: number } }) =>
-        push({ kind: 'revision', value: Number(payload.new?.revision ?? 0) }),
+      (payload: { new: { revision?: number } }) => {
+        if (payload.new?.revision !== undefined) {
+          push({ kind: 'revision', value: Number(payload.new.revision) });
+        }
+      },
     )
     // A rejected postgres_changes binding (a table missing from the
     // supabase_realtime publication, for one) arrives as a `system` error
@@ -572,6 +587,12 @@ async function fetchCardViews(
     supabase.from('card_comments').select('card_id, created_at').in('card_id', ids),
   ]);
   if (cardsRes.error) throw new Error(cardsRes.error.message);
+  // Throw-on-error like snapshot(): a transient failure of the assignee
+  // or comment queries must not fold silently-wrong stats — the throw
+  // ends the generator, live() reconnects, and the reconnect's fresh
+  // full snapshot restores truth in ~1s instead of waiting for a resync.
+  if (assigneesRes.error) throw new Error(assigneesRes.error.message);
+  if (commentsRes.error) throw new Error(commentsRes.error.message);
   const assigneeMap = new Map<string, string[]>();
   for (const row of (assigneesRes.data ?? []) as { card_id: string; user_id: string }[]) {
     const list = assigneeMap.get(row.card_id) ?? [];
