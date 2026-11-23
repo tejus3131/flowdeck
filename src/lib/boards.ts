@@ -54,6 +54,15 @@ export type BoardSnapshot = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Perf: reads slower than this log a server-side warning (the client-side
+ *  marks in lib/perf.ts carry the full user-perceived latency; these logs
+ *  isolate the database's share — see docs/performance.md). */
+const SLOW_READ_MS = 500;
+
+function warnSlow(startedAt: number, what: string): void {
+  const ms = Date.now() - startedAt;
+  if (ms > SLOW_READ_MS) console.warn(`[perf] ${what} took ${ms}ms`);
+}
 function assertId(id: string, what: string): string {
   if (!UUID.test(id)) throw new Error(`Invalid ${what}`);
   return id;
@@ -363,6 +372,7 @@ async function snapshot(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
   boardId: string,
 ): Promise<BoardSnapshot> {
+  const startedAt = Date.now();
   const [boards, lists, cards, activity, access, stats] = await Promise.all([
     supabase.from('boards').select('*').eq('id', boardId).maybeSingle(),
     supabase.from('lists').select('*').eq('board_id', boardId).order('position', { ascending: true }),
@@ -419,7 +429,7 @@ async function snapshot(
     list.push(row.user_id);
     assigneeMap.set(row.card_id, list);
   }
-  return {
+  const value: BoardSnapshot = {
     board: boards.data,
     lists: lists.data ?? [],
     cards: (
@@ -444,6 +454,8 @@ async function snapshot(
     myAccess: (access.data as 'edit' | 'view' | null) ?? null,
     denied: false,
   };
+  warnSlow(startedAt, `board snapshot (${boardId})`);
+  return value;
 }
 
 const EMPTY_BOARD: BoardSummary = {
@@ -999,6 +1011,7 @@ export async function getCardEvents(cardId: string): Promise<CardEventRow[]> {
  *  (a 'use server' function called from producer context resolves as a
  *  self-RPC that never lands; producers must do plain work). */
 async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
+  const startedAt = Date.now();
   const supabase = createSupabaseRequestClient();
   const { data, error } = await supabase
     .from('card_events')
@@ -1007,6 +1020,7 @@ async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
     .order('created_at', { ascending: true })
     .limit(100);
   if (error) throw new Error(error.message);
+  warnSlow(startedAt, `card events (${cardId})`);
   return (data ?? []).map((row) => ({
     id: row.id,
     kind: row.kind,
@@ -1211,6 +1225,7 @@ export const cardCommentsStream = live(async function* (
   async function comments(): Promise<CommentRow[]> {
     // Latest page only — long discussions load older comments on demand
     // (the drawer's "load earlier" feeds them through the engine).
+    const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
       .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
@@ -1218,6 +1233,7 @@ export const cardCommentsStream = live(async function* (
       .order('created_at', { ascending: false })
       .limit(30);
     if (error) throw new Error(error.message);
+    warnSlow(startedAt, `card comments page (${id})`);
     return (data ?? [])
       .slice()
       .reverse()
@@ -1368,6 +1384,7 @@ async function boardChatSnapshot(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
   boardId: string,
 ): Promise<BoardMessageRow[]> {
+  const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
     .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
@@ -1375,6 +1392,7 @@ async function boardChatSnapshot(
     .order('created_at', { ascending: false })
     .limit(100);
   if (error) throw new Error(error.message);
+  warnSlow(startedAt, `board chat snapshot (${boardId})`);
   return (data ?? [])
     .slice()
     .reverse()

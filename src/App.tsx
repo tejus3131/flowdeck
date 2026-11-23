@@ -10,6 +10,8 @@ import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { NotificationFeed } from './components/NotificationFeed';
 import { NotificationBell } from './components/NotificationBell';
 import { PushSetup } from './components/PushSetup';
+import { PerfPanel } from './components/PerfPanel';
+import { perfActive } from './lib/perf';
 import './app.css';
 
 export default function App() {
@@ -19,6 +21,10 @@ export default function App() {
         // query() reads the router cache, so the memo must live inside the
         // Router context — App's body is outside it.
         const me = createMemo(() => getMe());
+        // The perf flag's ACCESSOR, created once (reads ?perf=1/0 and
+        // localStorage); Show reads it below so the panel reacts to the
+        // URL param and its own Close button.
+        const perfOn = perfActive();
         return (
           <>
             <Title>{env.VITE_APP_NAME}</Title>
@@ -60,6 +66,10 @@ export default function App() {
             <Show when={me()}>
               <NotificationFeed />
               <PushSetup />
+            </Show>
+            {/* The perf debug panel (?perf=1) — a devtool, mounted app-wide. */}
+            <Show when={perfOn()}>
+              <PerfPanel />
             </Show>
           </>
         );
