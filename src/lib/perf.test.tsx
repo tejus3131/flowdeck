@@ -39,12 +39,30 @@ describe('perf marks', () => {
     expect(stat('t-orphan')).toBeUndefined();
   });
 
-  it('overwrites a dangling start (the newest open wins)', () => {
-    perfStart('t-overwrite');
-    perfStart('t-overwrite');
-    expect(perfEnd('t-overwrite')).not.toBeNull();
+  it('replaces a dangling start: the newest open wins, stale ends no-op', () => {
+    const stale = perfStart('t-overwrite');
+    const live = perfStart('t-overwrite');
+    // The displaced open's completion must not consume the live mark.
+    expect(perfEnd('t-overwrite', stale)).toBeNull();
+    expect(perfInFlight()).toContain('t-overwrite');
+    expect(perfEnd('t-overwrite', live)).not.toBeNull();
     expect(perfEnd('t-overwrite')).toBeNull();
     expect(stat('t-overwrite')!.count).toBe(1);
+  });
+
+  it('a stale tracked fetch cannot consume a newer open (the timeline race)', async () => {
+    let resolveFirst: (value: number) => void = () => {};
+    const first = perfTrack('t-race', () => new Promise<number>((resolve) => {
+      resolveFirst = resolve;
+    }));
+    // The user closes and reopens before the first fetch resolves: the
+    // second open replaces the mark, then resolves.
+    const second = perfTrack('t-race', () => Promise.resolve(2));
+    await second;
+    // NOW the first (stale) fetch resolves — it must record nothing.
+    resolveFirst(1);
+    await first;
+    expect(stat('t-race')!.count).toBe(1);
   });
 
   it('tracks a promise and passes its value through', async () => {
@@ -65,6 +83,25 @@ describe('perf marks', () => {
     expect(seen).toEqual([1, 2, 3]);
     expect(stat('t-stream')).toMatchObject({ count: 1 });
     expect(perfInFlight()).toEqual([]);
+  });
+
+  it('a stream finalizer after the first value records nothing more', async () => {
+    const wrapped = perfFirstValue(stream(1), 't-late-final');
+    const iterator = wrapped[Symbol.asyncIterator]();
+    await iterator.next(); // first value → the mark closed
+    await iterator.return?.(); // late finalizer → must be a no-op
+    expect(stat('t-late-final')!.count).toBe(1);
+  });
+
+  it('a stale stream finalizer cannot consume a newer open', async () => {
+    const old = perfFirstValue(stream(1), 't-stream-race');
+    const oldIterator = old[Symbol.asyncIterator]();
+    await oldIterator.next(); // old's own open records
+    const fresh = perfFirstValue(stream(5), 't-stream-race');
+    const freshIterator = fresh[Symbol.asyncIterator]();
+    await freshIterator.next(); // fresh records — two legit opens so far
+    await oldIterator.return?.(); // old's LATE finalizer → must not record
+    expect(stat('t-stream-race')!.count).toBe(2);
   });
 
   it('marks a stream that dies before its first value', async () => {

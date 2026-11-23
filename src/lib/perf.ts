@@ -24,8 +24,6 @@ import { isServer } from '@solidjs/web';
 const MAX_PER_LABEL = 100;
 
 const samples = new Map<string, number[]>();
-const open = new Map<string, number>();
-
 function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -40,49 +38,63 @@ function record(label: string, duration: number): void {
   if (list.length > MAX_PER_LABEL) list.shift();
 }
 
+/** Ownership token for an open mark — only its holder's end records. */
+export type MarkToken = number;
+
+let nextToken = 1;
+const open = new Map<string, { token: MarkToken; startedAt: number }>();
+
 /** Mark the start of an open path. A second start for the same label
- *  overwrites the first (last-write-wins — the newest open is the one
- *  being measured). */
-export function perfStart(label: string): void {
-  if (isServer) return;
-  open.set(label, now());
+ *  REPLACES the live mark (the newest open is the one being measured);
+ *  the displaced start can no longer record — a slow request that
+ *  outlives a close/reopen must not consume the newer mark. */
+export function perfStart(label: string): MarkToken {
+  if (isServer) return 0;
+  const token = nextToken++;
+  open.set(label, { token, startedAt: now() });
+  return token;
 }
 
 /** Close the mark, recording the duration in ms. Null (and no record)
- *  when the label was never started. */
-export function perfEnd(label: string): number | null {
+ *  when there is no live mark for the label — or, when a token is given,
+ *  when the live mark is NOT this one's: a newer open replaced it, or
+ *  this mark already closed. */
+export function perfEnd(label: string, token?: MarkToken): number | null {
   if (isServer) return null;
-  const startedAt = open.get(label);
-  if (startedAt === undefined) return null;
+  const entry = open.get(label);
+  if (!entry) return null;
+  if (token !== undefined && entry.token !== token) return null;
   open.delete(label);
-  const duration = now() - startedAt;
+  const duration = now() - entry.startedAt;
   record(label, duration);
   return duration;
 }
 
 /** Measure a whole promise: start → resolution (success or failure — a
- *  slow failure is still a slow open). The error rethrows unchanged. */
+ *  slow failure is still a slow open). The error rethrows unchanged.
+ *  The mark is owned: a stale resolution outlived by a reopen records
+ *  nothing. */
 export async function perfTrack<T>(label: string, fn: () => Promise<T>): Promise<T> {
-  perfStart(label);
+  const token = perfStart(label);
   try {
     return await fn();
   } finally {
-    perfEnd(label);
+    perfEnd(label, token);
   }
 }
 
 /**
  * Measure a live stream's open: the mark starts when the stream source is
  * called (the open) and ends at the FIRST yielded value — that is the
- * "chat loading" the user feels. Late yields don't re-mark; a stream that
- * errors before its first value still records the time to the failure.
- * The iterable passes through untouched.
+ * "chat loading" the user feels. Late yields don't re-mark, and a late
+ * finalizer (an old stream's cleanup after a reconnect) can only end its
+ * OWN mark — never a newer open's. The iterable passes through untouched.
  */
 export function perfFirstValue<T>(
   source: AsyncIterable<T> | Promise<AsyncIterable<T>>,
   label: string,
 ): AsyncIterable<T> {
-  perfStart(label);
+  const token = perfStart(label);
   return {
     async *[Symbol.asyncIterator]() {
       let first = true;
@@ -91,14 +103,14 @@ export function perfFirstValue<T>(
         for await (const value of iterable) {
           if (first) {
             first = false;
-            perfEnd(label);
+            perfEnd(label, token);
           }
           yield value;
         }
       } finally {
-        // A stream that dies (or is never iterated to a value) still
-        // closes its mark — a failure is data too.
-        perfEnd(label);
+        // Ownership: a no-op when the first value already closed this
+        // mark, or when a newer open replaced it.
+        perfEnd(label, token);
       }
     },
   };
@@ -173,7 +185,15 @@ function ensureFlag(): (on: boolean) => void {
   if (active) return writeActive!;
   let initial = false;
   if (!isServer) {
-    initial = localStorage.getItem(STORAGE_KEY) === '1';
+    // The storage read can throw when browser policy blocks localStorage
+    // (some private modes / privacy settings) — an optional debug
+    // preference must never take the app down with it. Default off; the
+    // URL override below still works for this load.
+    try {
+      initial = localStorage.getItem(STORAGE_KEY) === '1';
+    } catch {
+      // blocked: default off
+    }
     const fromUrl = readUrl();
     if (fromUrl !== null) {
       initial = fromUrl;
