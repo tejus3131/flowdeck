@@ -217,6 +217,29 @@ export type Database = {
           },
         ]
       }
+      board_revisions: {
+        Row: {
+          board_id: string
+          revision: number
+        }
+        Insert: {
+          board_id: string
+          revision?: number
+        }
+        Update: {
+          board_id?: string
+          revision?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "board_revisions_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: true
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       board_team_access: {
         Row: {
           access: string

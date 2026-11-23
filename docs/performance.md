@@ -74,16 +74,13 @@ SolidStart to their client model. Extend, don't replace.
    user-perceived latency (echoes land sooner) and server cost (which
    scales per-viewer today).
 
-   **Prerequisite — the revision must be trustworthy first.** The
-   `activity` table's id *looks* like that cursor (`snapshot()` ships it as
-   `BoardSnapshot.revision`), but today it is **not** a safe resume point:
-   deletions (`deleteList`, `deleteCard`) and list renames never append
-   activity, and `logActivity` is deliberately best-effort — a failed
-   activity insert must never fail a mutation — so a resume from a given
-   id can miss committed changes. Phase 2 therefore **starts by** making
-   the change log complete and transactional (every mutation, deletions
-   included, records its activity row in the same commit) and coordinating
-   the snapshot/cursor read; only then do updates switch to deltas.
+   **The revision is trustworthy now** (Phase 2a, migration `0032`):
+   `board_revisions` is bumped by a database trigger, in the same
+   transaction as every board-scoped change — deletions included, and
+   regardless of which path wrote (server functions, MCP, direct SQL).
+   The app-side `activity` log stays as the human-readable audit trail;
+   it no longer powers the revision. Phase 2b switches the live stream
+   protocol to deltas on top of this cursor.
 3. **Prefetch by journey.** Warm the cache where the user is *about* to go:
    a notification arrives → its card, board and chats stream into the cache
    on `requestIdleCallback`; a board-grant arrives → the board snapshot
@@ -108,7 +105,7 @@ Each phase lands as its own PR, each leaves the app fully working.
 | --- | --- | --- |
 | 0 | **Profiling** — perf marks on every slow open path (board, chats, timeline, comments), a `?perf=1` debug panel with p50/p95 per label, server-side slow-path logs | in flight |
 | 1 | **Cache layer** — IndexedDB store + stale-while-revalidate hydration for board snapshots, chats, comments, timelines | in flight |
-| 2 | **Delta sync** — trustworthy transactional change log first (deletions included), then revision-cursored deltas from the live producers instead of full snapshots | planned |
+| 2 | **Delta sync** — 2a: trustworthy revision (`board_revisions`, migration 0032) · 2b: revision-cursored deltas from the live producers instead of full snapshots | 2a in flight |
 | 3 | **Prefetch by journey** — notification-driven and grant-driven cache warming | planned |
 | 4 | **Idle refresh + eviction** — TTL/LRU background refresh so cached data stays fresh without user action | planned |
 

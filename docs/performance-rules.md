@@ -20,13 +20,13 @@ a drawer, a page backed by rows. Five rules, in order of how you'll hit them:
    resumable: a monotonic cursor the client can present to ask "what changed
    since N." The cursor must be **transactional with the change it
    describes** — recorded in the same commit, so a resume from N can never
-   miss a committed change. (The board's `activity` id is the *shape* of
-   the pattern — `snapshot()` ships it as `BoardSnapshot.revision` — but it
-   does not yet qualify: deletions and list renames never append activity,
-   and activity inserts are best-effort. Making it trustworthy is Phase 2's
-   first task — see `performance.md`.) Streams without a cursor can only
-   ever be served as full re-fetches, and full re-fetches are the thing
-   we're removing.
+   miss a committed change. (The board's revision —
+   `BoardSnapshot.revision`, backed by `board_revisions` — is the working
+   example: a database trigger bumps it in the same transaction as every
+   board-scoped change, deletions included. The lesson: cursors live in the
+   database beside the data, not in best-effort app writes.) Streams
+   without a cursor can only ever be served as full re-fetches, and full
+   re-fetches are the thing we're removing.
 
 3. **Push deltas, not snapshots.** A change notification ships the changed
    rows. Re-fetching an entire board because one card moved is a bug — it
