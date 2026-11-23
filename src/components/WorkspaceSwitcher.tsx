@@ -62,11 +62,12 @@ export function WorkspaceSwitcher() {
   };
 
   const create = async () => {
-    if (!newName().trim() || busy()) return;
+    const name = newName().trim();
+    if (!name || busy()) return;
     setBusy('create');
     setCreateError(null);
     try {
-      const outcome = await enterWorkspaceOrdered(() => createWorkspace(newName()));
+      const outcome = await enterWorkspaceOrdered(() => createWorkspace(name));
       if (outcome !== 'superseded') {
         revalidate('workspaces');
         revalidate('boards');

@@ -483,14 +483,19 @@ function CreateWorkspaceCard() {
   const [error, setError] = createSignal<string | null>(null);
 
   const create = async () => {
-    if (!name().trim() || busy()) return;
+    const submitted = name().trim();
+    if (!submitted || busy()) return;
     setBusy(true);
     setError(null);
     try {
-      const outcome = await enterWorkspaceOrdered(() => createWorkspace(name()));
+      const outcome = await enterWorkspaceOrdered(() => createWorkspace(submitted));
       if (outcome !== 'superseded') {
         revalidate('workspaces');
         revalidate('boards');
+      } else {
+        // A newer intent owns the outcome and this card stays mounted —
+        // become usable again instead of stranding on "Creating…".
+        setBusy(false);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create the workspace');

@@ -2,7 +2,7 @@
 // RLS is the security layer for every row op; these server functions add
 // the human rules on top (owner-only actions, self-service limits, friendly
 // errors) and send invite email through Resend when configured.
-import { query } from '@solidjs/router';
+import { query, revalidate } from '@solidjs/router';
 import { getRequestEvent, redirect } from '@solidjs/web';
 import { stringifySetCookie } from 'cookie';
 
@@ -587,7 +587,13 @@ export function switchWorkspaceOrdered(
     // A newer intent may have committed while our request was in
     // flight; if so, its outcome owns the UI — report superseded so
     // callers suppress obsolete navigation and refreshes.
-    if (token !== switchToken) return 'superseded';
+    if (token !== switchToken) {
+      // Our cookie write DID land though, and the newer intent may yet
+      // fail — reconcile the cache here so it can never lag the cookie.
+      revalidate('workspaces');
+      revalidate('boards');
+      return 'superseded';
+    }
     return 'switched';
   });
 }
@@ -605,7 +611,14 @@ export function enterWorkspaceOrdered<T>(enter: () => Promise<T>): Promise<T | '
   return enqueueCookieWrite(async (): Promise<T | 'superseded'> => {
     if (token !== switchToken) return 'superseded';
     const value = await enter();
-    if (token !== switchToken) return 'superseded'; // superseded mid-flight
+    if (token !== switchToken) {
+      // The enter operation ran and wrote fd_ws, but a newer intent
+      // owns the outcome — reconcile the cache since the newer intent
+      // may yet fail.
+      revalidate('workspaces');
+      revalidate('boards');
+      return 'superseded';
+    }
     return value;
   });
 }

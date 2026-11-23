@@ -36,7 +36,15 @@ export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
           | null
           | undefined
           | 'superseded';
-        if (result !== 'superseded' && result?.workspaceId) {
+        if (result === 'superseded') {
+          // A newer workspace choice owns the outcome (the global switcher
+          // is mounted on this page too). Leave quietly instead of
+          // stranding the page in "Joining…" with no terminal state —
+          // navigating home writes nothing, so the newer choice stands.
+          navigate('/');
+          return;
+        }
+        if (result?.workspaceId) {
           // Joined + this device's workspace cookie switched. Refresh the
           // workspace list (the "current" flag reads the cookie) and land
           // on the dashboard.
