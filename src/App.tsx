@@ -10,6 +10,8 @@ import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { NotificationFeed } from './components/NotificationFeed';
 import { NotificationBell } from './components/NotificationBell';
 import { PushSetup } from './components/PushSetup';
+import { PerfPanel } from './components/PerfPanel';
+import { perfActive } from './lib/perf';
 import './app.css';
 
 export default function App() {
@@ -60,6 +62,10 @@ export default function App() {
             <Show when={me()}>
               <NotificationFeed />
               <PushSetup />
+            </Show>
+            {/* The perf debug panel (?perf=1) — a devtool, mounted app-wide. */}
+            <Show when={perfActive()}>
+              <PerfPanel />
             </Show>
           </>
         );

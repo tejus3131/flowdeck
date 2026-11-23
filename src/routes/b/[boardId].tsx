@@ -6,6 +6,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled
 import { Avatar } from '../../components/Avatar';
 import { PriorityPill } from '../../components/PriorityPill';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
+import { perfFirstValue, perfTrack } from '../../lib/perf';
 import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
 import {
@@ -156,11 +157,14 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // (SSR renders the first value and closes), reconnecting on the client.
   const boardLive = liveQuery(boardStream, 'board');
   const engine = createBoardEngine(
-    (boardId) => boardLive(boardId),
+    // Perf mark: board open → first snapshot (docs/performance.md budget).
+    (boardId) => perfFirstValue(boardLive(boardId), 'board-open'),
     () => props.params.boardId,
     EMPTY,
     () => boardLive.status(props.params.boardId),
-    () => getBoardSnapshot(props.params.boardId),
+    // The durable poll refresh gets its own mark: realtime outages show
+    // up here, not in board-open.
+    () => perfTrack('board-refresh', () => getBoardSnapshot(props.params.boardId)),
   );
   const view = engine.view;
   const me = createMemo(() => getMe());
@@ -2638,16 +2642,21 @@ function CardDrawer(props: {
         return;
       }
       let alive = true;
-      const load = async () => {
+      const load = async (mark: boolean) => {
         try {
-          const rows = await getCardEvents(id);
+          // Perf mark: the settings-tab open waits on THIS fetch (the 3s
+          // complaint on card #45). Polls (mark=false) stay unmarked so
+          // the stats are open-latency only.
+          const rows = mark
+            ? await perfTrack('card-timeline-open', () => getCardEvents(id))
+            : await getCardEvents(id);
           if (alive) setEvents(rows);
         } catch {
           // the timeline is best-effort decoration
         }
       };
-      void load();
-      const timer = setInterval(() => void load(), 10_000);
+      void load(true);
+      const timer = setInterval(() => void load(false), 10_000);
       return () => {
         alive = false;
         clearInterval(timer);
@@ -2712,7 +2721,11 @@ function CardDrawer(props: {
       (async function* (): AsyncGenerator<CommentsSnapshot> {
         // The card's client_op rides along: the server resolves a
         // mid-provisional (temp) key to the durable card before binding.
-        for await (const list of await commentsLive(key, props.clientOp ?? null)) {
+        // Perf mark: drawer open → first comments page.
+        for await (const list of await perfFirstValue(
+          commentsLive(key, props.clientOp ?? null),
+          'card-comments-open',
+        )) {
           yield { list };
         }
       })(),
@@ -3790,7 +3803,9 @@ function BoardChat(props: {
   const engine = createEngine<ChatSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<ChatSnapshot> {
-        for await (const list of await chatLive(key)) {
+        // Perf mark: chat panel open → first value (warm channels that
+        // already hold the latest page measure ~0 — the cache story).
+        for await (const list of await perfFirstValue(chatLive(key), 'board-chat-open')) {
           yield { list };
         }
       })(),

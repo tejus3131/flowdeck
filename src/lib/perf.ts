@@ -1,0 +1,200 @@
+// Perf marks — the "profile it" half of board card #45.
+//
+// What a user feels as "slow" is the time from OPENING something (a board,
+// a chat panel, a card drawer, the timeline) to SEEING its data. These
+// marks wrap exactly those paths: a start mark at the open, an end mark at
+// the first value (or the fetch's return). The result is a per-label
+// p50/p95 the debug panel (?perf=1) tables up.
+//
+// Design points:
+//   * Always on. Recording is a couple of array writes — the panel is just
+//     a window onto the buffer, so a user who hits slowness and THEN turns
+//     on ?perf=1 still sees history from this page load.
+//   * Capped per label (100 samples) — the buffer can never grow without
+//     bound.
+//   * Server-side renders skip recording (isServer guard): the marks are
+//     about what the BROWSER waits for.
+//
+// Adding a new open path? It gets a mark here with a budget in
+// docs/performance.md — rule 5 of docs/performance-rules.md.
+import { createSignal, type Accessor } from 'solid-js';
+import { isServer } from '@solidjs/web';
+
+/** Samples kept per label — a sliding window, oldest evicted. */
+const MAX_PER_LABEL = 100;
+
+const samples = new Map<string, number[]>();
+const open = new Map<string, number>();
+
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function record(label: string, duration: number): void {
+  let list = samples.get(label);
+  if (!list) {
+    list = [];
+    samples.set(label, list);
+  }
+  list.push(duration);
+  if (list.length > MAX_PER_LABEL) list.shift();
+}
+
+/** Mark the start of an open path. A second start for the same label
+ *  overwrites the first (last-write-wins — the newest open is the one
+ *  being measured). */
+export function perfStart(label: string): void {
+  if (isServer) return;
+  open.set(label, now());
+}
+
+/** Close the mark, recording the duration in ms. Null (and no record)
+ *  when the label was never started. */
+export function perfEnd(label: string): number | null {
+  if (isServer) return null;
+  const startedAt = open.get(label);
+  if (startedAt === undefined) return null;
+  open.delete(label);
+  const duration = now() - startedAt;
+  record(label, duration);
+  return duration;
+}
+
+/** Measure a whole promise: start → resolution (success or failure — a
+ *  slow failure is still a slow open). The error rethrows unchanged. */
+export async function perfTrack<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  perfStart(label);
+  try {
+    return await fn();
+  } finally {
+    perfEnd(label);
+  }
+}
+
+/**
+ * Measure a live stream's open: the mark starts when the stream source is
+ * called (the open) and ends at the FIRST yielded value — that is the
+ * "chat loading" the user feels. Late yields don't re-mark; a stream that
+ * errors before its first value still records the time to the failure.
+ * The iterable passes through untouched.
+ */
+export function perfFirstValue<T>(
+  source: AsyncIterable<T> | Promise<AsyncIterable<T>>,
+  label: string,
+): AsyncIterable<T> {
+  perfStart(label);
+  return {
+    async *[Symbol.asyncIterator]() {
+      let first = true;
+      try {
+        const iterable = await source;
+        for await (const value of iterable) {
+          if (first) {
+            first = false;
+            perfEnd(label);
+          }
+          yield value;
+        }
+      } finally {
+        // A stream that dies (or is never iterated to a value) still
+        // closes its mark — a failure is data too.
+        perfEnd(label);
+      }
+    },
+  };
+}
+
+// ── the stats the panel tables ───────────────────────────────────────────
+
+export type PerfStat = {
+  label: string;
+  count: number;
+  last: number;
+  p50: number;
+  p95: number;
+  max: number;
+};
+
+function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 0) return 0;
+  const index = Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1);
+  return sorted[index]!;
+}
+
+/** One row per label: the latest duration and the distribution. */
+export function perfStats(): PerfStat[] {
+  const rows: PerfStat[] = [];
+  for (const [label, list] of samples) {
+    const sorted = [...list].sort((a, b) => a - b);
+    rows.push({
+      label,
+      count: list.length,
+      last: list[list.length - 1] ?? 0,
+      p50: quantile(sorted, 0.5),
+      p95: quantile(sorted, 0.95),
+      max: sorted[sorted.length - 1] ?? 0,
+    });
+  }
+  return rows.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Labels with a start but no end yet — opens still waiting on data. */
+export function perfInFlight(): string[] {
+  return [...open.keys()].sort();
+}
+
+/** Drop everything (the panel's Clear button). */
+export function perfClear(): void {
+  samples.clear();
+  open.clear();
+}
+
+// ── the ?perf=1 switch ──────────────────────────────────────────────────
+
+const STORAGE_KEY = 'fd-perf';
+
+let active: Accessor<boolean> | null = null;
+let writeActive: ((on: boolean) => void) | null = null;
+
+function persist(on: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, on ? '1' : '0');
+  } catch {
+    // Private modes can refuse; the flag simply won't survive a reload.
+  }
+}
+
+function readUrl(): boolean | null {
+  const raw = new URLSearchParams(location.search).get('perf');
+  return raw === '1' ? true : raw === '0' ? false : null;
+}
+
+function ensureFlag(): (on: boolean) => void {
+  if (active) return writeActive!;
+  let initial = false;
+  if (!isServer) {
+    initial = localStorage.getItem(STORAGE_KEY) === '1';
+    const fromUrl = readUrl();
+    if (fromUrl !== null) {
+      initial = fromUrl;
+      persist(fromUrl);
+    }
+  }
+  const [read, write] = createSignal(initial);
+  active = read;
+  writeActive = write;
+  return write;
+}
+
+/** The debug panel's reactive on/off state. ?perf=1 in the URL turns it on
+ *  (and persists), ?perf=0 turns it off — so it can be shared as a link. */
+export function perfActive(): Accessor<boolean> {
+  ensureFlag();
+  return active!;
+}
+
+/** Flip the panel (its Close button, or a toggle elsewhere). Persists. */
+export function setPerfActive(on: boolean): void {
+  ensureFlag()(on);
+  if (!isServer) persist(on);
+}
