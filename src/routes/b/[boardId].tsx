@@ -6,7 +6,8 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled
 import { Avatar } from '../../components/Avatar';
 import { PriorityPill } from '../../components/PriorityPill';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
-import { perfFirstValue, perfTrack } from '../../lib/perf';
+import { perfFirstValue, perfTrack, perfStart, perfEnd, perfCancel } from '../../lib/perf';
+import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
 import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
 import {
@@ -158,13 +159,25 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const boardLive = liveQuery(boardStream, 'board');
   const engine = createBoardEngine(
     // Perf mark: board open → first snapshot (docs/performance.md budget).
-    (boardId) => perfFirstValue(boardLive(boardId), 'board-open'),
+    // The cached stream seeds the view instantly on a warm open; the live
+    // producer revalidates and every yield refreshes the cache.
+    (boardId) =>
+      perfFirstValue(
+        cachedStream(`board:${boardId}`, () => boardLive(boardId), 'board-revalidate'),
+        'board-open',
+      ),
     () => props.params.boardId,
     EMPTY,
     () => boardLive.status(props.params.boardId),
     // The durable poll refresh gets its own mark: realtime outages show
-    // up here, not in board-open.
-    () => perfTrack('board-refresh', () => getBoardSnapshot(props.params.boardId)),
+    // up here, not in board-open. It also keeps the cache warm when
+    // realtime is dead.
+    () =>
+      perfTrack('board-refresh', async () => {
+        const snapshot = await getBoardSnapshot(props.params.boardId);
+        cachePut(`board:${props.params.boardId}`, snapshot);
+        return snapshot;
+      }),
   );
   const view = engine.view;
   const me = createMemo(() => getMe());
@@ -599,6 +612,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     void (async () => {
       try {
         for await (const list of await chatLive(props.params.boardId)) {
+          // The board-open chat channel keeps the cache warm even with the
+          // panel closed — opening the chat then paints the latest page
+          // instantly and the live value verifies it.
+          cachePut(`board-chat:${props.params.boardId}`, list);
           if (panel() === 'chat') {
             stampChatSeen(chatLatest(list));
             setChatUnread(0);
@@ -2642,24 +2659,51 @@ function CardDrawer(props: {
         return;
       }
       let alive = true;
-      const load = async (mark: boolean) => {
+      // Perf mark: the settings-tab open ends at the first PAINT — the
+      // cached page (a warm open, ~1ms) or the fetch (a cold open). The
+      // fetch itself carries its own mark, card-timeline-fetch. The token
+      // plus the painted flag close two races: a failed cold open still
+      // records (a slow failure is a slow open), and a cache read that
+      // resolves AFTER the fetch never paints stale rows over fresh ones.
+      const openToken = perfStart('card-timeline-open');
+      let painted = false;
+      const load = async (first: boolean) => {
         try {
-          // Perf mark: the settings-tab open waits on THIS fetch (the 3s
-          // complaint on card #45). Polls (mark=false) stay unmarked so
-          // the stats are open-latency only.
-          const rows = mark
-            ? await perfTrack('card-timeline-open', () => getCardEvents(id))
+          const rows = first
+            ? await perfTrack('card-timeline-fetch', () => getCardEvents(id))
             : await getCardEvents(id);
-          if (alive) setEvents(rows);
+          if (alive) {
+            setEvents(rows);
+            cachePut(`card-timeline:${id}`, rows);
+            if (first) {
+              painted = true;
+              perfEnd('card-timeline-open', openToken);
+            }
+          }
         } catch {
-          // the timeline is best-effort decoration
+          // The timeline is best-effort decoration — but the open mark
+          // must not dangle on a failed cold fetch.
+          if (first) perfEnd('card-timeline-open', openToken);
         }
       };
+      // Stale-while-revalidate: the cache paints instantly when this
+      // card's timeline was seen before; the fetch revalidates either
+      // way. Whichever paints first ends the open mark (the other end
+      // no-ops on the token).
+      void cacheGet<CardEventRow[]>(`card-timeline:${id}`).then((cached) => {
+        if (alive && cached && !painted) {
+          setEvents(cached);
+          perfEnd('card-timeline-open', openToken);
+        }
+      });
       void load(true);
       const timer = setInterval(() => void load(false), 10_000);
       return () => {
         alive = false;
         clearInterval(timer);
+        // An open abandoned before its data arrived is not a sample —
+        // cancel quietly so it does not linger in perfInFlight either.
+        perfCancel('card-timeline-open', openToken);
       };
     },
   );
@@ -2721,9 +2765,15 @@ function CardDrawer(props: {
       (async function* (): AsyncGenerator<CommentsSnapshot> {
         // The card's client_op rides along: the server resolves a
         // mid-provisional (temp) key to the durable card before binding.
-        // Perf mark: drawer open → first comments page.
+        // Perf mark: drawer open → first comments page. Warm opens paint
+        // the cached page instantly; the live value revalidates and
+        // refreshes the cache.
         for await (const list of await perfFirstValue(
-          commentsLive(key, props.clientOp ?? null),
+          cachedStream(
+            `card-comments:${key}`,
+            () => commentsLive(key, props.clientOp ?? null),
+            'card-comments-revalidate',
+          ),
           'card-comments-open',
         )) {
           yield { list };
@@ -3803,9 +3853,12 @@ function BoardChat(props: {
   const engine = createEngine<ChatSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<ChatSnapshot> {
-        // Perf mark: chat panel open → first value (warm channels that
-        // already hold the latest page measure ~0 — the cache story).
-        for await (const list of await perfFirstValue(chatLive(key), 'board-chat-open')) {
+        // Perf mark: chat panel open → first value. Warm opens paint the
+        // cached page instantly (cachedStream), the live value revalidates.
+        for await (const list of await perfFirstValue(
+          cachedStream(`board-chat:${key}`, () => chatLive(key), 'board-chat-revalidate'),
+          'board-chat-open',
+        )) {
           yield { list };
         }
       })(),

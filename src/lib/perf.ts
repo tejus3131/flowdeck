@@ -70,6 +70,17 @@ export function perfEnd(label: string, token?: MarkToken): number | null {
   return duration;
 }
 
+/** Abandon an open mark without recording: a drawer closed before its
+ *  data arrived is not an open-latency sample, but it must not linger in
+ *  perfInFlight either. Idempotent; token-checked like perfEnd. */
+export function perfCancel(label: string, token?: MarkToken): void {
+  if (isServer) return;
+  const entry = open.get(label);
+  if (!entry) return;
+  if (token !== undefined && entry.token !== token) return;
+  open.delete(label);
+}
+
 /** Measure a whole promise: start → resolution (success or failure — a
  *  slow failure is still a slow open). The error rethrows unchanged.
  *  The mark is owned: a stale resolution outlived by a reopen records

@@ -6,6 +6,7 @@ import { Show, createSignal, onSettled, For } from 'solid-js';
 import { Avatar } from './Avatar';
 import type { MeProfile } from '../lib/auth';
 import { signOut } from '../lib/auth';
+import { cacheClear } from '../lib/cache';
 import { addPasskey } from '../lib/passkey';
 import { applyTheme, parseTheme, saveTheme, writeThemeCookie, type Theme } from '../lib/theme';
 import {
@@ -345,7 +346,13 @@ export function UserMenu(props: { profile: () => MeProfile }) {
             </button>
           </Show>
 
-          <form action={signOut} method="post">
+          <form
+            action={signOut}
+            method="post"
+            // Cached data must not outlive the session on a shared
+            // device — clear it as the sign-out posts.
+            onSubmit={() => cacheClear()}
+          >
             <button
               type="submit"
               role="menuitem"

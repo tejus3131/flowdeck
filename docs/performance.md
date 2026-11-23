@@ -107,7 +107,7 @@ Each phase lands as its own PR, each leaves the app fully working.
 | Phase | What | Status |
 | --- | --- | --- |
 | 0 | **Profiling** — perf marks on every slow open path (board, chats, timeline, comments), a `?perf=1` debug panel with p50/p95 per label, server-side slow-path logs | in flight |
-| 1 | **Cache layer** — IndexedDB store + stale-while-revalidate hydration for board snapshots, chats, comments, timelines | planned |
+| 1 | **Cache layer** — IndexedDB store + stale-while-revalidate hydration for board snapshots, chats, comments, timelines | in flight |
 | 2 | **Delta sync** — trustworthy transactional change log first (deletions included), then revision-cursored deltas from the live producers instead of full snapshots | planned |
 | 3 | **Prefetch by journey** — notification-driven and grant-driven cache warming | planned |
 | 4 | **Idle refresh + eviction** — TTL/LRU background refresh so cached data stays fresh without user action | planned |
