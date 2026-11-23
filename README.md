@@ -1,3 +1,22 @@
+# Flowdeck
+
+Flowdeck is a team workspace: boards, cards, chats, and an MCP server for
+AI agents — built on SolidStart 2 + Supabase (Postgres, RLS, Realtime).
+
+## Project docs
+
+- [`docs/performance.md`](docs/performance.md) — why the app was slow, the
+  architecture that fixes it (client cache → delta sync → prefetch), and the
+  phase roadmap with budgets.
+- [`docs/performance-rules.md`](docs/performance-rules.md) — **read before
+  adding any new data stream or touching UI**: the checklist that keeps the
+  app fast.
+
+The rest of this README documents the SolidStart template Flowdeck is built
+on.
+
+---
+
 ## Solid `fullstack` template
 
 `basic` plus a server. Same structure, same conventions — the diff against `basic` is what a server adds:
