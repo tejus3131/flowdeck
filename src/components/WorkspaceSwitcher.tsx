@@ -3,7 +3,7 @@
 import { revalidate, useNavigate } from '@solidjs/router';
 import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
 
-import { createWorkspace, getMyWorkspaces, switchWorkspace } from '../lib/workspaces';
+import { createWorkspace, getMyWorkspaces, switchWorkspaceOrdered } from '../lib/workspaces';
 
 export function WorkspaceSwitcher() {
   const workspaces = createMemo(() => getMyWorkspaces());
@@ -42,7 +42,7 @@ export function WorkspaceSwitcher() {
     setBusy(id);
     setSwitchError(null);
     try {
-      await switchWorkspace(id);
+      await switchWorkspaceOrdered(id);
       // Refetch everything workspace-scoped: the list itself and boards.
       revalidate('workspaces');
       revalidate('boards');

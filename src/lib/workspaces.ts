@@ -504,6 +504,26 @@ export async function switchWorkspace(workspaceId: string): Promise<boolean> {
   return true;
 }
 
+// ── client-side switch coordination ─────────────────────────────────────────
+// Every cookie-writing switch funnels through here: one request in flight
+// at a time, and only the LATEST intent reaches the server. Superseded
+// intents are skipped outright, so a stale in-flight response can never
+// overwrite a newer selection (explicit or automatic) — the race the
+// Copilot review flagged on PR #1.
+let switchToken = 0;
+let switchChain: Promise<void> = Promise.resolve();
+
+export function switchWorkspaceOrdered(workspaceId: string): Promise<void> {
+  const token = ++switchToken;
+  switchChain = switchChain
+    .catch(() => {})
+    .then(async () => {
+      if (token !== switchToken) return;
+      await switchWorkspace(workspaceId);
+    });
+  return switchChain;
+}
+
 /** Create a workspace — the signer becomes its owner. New accounts start
  *  with nothing and create (or accept an invite to) one when ready. */
 export async function createWorkspace(name: string): Promise<{ id: string }> {

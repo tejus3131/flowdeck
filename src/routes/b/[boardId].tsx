@@ -78,7 +78,7 @@ import {
   getMyWorkspaces,
   getWorkspaceSnapshot,
   setBoardAccess,
-  switchWorkspace,
+  switchWorkspaceOrdered,
   workspaceStream,
   type Member,
   type TeamView,
@@ -282,20 +282,24 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // workspace-scoped page must agree with what's on screen, so the active
   // choice follows the board's workspace. Board-only guests (no membership
   // in the board's workspace) keep their current choice untouched.
+  // The ordered switch serializes with every other cookie-writing switch:
+  // a stale in-flight switch from an earlier board visit is superseded
+  // and never lands, so the cookie can't drift from the board on screen.
   createEffect(
     () => view().board.workspace_id,
     (boardWorkspaceId) => {
       if (!boardWorkspaceId) return;
       void (async () => {
-        const mine = await getMyWorkspaces();
-        if (!mine.some((ws) => ws.id === boardWorkspaceId)) return;
-        if (mine.some((ws) => ws.current && ws.id === boardWorkspaceId)) return;
         try {
-          await switchWorkspace(boardWorkspaceId);
+          const mine = await getMyWorkspaces();
+          if (!mine.some((ws) => ws.id === boardWorkspaceId)) return;
+          if (mine.some((ws) => ws.current && ws.id === boardWorkspaceId)) return;
+          await switchWorkspaceOrdered(boardWorkspaceId);
           revalidate('workspaces');
           revalidate('boards');
         } catch {
-          // Membership raced away mid-view — the board itself still renders.
+          // Best effort: on failure the active choice stays as it was —
+          // the board itself still renders, and the next visit retries.
         }
       })();
     },

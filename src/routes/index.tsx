@@ -16,7 +16,7 @@ import {
   type BoardSummary,
 } from '../lib/boards';
 import { createEngine } from '../lib/sync';
-import { getMyWorkspaces, createWorkspace, getWorkspaceSnapshot, switchWorkspace } from '../lib/workspaces';
+import { getMyWorkspaces, createWorkspace, getWorkspaceSnapshot, switchWorkspaceOrdered } from '../lib/workspaces';
 import { createWorkspaceRelay } from '../lib/workspace-relay';
 import { MembershipWatch } from '../components/MembershipWatch';
 import {
@@ -422,7 +422,7 @@ function WorkspacePickerCard() {
     setBusy(id);
     setPickError(null);
     try {
-      await switchWorkspace(id);
+      await switchWorkspaceOrdered(id);
       revalidate('workspaces');
       revalidate('boards');
     } catch (cause) {
