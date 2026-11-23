@@ -28,6 +28,7 @@ import {
   type BoardDeletedOp,
   type WorkspaceOpPayload,
 } from '../lib/workspace-ops';
+import { errorMessage } from '../lib/error-message';
 
 type BoardOpBoards = BoardCreatedOp | BoardDeletedOp;
 
@@ -429,7 +430,7 @@ function WorkspacePickerCard() {
       revalidate('workspaces');
       revalidate('boards');
     } catch (cause) {
-      setPickError(cause instanceof Error ? cause.message : 'Could not open that workspace');
+      setPickError(errorMessage(cause, 'Could not open that workspace'));
     } finally {
       setBusy(null);
     }
@@ -498,7 +499,7 @@ function CreateWorkspaceCard() {
         setBusy(false);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create the workspace');
+      setError(errorMessage(cause, 'Could not create the workspace'));
       setBusy(false);
     }
   };

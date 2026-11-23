@@ -8,6 +8,7 @@ import { revalidate } from '@solidjs/router';
 import { acceptInvite } from '../lib/workspaces';
 import { resolveAccessRequest } from '../lib/access';
 import type { NotificationRow } from '../lib/notifications';
+import { errorMessage } from '../lib/error-message';
 
 /** Pull the invite token out of the notification's accept href. */
 export function inviteTokenOf(row: Pick<NotificationRow, 'href'>): string | null {
@@ -43,7 +44,7 @@ export function InviteActions(props: {
       // Real failures only (redirect carriers resolve empty). The reason
       // shows inline — "invalid, revoked, or already used" usually means
       // the workspace was deleted or the invite was consumed elsewhere.
-      setError(cause instanceof Error ? cause.message : 'Could not accept');
+      setError(errorMessage(cause, 'Could not accept'));
     } finally {
       setBusy(false);
     }
@@ -114,7 +115,7 @@ export function AccessRequestActions(props: { row: NotificationRow }) {
       });
       // The live inbox drops the row when the server deletes it.
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Something went wrong');
+      setError(errorMessage(cause, 'Something went wrong'));
     } finally {
       setBusy(false);
     }

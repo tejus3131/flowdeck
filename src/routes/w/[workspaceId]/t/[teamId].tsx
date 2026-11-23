@@ -22,6 +22,7 @@ import {
   setTeamMemberRole,
   updateTeam,
 } from '../../../../lib/teams';
+import { errorMessage } from '../../../../lib/error-message';
 
 const EMPTY_DETAIL: WorkspaceDetail = {
   workspace: { id: '', name: '', invite_domains: [], board_creation: 'team_admins' },
@@ -109,7 +110,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
       await run();
       setNotice(ok);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Something went wrong');
+      setError(errorMessage(cause, 'Something went wrong'));
     }
   };
 

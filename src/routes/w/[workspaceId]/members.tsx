@@ -41,6 +41,7 @@ import {
   removeTeamMember,
   setTeamMemberRole,
 } from '../../../lib/teams';
+import { errorMessage } from '../../../lib/error-message';
 
 const ROLE_STYLE: Record<WorkspaceRole, string> = {
   owner: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
@@ -185,7 +186,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
             : 'Everyone can create boards ✓',
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save the setting');
+      setError(errorMessage(cause, 'Could not save the setting'));
     }
   };
 
@@ -221,7 +222,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
         setInviteLink(result.acceptUrl);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send the invitation');
+      setError(errorMessage(err, 'Could not send the invitation'));
     } finally {
       setInviteBusy(false);
     }
@@ -277,7 +278,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
       if (!result.emailed) setInviteLink(result.acceptUrl);
       else setNotice(`Invitation emailed again to ${email} ✓`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend');
+      setError(errorMessage(err, 'Could not resend'));
     } finally {
       setInviteBusy(false);
     }
@@ -389,7 +390,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
       setRenaming(false);
       setNotice('Workspace renamed ✓');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not rename');
+      setError(errorMessage(cause, 'Could not rename'));
     }
   };
 
@@ -411,7 +412,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
           : 'Invites open to any email address ✓',
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save the allowlist');
+      setError(errorMessage(cause, 'Could not save the allowlist'));
     } finally {
       setDomainsBusy(false);
     }
@@ -427,7 +428,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
       revalidate('boards');
       navigate('/');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not delete the workspace');
+      setError(errorMessage(cause, 'Could not delete the workspace'));
       setDeletingWs(false);
     }
   };
@@ -465,7 +466,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
         description: teamDescription().trim(),
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create the team');
+      setError(errorMessage(cause, 'Could not create the team'));
     } finally {
       setTeamBusy(false);
     }
@@ -482,7 +483,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
       setNotice(ok);
       relay?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Something went wrong');
+      setError(errorMessage(cause, 'Something went wrong'));
     }
   };
 

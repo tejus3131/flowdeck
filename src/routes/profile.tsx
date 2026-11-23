@@ -14,6 +14,7 @@ import { setAvatarUrl, updateProfile } from '../lib/profile';
 import { createApiToken, getMyTokens, revokeApiToken } from '../lib/tokens';
 import { parseTheme } from '../lib/theme';
 import { getMyStatus, setWorkHours } from '../lib/status';
+import { errorMessage } from '../lib/error-message';
 
 function Section(props: { title: string; children: JSX.Element }) {
   return (
@@ -155,7 +156,7 @@ export default function ProfilePage() {
       });
       setSaved(true);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Could not save your profile');
+      setSaveError(errorMessage(error, 'Could not save your profile'));
     } finally {
       setSaving(false);
     }
@@ -178,7 +179,7 @@ export default function ProfilePage() {
       const url = await uploadAvatar(profile.id, file);
       await setAvatarUrl(url); // mutation → revalidates `me`
     } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : 'Upload failed — try again');
+      setAvatarError(errorMessage(error, 'Upload failed — try again'));
     } finally {
       setAvatarBusy(false);
       input.value = ''; // lets picking the same file retry
@@ -191,7 +192,7 @@ export default function ProfilePage() {
     try {
       await setAvatarUrl(null);
     } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : 'Could not remove the picture');
+      setAvatarError(errorMessage(error, 'Could not remove the picture'));
     } finally {
       setAvatarBusy(false);
     }
@@ -220,7 +221,7 @@ export default function ProfilePage() {
       setFreshToken(result.token); // shown exactly once
       revalidate('my-tokens');
     } catch (err) {
-      setTokenError(err instanceof Error ? err.message : 'Could not create the token');
+      setTokenError(errorMessage(err, 'Could not create the token'));
     } finally {
       setTokenBusy(false);
     }
@@ -243,7 +244,7 @@ export default function ProfilePage() {
       await revokeApiToken(tokenId);
       revalidate('my-tokens');
     } catch (err) {
-      setTokenError(err instanceof Error ? err.message : 'Could not revoke the token');
+      setTokenError(errorMessage(err, 'Could not revoke the token'));
     }
   };
 
@@ -275,7 +276,7 @@ export default function ProfilePage() {
       revalidate('me');
       navigate('/');
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Could not delete the account');
+      setDeleteError(errorMessage(err, 'Could not delete the account'));
       setDeleting(false);
     }
   };

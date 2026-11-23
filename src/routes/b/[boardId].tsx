@@ -93,6 +93,7 @@ import {
   requestTeamMentionAccess,
   type BlockedTeam,
 } from '../../lib/access';
+import { errorMessage } from '../../lib/error-message';
 const EMPTY: BoardSnapshot = {
   board: { id: '', name: '', owner_id: '', workspace_id: null, created_at: '', updated_at: '', client_op: null, description: '', access_delegation: false },
   lists: [],
@@ -805,7 +806,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       navigate('/');
     } catch (error) {
       setDeleting(false);
-      setSettingsError(error instanceof Error ? error.message : 'Could not delete the board');
+      setSettingsError(errorMessage(error, 'Could not delete the board'));
     }
   };
 
@@ -2894,7 +2895,7 @@ function CardDrawer(props: {
       );
       setBlocked([]);
     } catch (error) {
-      setAccessNote(error instanceof Error ? error.message : 'Could not grant access');
+      setAccessNote(errorMessage(error, 'Could not grant access'));
     } finally {
       setAccessBusy(false);
     }
@@ -2929,7 +2930,7 @@ function CardDrawer(props: {
       setBlocked([]);
       setBlockedTeams([]);
     } catch (error) {
-      showAccessNote(error instanceof Error ? error.message : 'Could not ask the admins');
+      showAccessNote(errorMessage(error, 'Could not ask the admins'));
     } finally {
       setAccessBusy(false);
     }
@@ -2951,7 +2952,7 @@ function CardDrawer(props: {
       );
       setBlockedTeams([]);
     } catch (error) {
-      showAccessNote(error instanceof Error ? error.message : 'Could not grant access');
+      showAccessNote(errorMessage(error, 'Could not grant access'));
     } finally {
       setAccessBusy(false);
     }
@@ -3888,7 +3889,7 @@ function BoardChat(props: {
       setBlocked([]);
       setBlockedTeams([]);
     } catch (error) {
-      showAccessNote(error instanceof Error ? error.message : 'Could not grant access');
+      showAccessNote(errorMessage(error, 'Could not grant access'));
     } finally {
       setAccessBusy(false);
     }
@@ -3918,7 +3919,7 @@ function BoardChat(props: {
       setBlocked([]);
       setBlockedTeams([]);
     } catch (error) {
-      showAccessNote(error instanceof Error ? error.message : 'Could not ask the admins');
+      showAccessNote(errorMessage(error, 'Could not ask the admins'));
     } finally {
       setAccessBusy(false);
     }
@@ -4588,7 +4589,7 @@ function BoardSettings(props: {
                                     .then(() => props.onTeamAccessChanged(team.id, option))
                                     .catch((error: unknown) => {
                                     props.onError(
-                                      error instanceof Error ? error.message : 'Could not change team access',
+                                      errorMessage(error, 'Could not change team access'),
                                     );
                                   })
                                 }

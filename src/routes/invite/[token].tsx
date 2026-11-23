@@ -10,6 +10,7 @@ import { Show, createSignal, onSettled } from 'solid-js';
 
 import { acceptInvite, enterWorkspaceOrdered, myProfileForRelay } from '../../lib/workspaces';
 import { broadcastMemberJoined } from '../../lib/workspace-relay';
+import { errorMessage } from '../../lib/error-message';
 
 export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
   const navigate = useNavigate();
@@ -56,7 +57,7 @@ export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
         }
       } catch (err) {
         // Genuine failures only — redirects resolved above.
-        setError(err instanceof Error ? err.message : 'Could not accept the invitation');
+        setError(errorMessage(err, 'Could not accept the invitation'));
       }
     })();
   });
