@@ -188,11 +188,19 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // the user's most-recently-opened (the dashboard warms from that
   // list), and while it is open its live channel owns the cache — a
   // late warm finishing over it must not write stale.
-  onSettled(() => {
-    trackRecentBoard(props.params.boardId);
-    warmBoardActive(props.params.boardId, true);
-    return () => warmBoardActive(props.params.boardId, false);
-  });
+  //
+  // Param-keyed, NOT onSettled: the route is param-reactive — navigating
+  // to another board reuses this component — so the bookkeeping must
+  // follow the param. The cleanup releases the previous board on each
+  // change and at unmount.
+  createEffect(
+    () => props.params.boardId,
+    (boardId) => {
+      trackRecentBoard(boardId);
+      warmBoardActive(boardId, true);
+      return () => warmBoardActive(boardId, false);
+    },
+  );
 
   /** A comment op payload (the drawer's engine consumes these too). */
   type CommentOp = Extract<BoardOpPayload, { kind: 'comment-created' }>;

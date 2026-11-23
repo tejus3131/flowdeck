@@ -35,7 +35,9 @@ const inFlight = new Set<string>();
 function idle(work: () => void): void {
   if (isServer) return;
   if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(() => work());
+    // Bounded idle: a busy tab must not defer a warm forever — after 2s
+    // it runs anyway (background work, still off the interaction path).
+    requestIdleCallback(() => work(), { timeout: 2000 });
   } else {
     setTimeout(work, 300); // Safari: idle-ish
   }
