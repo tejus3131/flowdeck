@@ -478,11 +478,30 @@ export async function createBoard(
   const user = await requireUser(supabase);
   const boardName = cleanText(name, 'Board name', 80);
 
-  // Boards belong to the current workspace (the cookie choice), falling
-  // back to the caller's first workspace.
-  const workspaceId = await currentWorkspaceId(supabase);
-  const workspaceTarget = workspaceId ?? (await firstWorkspaceId(supabase));
-  if (!workspaceTarget) throw new Error('No workspace found for this account');
+  // Boards belong to the current workspace — the cookie choice, validated
+  // against MY membership. A stale/absent cookie must never silently
+  // redirect the board into a DIFFERENT workspace (the old fall-back-to-
+  // first-workspace did exactly that): the only safe fallback is an
+  // account with exactly one workspace; anyone else gets a clear error.
+  const cookieWorkspaceId = await currentWorkspaceId(supabase);
+  let workspaceTarget: string | null = cookieWorkspaceId;
+  if (!workspaceTarget) {
+    const { data: mine } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', user.id)
+      .order('created_at');
+    const mineIds = ((mine ?? []) as { workspace_id: string }[]).map((row) => row.workspace_id);
+    if (mineIds.length === 1) {
+      workspaceTarget = mineIds[0];
+    } else if (mineIds.length === 0) {
+      throw new Error('No workspace found for this account');
+    } else {
+      throw new Error(
+        'No workspace is selected — open a workspace (or pick one from the switcher) before creating a board',
+      );
+    }
+  }
 
   // Who may create boards here? (The GitHub org setting.)
   const [{ data: me }, { data: myAdminTeams }] = await Promise.all([
@@ -1518,18 +1537,6 @@ async function currentWorkspaceId(
   const match = header.match(/(?:^|;\s*)fd_ws=([0-9a-f-]{36})/);
   const candidate = match?.[1];
   if (!candidate) return null;
-  const { data } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('workspace_id', candidate)
-    .maybeSingle();
-  return data?.workspace_id ?? null;
-}
-
-/** The caller's earliest workspace (their personal one). */
-async function firstWorkspaceId(
-  supabase: ReturnType<typeof createSupabaseRequestClient>,
-): Promise<string | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -1537,10 +1544,11 @@ async function firstWorkspaceId(
   const { data } = await supabase
     .from('workspace_members')
     .select('workspace_id')
-    // RLS also shows peers' rows — only the caller's own membership counts.
+    .eq('workspace_id', candidate)
+    // RLS shows peers' rows too — only MY membership makes a workspace
+    // "current". A stale cookie (workspace deleted and recreated, or I
+    // was removed from it) must NOT resolve.
     .eq('user_id', user.id)
-    .order('created_at')
-    .limit(1)
     .maybeSingle();
   return data?.workspace_id ?? null;
 }

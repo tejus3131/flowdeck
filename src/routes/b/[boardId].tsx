@@ -75,8 +75,10 @@ import {
   type ListRow,
 } from '../../lib/boards';
 import {
+  getMyWorkspaces,
   getWorkspaceSnapshot,
   setBoardAccess,
+  switchWorkspace,
   workspaceStream,
   type Member,
   type TeamView,
@@ -274,6 +276,30 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       return wsId ? (await getWorkspaceSnapshot(wsId)) ?? EMPTY_WORKSPACE : EMPTY_WORKSPACE;
     },
   });
+
+  // Direct visits (link, bookmark, notification) can land on a board whose
+  // workspace isn't the active one — the switcher, dashboard, and every
+  // workspace-scoped page must agree with what's on screen, so the active
+  // choice follows the board's workspace. Board-only guests (no membership
+  // in the board's workspace) keep their current choice untouched.
+  createEffect(
+    () => view().board.workspace_id,
+    (boardWorkspaceId) => {
+      if (!boardWorkspaceId) return;
+      void (async () => {
+        const mine = await getMyWorkspaces();
+        if (!mine.some((ws) => ws.id === boardWorkspaceId)) return;
+        if (mine.some((ws) => ws.current && ws.id === boardWorkspaceId)) return;
+        try {
+          await switchWorkspace(boardWorkspaceId);
+          revalidate('workspaces');
+          revalidate('boards');
+        } catch {
+          // Membership raced away mid-view — the board itself still renders.
+        }
+      })();
+    },
+  );
 
   // The workspace relay carries workspace life into this page twice over:
   //  * the SETTINGS DRAWER's engine (members, roles, access overrides)
