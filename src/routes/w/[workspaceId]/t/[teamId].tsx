@@ -81,19 +81,29 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
   // A just-created team can beat the stream to the page: the team link
   // becomes clickable before the teams realtime delta re-emits, and the
   // cached snapshot predates the creation (card #38). The 20s poll would
-  // self-heal it, but nobody waits that long — verify ONCE with a fresh
+  // self-heal it, but nobody waits that long — verify with a fresh
   // durable fetch before declaring "doesn't exist". The short delay lets
   // an in-flight stream emission win first; a genuinely missing team
   // simply confirms the message after one extra fetch.
-  let missingCheckedFor: string | null = null;
+  // The computed value carries the MISSING TEAM'S ID (not a boolean), so
+  // navigating from one missing team to another re-arms verification —
+  // and while a verification is in flight, the page stays in its
+  // loading state instead of flashing "doesn't exist" first.
+  const [verifyingMissing, setVerifyingMissing] = createSignal<string | null>(null);
   createEffect(
-    () => (detail() ? (team() === null && deactivated() === null) : false),
-    (missing) => {
-      if (!missing) return;
-      const teamId = props.params.teamId;
-      if (missingCheckedFor === teamId) return;
-      missingCheckedFor = teamId;
-      setTimeout(() => void engine.refresh(), 300);
+    () => {
+      if (!detail()) return null;
+      return team() === null && deactivated() === null ? props.params.teamId : null;
+    },
+    (missingTeamId) => {
+      if (!missingTeamId) return;
+      setVerifyingMissing(missingTeamId);
+      setTimeout(() => {
+        void engine
+          .refresh()
+          .catch(() => {})
+          .finally(() => setVerifyingMissing((current) => (current === missingTeamId ? null : current)));
+      }, 300);
     },
   );
 
@@ -163,7 +173,10 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
       <Show
         when={exists()}
         fallback={
-          <Show when={detail()} fallback={<p class="mt-8 text-sm text-neutral-400">Loading…</p>}>
+          <Show
+            when={detail() && !verifyingMissing()}
+            fallback={<p class="mt-8 text-sm text-neutral-400">Loading…</p>}
+          >
             <p class="mt-8 text-sm text-neutral-400">
               This team doesn't exist in this workspace.{' '}
               <a href={`/w/${props.params.workspaceId}/members`} class="text-indigo-600 underline dark:text-indigo-400">
