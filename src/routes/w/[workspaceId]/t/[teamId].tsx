@@ -4,7 +4,7 @@
 // and can be reinstated by workspace admins).
 import { Title } from '@solidjs/meta';
 import { liveQuery, useNavigate, type RouteProps } from '@solidjs/router';
-import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
 
 import { Avatar } from '../../../../components/Avatar';
 import { getMe } from '../../../../lib/auth';
@@ -77,6 +77,25 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
     () => detail()?.deactivatedTeams.find((entry) => entry.id === props.params.teamId) ?? null,
   );
   const exists = () => team() !== null || deactivated() !== null;
+
+  // A just-created team can beat the stream to the page: the team link
+  // becomes clickable before the teams realtime delta re-emits, and the
+  // cached snapshot predates the creation (card #38). The 20s poll would
+  // self-heal it, but nobody waits that long — verify ONCE with a fresh
+  // durable fetch before declaring "doesn't exist". The short delay lets
+  // an in-flight stream emission win first; a genuinely missing team
+  // simply confirms the message after one extra fetch.
+  let missingCheckedFor: string | null = null;
+  createEffect(
+    () => (detail() ? (team() === null && deactivated() === null) : false),
+    (missing) => {
+      if (!missing) return;
+      const teamId = props.params.teamId;
+      if (missingCheckedFor === teamId) return;
+      missingCheckedFor = teamId;
+      setTimeout(() => void engine.refresh(), 300);
+    },
+  );
 
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
   const isTeamAdmin = () =>
