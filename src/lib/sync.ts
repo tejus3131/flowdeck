@@ -127,6 +127,11 @@ export type Engine<S> = {
   isSaving: (entityId: string) => boolean;
   /** A locally created entity whose real id hasn't been echoed yet. */
   isTemp: (entityId: string) => boolean;
+  /** Best-effort durable re-fetch, fed through the same merge path as
+   *  the live stream — a no-op when the engine has no refresh source.
+   *  Lets a page heal a stale cached snapshot on demand instead of
+   *  waiting for the poll (or the next realtime emission). */
+  refresh: () => Promise<void>;
 };
 
 /**
@@ -702,6 +707,7 @@ function createEngineBody<S extends object>(
     failRemote,
     retry,
     dismiss,
+    refresh: refreshNow,
     isSaving: (entityId: string) =>
       ops.list.some((op) => op.status === 'inFlight' && !op.remote && op.guards.includes(entityId)),
     /** A locally created entity whose real id hasn't been echoed yet —

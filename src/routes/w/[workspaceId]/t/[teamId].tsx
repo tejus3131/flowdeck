@@ -4,7 +4,7 @@
 // and can be reinstated by workspace admins).
 import { Title } from '@solidjs/meta';
 import { liveQuery, useNavigate, type RouteProps } from '@solidjs/router';
-import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled } from 'solid-js';
 
 import { Avatar } from '../../../../components/Avatar';
 import { getMe } from '../../../../lib/auth';
@@ -79,6 +79,51 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
   );
   const exists = () => team() !== null || deactivated() !== null;
 
+  // A just-created team can beat the stream to the page: the team link
+  // becomes clickable before the teams realtime delta re-emits, and the
+  // cached snapshot predates the creation (card #38). The 20s poll would
+  // self-heal it, but nobody waits that long — verify with a fresh
+  // durable fetch before declaring "doesn't exist". The short delay lets
+  // an in-flight stream emission win first; a genuinely missing team
+  // simply confirms the message after one extra fetch.
+  // The computed value carries the MISSING TEAM'S ID (not a boolean), so
+  // navigating from one missing team to another re-arms verification —
+  // and while a verification is in flight, the page stays in its
+  // loading state instead of flashing "doesn't exist" first.
+  // Each attempt is numbered and its timer is cleaned up when the
+  // effect re-runs or the page disposes: only the CURRENT attempt may
+  // fetch and clear the loading state (a stale attempt finishing after
+  // an A → B → A bounce must not unguard the newer verification), and
+  // the stream delivering the team mid-delay cancels the fetch outright.
+  const [verifyingMissing, setVerifyingMissing] = createSignal<string | null>(null);
+  let verificationAttempt = 0;
+  createEffect(
+    () => {
+      if (!detail()) return null;
+      return team() === null && deactivated() === null ? props.params.teamId : null;
+    },
+    (missingTeamId) => {
+      if (!missingTeamId) {
+        setVerifyingMissing(null);
+        return;
+      }
+      setVerifyingMissing(missingTeamId);
+      const attempt = ++verificationAttempt;
+      const timer = setTimeout(() => {
+        void engine
+          .refresh()
+          .catch(() => {})
+          .finally(() => {
+            if (attempt === verificationAttempt) setVerifyingMissing(null);
+          });
+      }, 300);
+      onCleanup(() => {
+        clearTimeout(timer);
+        verificationAttempt++;
+      });
+    },
+  );
+
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
   const isTeamAdmin = () =>
     team()?.members.some((m) => m.user_id === me()?.id && m.role === 'admin') ?? false;
@@ -145,7 +190,10 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
       <Show
         when={exists()}
         fallback={
-          <Show when={detail()} fallback={<p class="mt-8 text-sm text-neutral-400">Loading…</p>}>
+          <Show
+            when={detail() && !verifyingMissing()}
+            fallback={<p class="mt-8 text-sm text-neutral-400">Loading…</p>}
+          >
             <p class="mt-8 text-sm text-neutral-400">
               This team doesn't exist in this workspace.{' '}
               <a href={`/w/${props.params.workspaceId}/members`} class="text-indigo-600 underline dark:text-indigo-400">
