@@ -3,9 +3,11 @@
 // Reads run through the request-scoped Supabase client, so RLS decides
 // what each caller sees (boards: only memberships; cards: only member
 // boards). Mutations validate server-side, then log an activity row —
-// the activity id doubles as the board's revision number, which the
-// live stream carries so clients can tell when a change has been echoed
-// by the database (see board-store.ts's `until` guards).
+// the human-readable audit trail. The per-board REVISION lives in
+// board_revisions (migration 0032): a trigger bumps it in the same
+// transaction as every board-scoped change, which the live stream
+// carries so clients can tell when a change has been echoed by the
+// database.
 import { query } from '@solidjs/router';
 import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
@@ -373,7 +375,7 @@ async function snapshot(
   boardId: string,
 ): Promise<BoardSnapshot> {
   const startedAt = Date.now();
-  const [boards, lists, cards, activity, access, stats] = await Promise.all([
+  const [boards, lists, cards, revisionRow, access, stats] = await Promise.all([
     supabase.from('boards').select('*').eq('id', boardId).maybeSingle(),
     supabase.from('lists').select('*').eq('board_id', boardId).order('position', { ascending: true }),
     supabase
@@ -381,16 +383,31 @@ async function snapshot(
       .select('*, card_tags(tag_id, tags(id, name))')
       .eq('board_id', boardId)
       .order('position', { ascending: true }),
+    // The trustworthy per-board cursor (migration 0032): bumped by a
+    // trigger in the same transaction as every board-scoped change —
+    // deletions included, unlike the old activity head.
     supabase
+      .from('board_revisions')
+      .select('revision')
+      .eq('board_id', boardId)
+      .maybeSingle(),
+    supabase.rpc('user_board_access', { p_board_id: boardId }),
+    supabase.rpc('board_card_comment_stats', { p_board_id: boardId }),
+  ]);
+  // Deploy-order safety: code can ship before migration 0032 lands — in
+  // that window fall back to the old, less trustworthy cursor (the
+  // activity head) so the snapshot keeps working.
+  let revision = revisionRow.data?.revision ?? 0;
+  if (revisionRow.error) {
+    const { data: head } = await supabase
       .from('activity')
       .select('id')
       .eq('board_id', boardId)
       .order('id', { ascending: false })
       .limit(1)
-      .maybeSingle(),
-    supabase.rpc('user_board_access', { p_board_id: boardId }),
-    supabase.rpc('board_card_comment_stats', { p_board_id: boardId }),
-  ]);
+      .maybeSingle();
+    revision = head?.id ?? 0;
+  }
   // Assignees live in a join table — fetched per board card (RLS-scoped).
   const assignees = await supabase
     .from('card_assignees')
@@ -450,7 +467,7 @@ async function snapshot(
           .sort((a, b) => a.name.localeCompare(b.name)),
       };
     }),
-    revision: activity.data?.id ?? 0,
+    revision,
     myAccess: (access.data as 'edit' | 'view' | null) ?? null,
     denied: false,
   };
