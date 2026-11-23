@@ -5,6 +5,7 @@ import { revalidate } from '@solidjs/router';
 import { Show, createSignal, For } from 'solid-js';
 
 import { saveTheme, applyTheme, writeThemeCookie, type Theme, THEMES } from '../lib/theme';
+import { errorMessage } from '../lib/error-message';
 
 const THEME_META: Record<Theme, { label: string; icon: string; hint: string }> = {
   system: { label: 'System', icon: '🖥', hint: 'Match this device' },
@@ -29,7 +30,7 @@ export function ThemePicker(props: { theme: () => Theme }) {
     } catch (err) {
       applyTheme(previous); // revert on failure — the engine way
       writeThemeCookie(previous);
-      setError(err instanceof Error ? err.message : 'Could not save your theme');
+      setError(errorMessage(err, 'Could not save your theme'));
     } finally {
       setSaving(null);
     }

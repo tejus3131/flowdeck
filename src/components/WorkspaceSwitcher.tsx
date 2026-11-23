@@ -4,6 +4,7 @@ import { revalidate, useNavigate } from '@solidjs/router';
 import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
 
 import { createWorkspace, enterWorkspaceOrdered, getMyWorkspaces, switchWorkspaceOrdered } from '../lib/workspaces';
+import { errorMessage } from '../lib/error-message';
 
 export function WorkspaceSwitcher() {
   const workspaces = createMemo(() => getMyWorkspaces());
@@ -54,7 +55,7 @@ export function WorkspaceSwitcher() {
       navigate('/');
     } catch (cause) {
       setSwitchError(
-        cause instanceof Error ? cause.message : 'Could not switch workspace',
+        errorMessage(cause, 'Could not switch workspace'),
       );
     } finally {
       setBusy(null);
@@ -76,7 +77,7 @@ export function WorkspaceSwitcher() {
         setOpen(false);
       }
     } catch (cause) {
-      setCreateError(cause instanceof Error ? cause.message : 'Could not create the workspace');
+      setCreateError(errorMessage(cause, 'Could not create the workspace'));
     } finally {
       setBusy(null);
     }

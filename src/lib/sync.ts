@@ -35,6 +35,7 @@ import {
 import { getRequestEvent, isServer } from '@solidjs/web';
 
 import type { BoardSnapshot } from './boards';
+import { errorMessage } from './error-message';
 
 export type SyncStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
@@ -523,7 +524,7 @@ function createEngineBody<S extends object>(
     const fail = (error: unknown) => {
       if (settled) return;
       settled = true;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       // Mark failed (guards drop via status) and re-merge: the durable
       // state wins again for this op's entities — that IS the revert.
       setOps((draft) => {
@@ -670,7 +671,7 @@ function createEngineBody<S extends object>(
           const op = draft.list.find((entry) => entry.id === opId);
           if (op) {
             op.status = 'failed';
-            op.error = error instanceof Error ? error.message : String(error);
+            op.error = errorMessage(error);
           }
         });
         // The failed retry reverts on the next emission pass: the op is
