@@ -1305,6 +1305,9 @@ export type CommentRow = {
   body: string;
   author: string;
   created_at: string;
+  /** Server-assigned send order (chat_seq). Absent while a provisional
+   * row has not been echoed by the database yet. */
+  seq?: number | null;
   client_op: string | null;
   /** The author's id + avatar — the chat-style rendering needs both. */
   author_id: string | null;
@@ -1315,8 +1318,8 @@ export type CommentRow = {
 export async function getCardComments(
   cardId: string,
   cardClientOp?: string | null,
-  /** Pagination cursor: only comments OLDER than this timestamp (ISO). */
-  before?: string,
+  /** Pagination cursor: only comments with a LOWER send sequence. */
+  before?: number,
   /** Page size — long discussions load incrementally. */
   limit = 30,
 ): Promise<CommentRow[]> {
@@ -1327,11 +1330,11 @@ export async function getCardComments(
   const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
   let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
     .eq('card_id', resolved)
-    .order('created_at', { ascending: false })
+    .order('seq', { ascending: false })
     .limit(limit);
-  if (before) query = query.lt('created_at', before);
+  if (before) query = query.lt('seq', before);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   // Newest-first from the database → chronological for display.
@@ -1342,6 +1345,7 @@ export async function getCardComments(
       id: row.id,
       body: row.body,
       created_at: row.created_at,
+      seq: row.seq,
       client_op: row.client_op,
       author_id: row.user_id ?? null,
       avatar_url:
@@ -1395,9 +1399,9 @@ export const cardCommentsStream = live(async function* (
     const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
-      .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
+      .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
       .eq('card_id', id)
-      .order('created_at', { ascending: false })
+      .order('seq', { ascending: false })
       .limit(30);
     if (error) throw new Error(error.message);
     warnSlow(startedAt, `card comments page (${id})`);
@@ -1408,6 +1412,7 @@ export const cardCommentsStream = live(async function* (
         id: row.id,
         body: row.body,
         created_at: row.created_at,
+        seq: row.seq,
         client_op: row.client_op,
         author_id: row.user_id ?? null,
         avatar_url:
@@ -1459,12 +1464,20 @@ export async function addComment(
     .maybeSingle();
   if (!card) throw new Error('Card not found');
   const user = await requireUser(supabase);
+  // Server-assigned send order: parallel posters serialize on the
+  // per-card chat_seq counter, so a burst of comments keeps its order.
+  const { data: seq, error: seqError } = await supabase.rpc('allocate_chat_seq', {
+    p_kind: 'card_comment',
+    p_scope: resolved,
+  });
+  if (seqError || seq == null) throw new Error(seqError?.message ?? 'sequence allocation failed');
   const { data: comment, error } = await supabase
     .from('card_comments')
     .insert({
       card_id: resolved,
       user_id: user.id,
       body: text,
+      seq,
       ...(clientOp ? { client_op: clientOp } : {}),
     })
     .select('id, created_at, user_id, profiles(display_name, avatar_url)')
@@ -1544,8 +1557,19 @@ export type BoardMessageRow = {
   author_id: string | null;
   avatar_url: string | null;
   created_at: string;
+  /** Server-assigned send order (chat_seq); absent while provisional. */
+  seq?: number | null;
   client_op: string | null;
 };
+
+/**
+ * Chat sort key: durable rows sort by their server-assigned send
+ * sequence; provisional rows (not yet echoed by the database) sort after
+ * everything, by send time. created_at alone cannot order a burst of
+ * messages sent within the same instant.
+ */
+export const chatSeq = (row: { seq?: number | null; created_at: string }): number =>
+  row.seq != null ? row.seq : Number.MAX_SAFE_INTEGER;
 
 async function boardChatSnapshot(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
@@ -1554,9 +1578,9 @@ async function boardChatSnapshot(
   const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
-    .select('id, body, created_at, client_op, user_id, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
     .eq('board_id', boardId)
-    .order('created_at', { ascending: false })
+    .order('seq', { ascending: false })
     .limit(100);
   if (error) throw new Error(error.message);
   warnSlow(startedAt, `board chat snapshot (${boardId})`);
@@ -1567,6 +1591,7 @@ async function boardChatSnapshot(
       id: row.id,
       body: row.body,
       created_at: row.created_at,
+      seq: row.seq,
       client_op: row.client_op,
       author_id: row.user_id ?? null,
       avatar_url:
@@ -1643,12 +1668,20 @@ export async function postBoardMessage(
   const id = assertId(boardId, 'board id');
   const text = cleanText(body, 'Message', 4000);
   const user = await requireUser(supabase);
+  // Server-assigned send order: parallel posters serialize on the
+  // per-board chat_seq counter, so a burst of messages keeps its order.
+  const { data: seq, error: seqError } = await supabase.rpc('allocate_chat_seq', {
+    p_kind: 'board_message',
+    p_scope: id,
+  });
+  if (seqError || seq == null) throw new Error(seqError?.message ?? 'sequence allocation failed');
   const { data: message, error } = await supabase
     .from('board_messages')
     .insert({
       board_id: id,
       user_id: user.id,
       body: text,
+      seq,
       ...(clientOp ? { client_op: clientOp } : {}),
     })
     .select('id, created_at, user_id, profiles(display_name, avatar_url)')

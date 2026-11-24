@@ -182,6 +182,7 @@ export type Database = {
           client_op: string | null
           created_at: string
           id: string
+          seq: number
           user_id: string
         }
         Insert: {
@@ -190,6 +191,7 @@ export type Database = {
           client_op?: string | null
           created_at?: string
           id?: string
+          seq: number
           user_id: string
         }
         Update: {
@@ -415,6 +417,7 @@ export type Database = {
           client_op: string | null
           created_at: string
           id: string
+          seq: number
           user_id: string
         }
         Insert: {
@@ -423,6 +426,7 @@ export type Database = {
           client_op?: string | null
           created_at?: string
           id?: string
+          seq: number
           user_id: string
         }
         Update: {
@@ -1127,6 +1131,7 @@ export type Database = {
     Functions: {
       accept_workspace_invite: { Args: { p_token: string }; Returns: string }
       allocate_card_position: { Args: { p_list_id: string }; Returns: number }
+      allocate_chat_seq: { Args: { p_kind: string; p_scope: string }; Returns: number }
       allocate_list_position: { Args: { p_board_id: string }; Returns: number }
       auth_check_email: { Args: { p_email: string }; Returns: Json }
       board_card_comment_stats: {
