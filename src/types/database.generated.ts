@@ -681,6 +681,35 @@ export type Database = {
           },
         ]
       }
+      mcp_auth_codes: {
+        Row: {
+          challenge_method: string
+          client_id: string
+          code_challenge: string
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          redirect_uri: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          challenge_method?: string
+          client_id: string
+          code_challenge: string
+          code_hash: string
+          expires_at?: string
+          id?: string
+          redirect_uri: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          [_ in never]: never
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           actor_id: string | null

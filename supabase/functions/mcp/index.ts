@@ -781,9 +781,154 @@ async function sha256Hex(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// ── OAuth: browser-based authorization (the MCP spec flow) ────────────────
+// The edge function is the OAuth RESOURCE SERVER and (for discovery
+// simplicity) also advertises itself as the authorization server; the
+// consent page lives in the web app where the user's session is.
+const APP_ORIGIN = Deno.env.get('APP_ORIGIN') ?? 'https://flowdeck.tejusgupta.dev';
+const RESOURCE_URL = `${new URL(Deno.env.get('SUPABASE_URL') ?? 'https://supabase.co').origin}/functions/v1/mcp`;
+
+/** base64url(SHA-256(x)) — the PKCE S256 challenge of a verifier. */
+async function pkceChallenge(verifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  let bin = '';
+  for (const byte of new Uint8Array(digest)) bin += String.fromCharCode(byte);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function oauthError(status: number, code: string, description: string): Response {
+  return json({ error: code, error_description: description }, status, {
+    'Cache-Control': 'no-store',
+  });
+}
+
+/** GET /.well-known/* — OAuth discovery for MCP clients. */
+function oauthDiscovery(pathname: string): Response | null {
+  if (pathname.endsWith('/.well-known/oauth-protected-resource')) {
+    return json(
+      { resource: RESOURCE_URL, authorization_servers: [RESOURCE_URL] },
+      200,
+      { 'Cache-Control': 'public, max-age=3600' },
+    );
+  }
+  if (pathname.endsWith('/.well-known/oauth-authorization-server')) {
+    return json(
+      {
+        issuer: RESOURCE_URL,
+        authorization_endpoint: `${APP_ORIGIN}/mcp/authorize`,
+        token_endpoint: `${RESOURCE_URL}/token`,
+        response_types: ['code'],
+        grant_types: ['authorization_code'],
+        code_challenge_methods: ['S256'],
+      },
+      200,
+      { 'Cache-Control': 'public, max-age=3600' },
+    );
+  }
+  return null;
+}
+
+/** POST /token — the authorization_code + PKCE exchange. Single-use
+ * codes, 10-minute TTL, redirect_uri and client_id must match, and the
+ * minted credential is a normal api_tokens PAT (shared revocation and
+ * last-used tracking with the profile page). */
+async function oauthTokenExchange(request: Request, service: ReturnType<typeof createClient>): Promise<Response> {
+  const contentType = request.headers.get('content-type') ?? '';
+  const params = new URLSearchParams();
+  if (contentType.includes('application/json')) {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(body)) params.set(key, String(value));
+  } else {
+    for (const pair of (await request.text()).split('&')) {
+      const eq = pair.indexOf('=');
+      if (eq !== -1) params.set(pair.slice(0, eq), pair.slice(eq + 1));
+    }
+  }
+  const decode = (value: string | null) => (value ? decodeURIComponent(value) : null);
+
+  const grantType = decode(params.get('grant_type'));
+  const code = decode(params.get('code'));
+  const verifier = decode(params.get('code_verifier'));
+  const clientId = decode(params.get('client_id'));
+  const redirectUri = decode(params.get('redirect_uri'));
+
+  if (grantType !== 'authorization_code') {
+    return oauthError(400, 'unsupported_grant_type', 'only authorization_code is supported');
+  }
+  if (!code || !verifier || !clientId || !redirectUri) {
+    return oauthError(400, 'invalid_request', 'code, code_verifier, client_id and redirect_uri are required');
+  }
+
+  const { data: stored } = await service
+    .from('mcp_auth_codes')
+    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at')
+    .eq('code_hash', await sha256Hex(code))
+    .maybeSingle();
+  if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
+    return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
+  }
+  if (stored.client_id !== clientId || stored.redirect_uri !== redirectUri) {
+    return oauthError(400, 'invalid_grant', 'client_id or redirect_uri does not match');
+  }
+  if ((await pkceChallenge(verifier)) !== stored.code_challenge) {
+    return oauthError(400, 'invalid_grant', 'PKCE verification failed');
+  }
+
+  // Single-use: claim the code; a racing exchange finds nothing.
+  const { data: claimed } = await service
+    .from('mcp_auth_codes')
+    .update({ used_at: new Date().toISOString() })
+    .eq('id', stored.id)
+    .is('used_at', null)
+    .select('id')
+    .maybeSingle();
+  if (!claimed) {
+    return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
+  }
+
+  const token = `fd_${Array.from(crypto.getRandomValues(new Uint8Array(24)))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')}`;
+  const { error: insertError } = await service.from('api_tokens').insert({
+    user_id: stored.user_id,
+    name: `MCP: ${clientId}`.slice(0, 60),
+    token_hash: await sha256Hex(token),
+  });
+  if (insertError) {
+    return oauthError(500, 'server_error', 'could not mint the token');
+  }
+  return json(
+    { access_token: token, token_type: 'Bearer' },
+    200,
+    { 'Cache-Control': 'no-store' },
+  );
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS });
+  }
+  const requestUrl = new URL(request.url);
+  // OAuth discovery (GET) — MCP clients look for the well-known paths
+  // on the resource server.
+  if (request.method === 'GET') {
+    return (
+      oauthDiscovery(requestUrl.pathname) ??
+      json(
+        { jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed. POST MCP messages here.' } },
+        405,
+      )
+    );
+  }
+  // The OAuth token exchange (POST /token) — before PAT auth: this is
+  // how PATs are minted, there is no token to present yet.
+  if (request.method === 'POST' && requestUrl.pathname.endsWith('/token')) {
+    const service = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { persistSession: false } },
+    );
+    return oauthTokenExchange(request, service);
   }
   // Streamable HTTP: this server only answers client POSTs.
   if (request.method !== 'POST') {
