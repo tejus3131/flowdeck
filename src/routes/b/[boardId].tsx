@@ -1027,7 +1027,14 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                       style={{ 'background-color': presenceColor(other.userId) }}
                     >
                       <Show when={other.avatarUrl} fallback={other.name.slice(0, 2).toUpperCase()}>
-                        <img src={other.avatarUrl!} alt={other.name} class="h-full w-full object-cover" />
+                        {/* crossorigin as in Avatar.tsx: cors mode makes the
+                            fetch cacheable by the service worker. */}
+                        <img
+                          src={other.avatarUrl!}
+                          alt={other.name}
+                          crossorigin="anonymous"
+                          class="h-full w-full object-cover"
+                        />
                       </Show>
                     </span>
                   )}
