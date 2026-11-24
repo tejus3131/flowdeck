@@ -106,16 +106,16 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
       }
       // Roster cache first (any board/members/team/search visit warms the
       // same key): the member avatars paint instantly on reload; the
-      // fetch behind revalidates and writes back.
-      void cacheGet<WorkspaceDetail>(`ws-detail:${id}`).then((cached) => {
+      // fetch behind revalidates and writes back. Sequential on purpose:
+      // a slow cache read resolving AFTER the fetch would paint stale
+      // members over fresh (the timeline race from the #8 round).
+      void (async () => {
+        const cached = await cacheGet<WorkspaceDetail>(`ws-detail:${id}`);
         if (cached) setWsMembers(cached.members);
-      });
-      void getWorkspaceSnapshot(id)
-        .then((detail) => {
-          setWsMembers(detail?.members ?? []);
-          if (detail) cachePut(`ws-detail:${id}`, detail);
-        })
-        .catch(() => setWsMembers([]));
+        const detail = await getWorkspaceSnapshot(id).catch(() => null);
+        setWsMembers(detail?.members ?? []);
+        if (detail) cachePut(`ws-detail:${id}`, detail);
+      })();
     },
   );
 
