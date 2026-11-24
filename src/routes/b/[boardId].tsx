@@ -1223,6 +1223,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   presence.broadcastDrag(null, '', null);
                 }}
                 onDrop={(index, cardId) => {
+                  // No end broadcast here by design: the spec guarantees a
+                  // dragend on the source right after drop, and onDragEnd
+                  // is the single place that clears peers' ghost state.
                   stopHeartbeat();
                   pendingDragCard = null;
                   setDragging(null);
@@ -1571,6 +1574,10 @@ function BoardColumn(props: {
     const anchor =
       container.getBoundingClientRect().top - container.scrollTop - container.offsetTop;
     const ghost = container.querySelector<HTMLElement>('[data-drop-placeholder]');
+    // Single-drag design: only the FIRST placeholder is compensated — a
+    // concurrent peer ghost in this column can skew slots near it by one
+    // (self-corrects as ghosts move). If multi-drag ever becomes real,
+    // sum every placeholder's height instead.
     const shift = ghost ? ghost.offsetHeight + 8 : 0; // + the flex gap-2
     const ghostAt = props.dropHint ?? -1;
     let index = els.length;
