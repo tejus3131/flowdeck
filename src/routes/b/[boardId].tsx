@@ -1590,10 +1590,13 @@ function BoardColumn(props: {
             <>
               <Show when={props.dropHint === index() && props.dragging !== card.id}>
                 {/* The ghost: card-sized space opens where the drop would
-                    land — the cards around it glide apart (FLIP below). */}
+                    land — the cards around it glide apart (FLIP below).
+                    shrink-0: a scrolling column is over-full and flex
+                    compresses contentless children to their border —
+                    without it the ghost collapses to a line. */}
                 <div
                   data-drop-placeholder
-                  class="rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                  class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
                   style={{ height: `${props.dragHeight ?? 72}px` }}
                 />
               </Show>
@@ -1701,7 +1704,7 @@ function BoardColumn(props: {
         <Show when={props.dropHint === props.cards.length && props.cards.length > 0}>
           <div
             data-drop-placeholder
-            class="rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+            class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
             style={{ height: `${props.dragHeight ?? 72}px` }}
           />
         </Show>
