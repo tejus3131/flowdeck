@@ -1161,7 +1161,17 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   // Cards still materializing can't be dragged yet (their
                   // real id hasn't been echoed) — the drop is a no-op.
                   if (cardId && canEdit() && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
-                }}                onHover={(index) => setDropHint({ listId: list.id, index })}
+                }}
+                onHover={(index) =>
+                  // Identical index → identical value: dragover fires per
+                  // mouse-move, and a fresh object per event re-renders and
+                  // re-runs the FLIP pass constantly (the glitch storm).
+                  setDropHint((prev) =>
+                    prev?.listId === list.id && prev.index === index
+                      ? prev
+                      : { listId: list.id, index },
+                  )
+                }
                 adding={addingIn() === list.id}
                 onAdd={() => setAddingIn(list.id)}
                 onCancelAdd={() => setAddingIn(null)}
@@ -1407,23 +1417,23 @@ function BoardColumn(props: {
   // The glide: when the ghost placeholder opens, moves or closes, the
   // cards around it shift — FLIP-animating them makes the space open
   // smoothly instead of snapping, and the dropped card rides the same
-  // animation from its old spot into the opened one. Measured in
-  // CONTENT space (top + scrollTop) so the drag's auto-scroll never
-  // masquerades as a layout change.
+  // animation from its old spot into the opened one. Measured with
+  // offsetTop — LAYOUT position, immune to CSS transforms — because
+  // getBoundingClientRect reflects an in-flight glide, and feeding that
+  // back in compounds garbage deltas (the vanish glitch). The dropHint
+  // setter dedupes identical indexes, so passes run only on real moves.
   const lastTops = new Map<string, number>();
   createEffect(
     () => (props.dropHint, props.cards),
     () => {
-      const container = document.querySelector<HTMLElement>(
-        `[data-column="${props.list.id}"] [data-cards-scroll]`,
+      const els = document.querySelectorAll<HTMLElement>(
+        `[data-column="${props.list.id}"] [data-card-id]`,
       );
-      if (!container) return;
-      const els = container.querySelectorAll<HTMLElement>('[data-card-id]');
       const seen = new Set<string>();
       for (const el of els) {
         const id = el.dataset.cardId!;
         seen.add(id);
-        const top = el.getBoundingClientRect().top + container.scrollTop;
+        const top = el.offsetTop;
         const prev = lastTops.get(id);
         lastTops.set(id, top);
         if (prev === undefined || prev === top) continue;
@@ -1454,10 +1464,20 @@ function BoardColumn(props: {
     const elements = document.querySelectorAll<HTMLDivElement>(
       `[data-column="${props.list.id}"] [data-card]`,
     );
+    // The ghost (when present) has shifted every card at or below its
+    // slot down by its own height — remove that shift from the
+    // comparison, or the pointer's own placeholder flips the drop index
+    // back and forth: the open/close glitch loop.
+    const ghost = document.querySelector<HTMLElement>(
+      `[data-column="${props.list.id}"] [data-drop-placeholder]`,
+    );
+    const shift = ghost ? ghost.offsetHeight + 8 : 0; // + the flex gap-2
+    const ghostAt = props.dropHint ?? -1;
     let index = elements.length;
     for (let i = 0; i < elements.length; i++) {
       const rect = elements[i].getBoundingClientRect();
-      if (clientY < rect.top + rect.height / 2) {
+      const mid = i >= ghostAt ? rect.top + rect.height / 2 - shift : rect.top + rect.height / 2;
+      if (clientY < mid) {
         index = i;
         break;
       }
