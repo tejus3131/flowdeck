@@ -35,6 +35,7 @@ const TOOLS: { name: string; args: string; returns: string; note?: string }[] = 
   { name: 'edit_comment', args: 'comment_id, body', returns: '—', note: 'own comments; workspace owners/admins can edit any' },
   { name: 'delete_comment', args: 'comment_id', returns: '—', note: 'soft delete; own or (workspace owners/admins) any' },
   { name: 'list_comments', args: 'card_id, cursor?, limit?', returns: '{ items, next_cursor } — the card\'s comments, oldest first' },
+  { name: 'get_card_events', args: 'card_id, cursor?, limit?', returns: '{ items, next_cursor } — the card\'s timeline (created, renamed, priority, description, moved, assignees) with actor display names' },
   { name: 'post_board_message', args: 'board_id, body', returns: 'message_id', note: 'posts to the board chat' },
   { name: 'edit_board_message', args: 'message_id, body', returns: '—', note: 'own messages; workspace owners/admins can edit any' },
   { name: 'delete_board_message', args: 'message_id', returns: '—', note: 'soft delete; own or (workspace owners/admins) any' },

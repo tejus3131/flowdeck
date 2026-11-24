@@ -386,6 +386,18 @@ const TOOLS: ToolDef[] = [
     op: 'list_comments',
   },
   {
+    name: 'get_card_events',
+    description:
+      "The card's activity timeline: created, renamed, priority changes, description edits, list moves, assignee changes — with actor display names. Oldest first. Returns { items, next_cursor } — pass next_cursor as cursor to page through.",
+    inputSchema: {
+      type: 'object',
+      properties: { card_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
+      required: ['card_id'],
+      additionalProperties: false,
+    },
+    op: 'get_card_events',
+  },
+  {
     name: 'get_me',
     description: 'Your own profile (display name, email, avatar) and current status.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
