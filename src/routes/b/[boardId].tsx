@@ -458,6 +458,56 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const [dropHint, setDropHint] = createSignal<{ listId: string; index: number } | null>(null);
   /** The dragged card's height — the ghost opens exactly that much space. */
   const [dragHeight, setDragHeight] = createSignal<number | null>(null);
+  /** The card the next tick's delayed hide belongs to (drag image timing). */
+  let pendingDragCard: string | null = null;
+
+  // A resting pointer sends no hover broadcasts, and the relay expires
+  // silent drags after 4s — so a long drag would drop its peer ghost
+  // mid-flight. A 2s heartbeat re-broadcasts the current drag state:
+  // peers keep the ghost (and the source card's ring) alive as long as
+  // the mover still holds the card; when the tab closes, the heartbeat
+  // dies with it and the relay expires the drag the usual way.
+  let dragHeartbeat: ReturnType<typeof setInterval> | null = null;
+  const stopHeartbeat = () => {
+    if (dragHeartbeat) {
+      clearInterval(dragHeartbeat);
+      dragHeartbeat = null;
+    }
+  };
+  const startHeartbeat = () => {
+    dragHeartbeat ??= setInterval(() => {
+      const cardId = dragging();
+      if (!cardId) {
+        stopHeartbeat();
+        return;
+      }
+      const hint = dropHint();
+      const name = me()?.display_name || 'Someone';
+      if (hint) {
+        presence.broadcastDragHover(cardId, name, dragHeight(), hint.listId, hint.index);
+      } else {
+        presence.broadcastDrag(cardId, name, dragHeight());
+      }
+    }, 2000);
+  };
+  onSettled(() => stopHeartbeat);
+
+  // The mover's hover slot broadcasts to peers (deduped by the dropHint
+  // setter — one message per real slot crossing): they see the ghost
+  // glide exactly where the mover points, no scrolling on their side.
+  createEffect(
+    () => dropHint(),
+    (hint) => {
+      if (!dragging() || !hint) return;
+      presence.broadcastDragHover(
+        dragging(),
+        me()?.display_name || 'Someone',
+        dragHeight(),
+        hint.listId,
+        hint.index,
+      );
+    },
+  );
 
   // ── auto-scroll while dragging (board card #50) ─────────────────────────
   // Both axes: the horizontal board scroller and the hovered column's
@@ -1141,20 +1191,40 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 remoteDrag={presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()}
                 dropHint={dropHint()?.listId === list.id ? dropHint()!.index : null}
                 dragHeight={dragHeight()}
+                // The peer ghost: another viewer's hover slot in THIS
+                // column, in the same full-list index space every column
+                // renders (the mover broadcasts the slot their own column
+                // measured — both sides count the same cards).
+                remoteDropHint={
+                  presence.remoteDrag()?.listId === list.id
+                    ? presence.remoteDrag()!.index ?? null
+                    : null
+                }
                 isTemp={engine.isTemp(list.id)}
                 canEdit={canEdit()}
                 onDragStart={(cardId, height) => {
-                  setDragging(cardId);
                   setDragHeight(height);
-                  presence.broadcastDrag(cardId, me()?.display_name || 'Someone');
+                  presence.broadcastDrag(cardId, me()?.display_name || 'Someone', height);
+                  // The browser snapshots the drag image as dragstart
+                  // completes — hiding the source in the same tick yields
+                  // a blank preview, so the hide lands one frame late.
+                  pendingDragCard = cardId;
+                  setTimeout(() => {
+                    if (pendingDragCard === cardId) setDragging(cardId);
+                  }, 0);
+                  startHeartbeat();
                 }}
                 onDragEnd={() => {
+                  stopHeartbeat();
+                  pendingDragCard = null;
                   setDragging(null);
                   setDropHint(null);
                   setDragHeight(null);
-                  presence.broadcastDrag(null, '');
+                  presence.broadcastDrag(null, '', null);
                 }}
                 onDrop={(index, cardId) => {
+                  stopHeartbeat();
+                  pendingDragCard = null;
                   setDragging(null);
                   setDropHint(null);
                   setDragHeight(null);
@@ -1391,6 +1461,8 @@ function BoardColumn(props: {
   dropHint: number | null;
   /** The dragged card's height — the ghost opens exactly that much space. */
   dragHeight: number | null;
+  /** Another viewer's hover slot in this column (their ghost, live). */
+  remoteDropHint: number | null;
   isTemp: boolean;
   canEdit: boolean;
   adding: boolean;
@@ -1423,8 +1495,13 @@ function BoardColumn(props: {
   // back in compounds garbage deltas (the vanish glitch). The dropHint
   // setter dedupes identical indexes, so passes run only on real moves.
   const lastTops = new Map<string, number>();
+  // Cards that left layout (the dragged source hides while its ghost
+  // represents it) — measured tops would be garbage (offsetTop 0), and
+  // the pre-hide top must survive so the reappearing card settles into
+  // the ghost's slot instead of flying in from its old position.
+  const hiddenIds = new Set<string>();
   createEffect(
-    () => (props.dropHint, props.cards),
+    () => (props.dropHint, props.remoteDropHint, props.cards, props.dragging),
     () => {
       const els = document.querySelectorAll<HTMLElement>(
         `[data-column="${props.list.id}"] [data-card-id]`,
@@ -1433,7 +1510,19 @@ function BoardColumn(props: {
       for (const el of els) {
         const id = el.dataset.cardId!;
         seen.add(id);
+        // Hidden (display:none): no layout, nothing to animate — remember
+        // it was hidden so its return lands without a phantom glide.
+        if (el.offsetHeight === 0) {
+          hiddenIds.add(id);
+          continue;
+        }
         const top = el.offsetTop;
+        if (hiddenIds.has(id)) {
+          // Reappeared: the ghost already held this slot — settle in place.
+          hiddenIds.delete(id);
+          lastTops.set(id, top);
+          continue;
+        }
         const prev = lastTops.get(id);
         lastTops.set(id, top);
         if (prev === undefined || prev === top) continue;
@@ -1456,6 +1545,7 @@ function BoardColumn(props: {
       // Prune cards gone from the column (deleted, moved away) — the map
       // stays column-sized over a long session.
       for (const id of lastTops.keys()) if (!seen.has(id)) lastTops.delete(id);
+      for (const id of hiddenIds.keys()) if (!seen.has(id)) hiddenIds.delete(id);
     },
   );
 
@@ -1471,6 +1561,11 @@ function BoardColumn(props: {
     );
     if (!container) return 0;
     const els = container.querySelectorAll<HTMLElement>('[data-card]');
+    // The dragged source hides (display:none) but stays counted here: the
+    // slot space must stay the full list planDrop indexes into. Its
+    // degenerate midpoint (anchor + 0 + 0) can never win a comparison for
+    // a pointer inside the column, so its slot is skipped naturally and
+    // the hidden card never corrupts the measurement.
     // Viewport anchor of the container's content — transform-immune (the
     // container itself never glides; only cards do).
     const anchor =
@@ -1588,7 +1683,7 @@ function BoardColumn(props: {
         <For each={props.cards}>
           {(card, index) => (
             <>
-              <Show when={props.dropHint === index() && props.dragging !== card.id}>
+              <Show when={props.dropHint === index()}>
                 {/* The ghost: card-sized space opens where the drop would
                     land — the cards around it glide apart (FLIP below).
                     shrink-0: a scrolling column is over-full and flex
@@ -1599,6 +1694,25 @@ function BoardColumn(props: {
                   class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
                   style={{ height: `${props.dragHeight ?? 72}px` }}
                 />
+              </Show>
+              <Show
+                when={
+                  props.remoteDropHint === index() && props.remoteDropHint !== props.dropHint
+                }
+              >
+                {/* A peer's ghost: someone else is hovering their card into
+                    this slot — rendered live from their broadcasts, amber
+                    to match the "moving…" ring on the card they hold.
+                    Skipped when the local ghost already occupies the slot. */}
+                <div
+                  data-drop-placeholder
+                  class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
+                  style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                >
+                  <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                    {props.remoteDrag?.name} moving…
+                  </span>
+                </div>
               </Show>
               <article
                 data-card
@@ -1615,9 +1729,17 @@ function BoardColumn(props: {
                 }}
                 onDragEnd={props.onDragEnd}
                 onClick={() => props.onOpenCard(card.id, card.client_op)}
+                // Trello model: while dragged, the source card leaves the
+                // list (display:none — zero space) so the ghost is its ONLY
+                // representation; hover the original spot and the ghost is
+                // the one placeholder there, never shadow + ghost both.
+                // The element stays in the DOM so dragend always fires,
+                // and indexAt/planDrop keep their shared full-list index
+                // space (the hidden card's degenerate midpoint can never
+                // win a comparison for a pointer inside the column).
                 class={[
                   'group relative cursor-pointer rounded-xl border border-neutral-200/80 bg-white p-3 text-sm shadow-xs transition hover:border-indigo-300 hover:shadow-sm active:cursor-grabbing dark:border-neutral-700/80 dark:bg-neutral-900 dark:hover:border-indigo-700',
-                  { 'opacity-40': props.dragging === card.id },
+                  { hidden: props.dragging === card.id },
                   { 'ring-2 ring-amber-400': props.remoteDrag?.cardId === card.id },
                 ]}
               >
@@ -1707,6 +1829,25 @@ function BoardColumn(props: {
             class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
             style={{ height: `${props.dragHeight ?? 72}px` }}
           />
+        </Show>
+        <Show
+          when={
+            props.remoteDropHint === props.cards.length &&
+            props.remoteDropHint !== props.dropHint
+          }
+        >
+          {/* A peer hovering past the last card — no length guard, unlike
+              the local site: an empty column has no ringed source card to
+              signal the drag, so the ghost is the only thing peers see. */}
+          <div
+            data-drop-placeholder
+            class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
+            style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+          >
+            <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+              {props.remoteDrag?.name} moving…
+            </span>
+          </div>
         </Show>
 
         {/* Add-card (editors only): the input ALWAYS clears instantly on
