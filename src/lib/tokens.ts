@@ -10,9 +10,11 @@ import { query } from '@solidjs/router';
 import { createSupabaseRequestClient } from '../server/supabase';
 
 import {
+  capSelection,
   normalizeSelection,
   selectionToWorkspaceOps,
   type PermissionSelection,
+  type WorkspaceCap,
 } from './mcp-permissions';
 
 export type ApiTokenSummary = {
@@ -90,22 +92,59 @@ export async function updateConnectionPermissions(
   const supabase = createSupabaseRequestClient();
   const normalized = normalizeSelection(permissions);
   const wsIds = Object.keys(normalized.workspaces);
+  const caps: Record<string, WorkspaceCap> = {};
   if (wsIds.length > 0) {
     const { data: mine } = await supabase
       .from('workspace_members')
-      .select('workspace_id')
+      .select('workspace_id, role, workspaces(board_creation)')
       .in('workspace_id', wsIds);
-    const granted = new Set((mine ?? []).map((row) => row.workspace_id as string));
-    if (wsIds.some((id) => !granted.has(id))) {
+    const memberRows = (mine ?? []) as {
+      workspace_id: string;
+      role: string;
+      workspaces: { board_creation: string | null } | null;
+    }[];
+    const {
+      data: { user: me },
+    } = await supabase.auth.getUser();
+    const { data: adminSeats } = me
+      ? await supabase
+          .from('team_members')
+          .select('teams(workspace_id)')
+          .eq('user_id', me.id)
+          .eq('role', 'admin')
+          .in('teams.workspace_id', wsIds)
+      : { data: null };
+    const teamAdminOf = new Set(
+      ((adminSeats ?? []) as { teams: { workspace_id: string | null } | null }[])
+        .map((seat) => seat.teams?.workspace_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    for (const row of memberRows) {
+      const boardCreation = row.workspaces?.board_creation ?? 'team_admins';
+      const role = (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
+        | 'member'
+        | 'admin'
+        | 'owner';
+      caps[row.workspace_id] = {
+        role,
+        canCreateBoards:
+          role === 'owner' ||
+          role === 'admin' ||
+          boardCreation === 'everyone' ||
+          (boardCreation === 'team_admins' && teamAdminOf.has(row.workspace_id)),
+      };
+    }
+    if (wsIds.some((id) => !caps[id])) {
       throw new Error('You are not a member of the selected workspace(s).');
     }
   }
   // Converting a legacy token clears the old flat columns so one shape
-  // is authoritative per token.
+  // is authoritative per token. The cap strips anything above the user's
+  // own role or behind a gate they don't pass.
   const { error } = await supabase
     .from('api_tokens')
     .update({
-      workspace_ops: selectionToWorkspaceOps(normalized),
+      workspace_ops: selectionToWorkspaceOps(capSelection(normalized, caps)),
       workspace_scope: null,
       allowed_ops: null,
     })

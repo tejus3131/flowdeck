@@ -12,9 +12,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createSupabaseRequestClient } from '../server/supabase';
 
 import {
+  capSelection,
   normalizeSelection,
   selectionToWorkspaceOps,
   type PermissionSelection,
+  type WorkspaceCap,
 } from './mcp-permissions';
 
 export type McpAuthorizeInput = {
@@ -39,20 +41,58 @@ export async function mcpAuthSignedIn(): Promise<boolean> {
   return Boolean(user);
 }
 
-/** The workspaces the consent page offers (and the user belongs to). */
+/**
+ * The workspaces the consent/connections pages offer (and the user belongs
+ * to), with what the user can be offered in each: their role, and whether
+ * this workspace allows THEM to create boards (role + board_creation
+ * policy + team-admin).
+ */
 export async function listMyWorkspaceChoices(): Promise<
-  { id: string; name: string; role: string }[]
+  {
+    id: string;
+    name: string;
+    role: 'member' | 'admin' | 'owner';
+    board_creation: string;
+    is_team_admin: boolean;
+  }[]
 > {
   'use server';
   const supabase = createSupabaseRequestClient();
   const { data } = await supabase
     .from('workspace_members')
-    .select('workspace_id, role, workspaces(name)')
+    .select('workspace_id, role, workspaces(name, board_creation)')
     .order('created_at');
-  return (data ?? []).map((row) => ({
-    id: row.workspace_id as string,
-    name: ((row.workspaces as { name: string } | null)?.name ?? 'Workspace') as string,
-    role: row.role as string,
+  const rows = (data ?? []) as {
+    workspace_id: string;
+    role: string;
+    workspaces: { name: string | null; board_creation: string | null } | null;
+  }[];
+  // Team-admin per workspace: my admin seats on teams of those workspaces
+  // (workspace_members has no relation to team_members — a second query).
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: adminSeats } = user
+    ? await supabase
+        .from('team_members')
+        .select('teams(workspace_id)')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+    : { data: null };
+  const teamAdminOf = new Set(
+    ((adminSeats ?? []) as { teams: { workspace_id: string | null } | null }[])
+      .map((seat) => seat.teams?.workspace_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  return rows.map((row) => ({
+    id: row.workspace_id,
+    name: (row.workspaces?.name ?? 'Workspace') as string,
+    role: (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
+      | 'member'
+      | 'admin'
+      | 'owner',
+    board_creation: (row.workspaces?.board_creation ?? 'team_admins') as string,
+    is_team_admin: teamAdminOf.has(row.workspace_id),
   }));
 }
 
@@ -90,19 +130,59 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
   // The permission selection: org → entity → action, normalized (writes
   // imply reads) and validated against real memberships before storing.
   const normalized = normalizeSelection(input.permissions ?? { workspaces: {}, account: {} });
-  const grantedWorkspaceIds = Object.keys(normalized.workspaces);
-  if (grantedWorkspaceIds.length > 0) {
+  const wantedWorkspaceIds = Object.keys(normalized.workspaces);
+  const caps: Record<string, WorkspaceCap> = {};
+  if (wantedWorkspaceIds.length > 0) {
     const { data: mine } = await supabase
       .from('workspace_members')
-      .select('workspace_id')
-      .in('workspace_id', grantedWorkspaceIds);
-    const granted = new Set((mine ?? []).map((row) => row.workspace_id as string));
-    const unknown = grantedWorkspaceIds.filter((id) => !granted.has(id));
-    if (unknown.length > 0) {
+      .select('workspace_id, role, workspaces(board_creation)')
+      .in('workspace_id', wantedWorkspaceIds);
+    const memberRows = (mine ?? []) as {
+      workspace_id: string;
+      role: string;
+      workspaces: { board_creation: string | null } | null;
+    }[];
+    // My team-admin seats, for the team_admins board-creation policy.
+    const {
+      data: { user: me },
+    } = await supabase.auth.getUser();
+    const { data: adminSeats } = me
+      ? await supabase
+          .from('team_members')
+          .select('teams(workspace_id)')
+          .eq('user_id', me.id)
+          .eq('role', 'admin')
+          .in('teams.workspace_id', wantedWorkspaceIds)
+      : { data: null };
+    const teamAdminOf = new Set(
+      ((adminSeats ?? []) as { teams: { workspace_id: string | null } | null }[])
+        .map((seat) => seat.teams?.workspace_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    for (const row of memberRows) {
+      const boardCreation = row.workspaces?.board_creation ?? 'team_admins';
+      const role = (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
+        | 'member'
+        | 'admin'
+        | 'owner';
+      caps[row.workspace_id] = {
+        role,
+        canCreateBoards:
+          role === 'owner' ||
+          role === 'admin' ||
+          boardCreation === 'everyone' ||
+          (boardCreation === 'team_admins' && teamAdminOf.has(row.workspace_id)),
+      };
+    }
+    const granted = new Set(Object.keys(caps));
+    if (wantedWorkspaceIds.some((id) => !granted.has(id))) {
       throw new Error('You are not a member of the selected workspace(s).');
     }
   }
-  const workspaceOps = selectionToWorkspaceOps(normalized);
+  // Server-side cap: a crafted request can never grant above what the user
+  // can do themselves (role + board-creation gate).
+  const capped = capSelection(normalized, caps);
+  const workspaceOps = selectionToWorkspaceOps(capped);
 
   if (!clientId || !redirectUri || !codeChallenge) {
     throw new Error('This authorization request is incomplete — ask the client to retry.');
