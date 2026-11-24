@@ -3986,6 +3986,11 @@ function CardDrawer(props: {
                         {actorName(row.actor_id)}
                       </span>{' '}
                       {eventLine(row)}
+                      <Show when={row.agent}>
+                        <span class="ml-0.5 rounded bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+                          via agent
+                        </span>
+                      </Show>
                       <span class="ml-1 text-[10px] text-neutral-400">{timeAgo(row.created_at)}</span>
                     </li>
                   )}
@@ -4036,6 +4041,12 @@ function CardDrawer(props: {
                           <span class="font-semibold text-neutral-500 dark:text-neutral-300">
                             {mine() ? 'You' : comment.author}
                           </span>
+                          <Show when={comment.agent}>{<span
+                            class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
+                            title="Sent through an MCP connection"
+                          >
+                            Agent
+                          </span>}</Show>
                           <time>
                             {new Date(comment.created_at).toLocaleString(undefined, {
                               month: 'short',
@@ -4614,6 +4625,12 @@ function BoardChat(props: {
                         <span class="font-semibold text-neutral-500 dark:text-neutral-300">
                           {mine() ? 'You' : message.author}
                         </span>
+                        <Show when={message.agent}>{<span
+                            class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
+                            title="Sent through an MCP connection"
+                          >
+                            Agent
+                          </span>}</Show>
                         <time>
                           {new Date(message.created_at).toLocaleString(undefined, {
                             month: 'short',

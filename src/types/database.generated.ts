@@ -181,6 +181,7 @@ export type Database = {
       }
       board_messages: {
         Row: {
+          agent: boolean
           board_id: string
           body: string
           client_op: string | null
@@ -192,6 +193,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agent?: boolean
           board_id: string
           body: string
           client_op?: string | null
@@ -420,6 +422,7 @@ export type Database = {
       }
       card_comments: {
         Row: {
+          agent: boolean
           body: string
           card_id: string
           client_op: string | null
@@ -431,6 +434,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agent?: boolean
           body: string
           card_id: string
           client_op?: string | null
@@ -468,6 +472,7 @@ export type Database = {
       }
       card_events: {
         Row: {
+          agent: boolean
           actor_id: string | null
           board_id: string
           card_id: string
@@ -477,6 +482,7 @@ export type Database = {
           kind: string
         }
         Insert: {
+          agent?: boolean
           actor_id?: string | null
           board_id: string
           card_id: string
@@ -720,6 +726,7 @@ export type Database = {
       }
       notifications: {
         Row: {
+          agent: boolean
           actor_id: string | null
           board_id: string | null
           body: string | null
@@ -734,6 +741,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agent?: boolean
           actor_id?: string | null
           board_id?: string | null
           body?: string | null

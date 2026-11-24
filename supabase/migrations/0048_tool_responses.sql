@@ -9,6 +9,8 @@
 -- Recreating a function resets EXECUTE to PUBLIC — the privilege block at
 -- the end repeats 0046's verbatim (mcp_exec: service_role only).
 
+-- NOTE: superseded by 0049_agent_provenance.sql (agent provenance flag).
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,
