@@ -8,7 +8,12 @@ import { useSearchParams } from '@solidjs/router';
 import { For, Show, createEffect, createSignal } from 'solid-js';
 
 import { MembershipWatch } from '../../components/MembershipWatch';
-import { approveMcpClient, listMyWorkspaceChoices } from '../../lib/mcp-auth';
+import {
+  DEFAULT_TOOL_OPS,
+  TOOL_CATEGORIES,
+  approveMcpClient,
+  listMyWorkspaceChoices,
+} from '../../lib/mcp-auth';
 
 export default function McpAuthorizePage() {
   const [params] = useSearchParams();
@@ -18,6 +23,13 @@ export default function McpAuthorizePage() {
   const [workspaces, setWorkspaces] = createSignal<{ id: string; name: string; role: string }[]>([]);
   const [selected, setSelected] = createSignal<string[]>([]);
   const [loaded, setLoaded] = createSignal(false);
+  // Tool permissions: the SAFE default (read + profile + inbox) is the
+  // starting state; writing/administering categories are opt-in, and
+  // "everything" is an explicit full-power grant.
+  const [grantedCategories, setGrantedCategories] = createSignal<string[]>(
+    TOOL_CATEGORIES.filter((category) => category.defaultOn).map((category) => category.id),
+  );
+  const [grantAll, setGrantAll] = createSignal(false);
 
   // Offer the compartmentalization: scope the connection to specific
   // workspaces, loaded once the request shape is valid.
@@ -70,6 +82,7 @@ export default function McpAuthorizePage() {
         challengeMethod: challengeMethod(),
         state: state(),
         workspaceIds: selected(),
+        toolCategories: grantAll() ? ['*'] : grantedCategories(),
       });
       window.location.href = redirectTo;
     } catch (err) {
@@ -119,6 +132,46 @@ export default function McpAuthorizePage() {
           <p class="text-neutral-500 dark:text-neutral-400">
             Callback host: <span class="font-mono">{redirectHost()}</span>
           </p>
+          <div class="border-t border-neutral-200 pt-3 dark:border-neutral-800">
+            <p class="mb-2 font-medium">What the agent can do</p>
+            <label class="mb-2 flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={grantAll()}
+                onChange={(event) => setGrantAll(event.currentTarget.checked)}
+              />
+              Everything (full power — not recommended)
+            </label>
+            <Show when={!grantAll()}>
+              <div class="flex flex-col gap-1.5">
+                <For each={TOOL_CATEGORIES}>
+                  {(category) => (
+                    <label class="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        class="mt-1"
+                        checked={grantedCategories().includes(category.id)}
+                        onChange={(event) =>
+                          setGrantedCategories((current) =>
+                            event.currentTarget.checked
+                              ? [...current, category.id]
+                              : current.filter((id) => id !== category.id),
+                          )
+                        }
+                      />
+                      <span>
+                        {category.label}{' '}
+                        <span class="block text-xs text-neutral-400">{category.description}</span>
+                      </span>
+                    </label>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <p class="mt-2 text-xs text-neutral-400">
+              {grantAll() ? 'The agent gets every tool.' : `${DEFAULT_TOOL_OPS.length > 0 ? 'Granted: ' : ''}${grantedCategories().join(', ')}`}
+            </p>
+          </div>
           <Show when={workspaces().length > 0}>
             <div class="border-t border-neutral-200 pt-3 dark:border-neutral-800">
               <p class="mb-2 font-medium">Workspace access</p>

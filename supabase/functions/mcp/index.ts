@@ -46,6 +46,13 @@ const PAGE_PARAMS = {
   },
 };
 
+/** Per-connection tool permissions: allowed_ops is a flat list of op
+ * names; NULL/empty keeps the account-wide behavior (every tool). */
+function opAllowed(allowedOps: string[] | null | undefined, op: string): boolean {
+  if (!allowedOps || allowedOps.length === 0) return true;
+  return allowedOps.includes(op);
+}
+
 // Mention syntax, shared by every chat-surface description — the ONE
 // context an agent is guaranteed to see (skills must be installed
 // explicitly, tool descriptions ride along for free).
@@ -861,7 +868,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
 
   const { data: stored } = await service
     .from('mcp_auth_codes')
-    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope')
+    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops')
     .eq('code_hash', await sha256Hex(code))
     .maybeSingle();
   if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
@@ -894,6 +901,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     name: `MCP: ${clientId}`.slice(0, 60),
     token_hash: await sha256Hex(token),
     workspace_scope: stored.workspace_scope ?? null,
+    allowed_ops: stored.allowed_ops ?? null,
   });
   if (insertError) {
     return oauthError(500, 'server_error', 'could not mint the token');
@@ -957,7 +965,7 @@ Deno.serve(async (request) => {
   );
   const { data: tokenRow, error: tokenError } = await service
     .from('api_tokens')
-    .select('id, user_id, workspace_scope')
+    .select('id, user_id, workspace_scope, allowed_ops')
     .eq('token_hash', tokenHash)
     .maybeSingle();
   if (tokenError || !tokenRow) {
@@ -1008,8 +1016,13 @@ Deno.serve(async (request) => {
     case 'ping':
       return reply({});
     case 'tools/list': {
+      // Per-connection permissions (card #14): only the tools this
+      // token may run are DELIVERED — the agent never sees the rest.
+      const allowed = TOOLS.filter(
+        (tool) => opAllowed(tokenRow.allowed_ops, tool.op),
+      );
       return reply({
-        tools: TOOLS.map((tool) => ({
+        tools: allowed.map((tool) => ({
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
@@ -1026,6 +1039,17 @@ Deno.serve(async (request) => {
         );
       }
       const args = message.params?.arguments ?? {};
+      if (!opAllowed(tokenRow.allowed_ops, tool.op)) {
+        return reply({
+          content: [
+            {
+              type: 'text',
+              text: `Error: this connection is not permitted to run ${name}. The owner can grant it on Flowdeck's consent page (re-connect) or from the profile page's API tokens.`,
+            },
+          ],
+          isError: true,
+        });
+      }
       const { data, error } = await service.rpc('mcp_exec', {
         p_user_id: tokenRow.user_id,
         p_op: tool.op,
