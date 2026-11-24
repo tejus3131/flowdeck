@@ -13,6 +13,7 @@ import {
   selectionToWorkspaceOps,
   toggleActionInSelection,
   toggleEntityInSelection,
+  capWorkspaceOps,
   toggleWorkspaceInSelection,
   workspaceOps,
   workspaceOpsToSelection,
@@ -272,5 +273,53 @@ describe('workspaceOpsToSelection null tolerance', () => {
     // is exactly the baseline reads (profile + workspace list).
     expect(Object.values(round.workspaces).every((entities) => Object.keys(entities).length === 0)).toBe(true);
     expect(round.account).toEqual({ profile: ['read'], workspaces: ['read'] });
+  });
+});
+// ── op-level recap (role changes vs saved tokens) ──────────────────────────
+// A demoted admin's stored grant must shrink to what their CURRENT role
+// can still back — tools/list stops advertising dead powers.
+
+describe('capWorkspaceOps', () => {
+  const full = [
+    'get_me', 'list_workspaces', // baseline — always survive
+    'list_boards', 'get_board', 'get_cards', // member reads
+    'create_card', 'update_card', 'move_card', 'delete_card',
+    'rename_list', 'update_list', // member writes
+    'delete_board', 'delete_list', // admin writes
+    'create_tag', 'rename_tag', 'merge_tags', // admin tag powers
+    'invite_member', 'resolve_access_request', // admin people powers
+    'create_board', // the gated op
+    'search',
+  ];
+
+  it('a member keeps member ops; admin powers fall away', () => {
+    const capped = capWorkspaceOps(full, memberCap);
+    for (const op of ['list_boards', 'create_card', 'update_card', 'search', 'get_me']) {
+      expect(capped).toContain(op);
+    }
+    for (const op of ['delete_board', 'delete_list', 'create_tag', 'invite_member', 'resolve_access_request', 'create_board']) {
+      expect(capped).not.toContain(op);
+    }
+  });
+
+  it('an admin keeps everything except owner-tier (there is none) — and the gate', () => {
+    const capped = capWorkspaceOps(full, adminCap);
+    expect(capped).toContain('delete_board');
+    expect(capped).toContain('invite_member');
+    // board creation is gated by board_creation policy, not role:
+    // adminCap has canCreateBoards: true here.
+    expect(capped).toContain('create_board');
+  });
+
+  it('the board-creation gate strips create_board when the policy closes', () => {
+    const closedMember = { role: 'member' as const, canCreateBoards: false };
+    expect(capWorkspaceOps(['create_board', 'get_me'], closedMember)).toEqual(['get_me']);
+    const openMember = { role: 'member' as const, canCreateBoards: true };
+    expect(capWorkspaceOps(['create_board', 'get_me'], openMember)).toEqual(['create_board', 'get_me']);
+  });
+
+  it('baseline identity ops always survive, unknown ops fall away', () => {
+    const capped = capWorkspaceOps(['get_me', 'list_workspaces', 'made_up_op'], memberCap);
+    expect(capped).toEqual(['get_me', 'list_workspaces']);
   });
 });

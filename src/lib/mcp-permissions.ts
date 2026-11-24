@@ -641,6 +641,24 @@ export function accountOps(account: WorkspaceSelection): string[] {
 }
 
 /**
+ * Op-level cap for a saved token bucket: keeps an op only when the
+ * user's CURRENT cap (role + board-creation gate) can still grant it.
+ * Baseline identity ops always survive (every connection needs them).
+ * This is the runtime half of role changes: a demoted admin's stored
+ * grant shrinks to what they could grant today, so tools/list stops
+ * advertising powers their role no longer backs.
+ */
+export function capWorkspaceOps(ops: string[], cap: WorkspaceCap): string[] {
+  const grantable = new Set<string>();
+  for (const entity of WORKSPACE_ENTITIES) {
+    for (const action of entity.actions) {
+      if (actionOffered(action, cap)) action.ops.forEach((op) => grantable.add(op));
+    }
+  }
+  return [...new Set(ops.filter((op) => BASELINE_OPS.includes(op) || grantable.has(op)))];
+}
+
+/**
  * Selection → the workspace_ops jsonb stored on the token:
  * { "<ws_id>": [ops], "*": [account ops] } — null when nothing is granted.
  */
