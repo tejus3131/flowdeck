@@ -42,6 +42,8 @@ import {
   setTeamMemberRole,
 } from '../../../lib/teams';
 import { errorMessage } from '../../../lib/error-message';
+import { cachedStream, cachePut } from '../../../lib/cache';
+import { perfFirstValue } from '../../../lib/perf';
 
 const ROLE_STYLE: Record<WorkspaceRole, string> = {
   owner: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
@@ -73,7 +75,14 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
   // relay — the same double path the board page runs.
   const workspaceLive = liveQuery(workspaceStream, 'workspace');
   const engine = createEngine<WorkspaceDetail>({
-    streamSource: (key) => workspaceLive(key),
+    // Stale-while-revalidate like the board page's roster engine — the
+    // same cache key (ws-detail:<id>), so a board visit warms this page
+    // and vice versa. No more "?" avatars on reload.
+    streamSource: (key) =>
+      perfFirstValue(
+        cachedStream(`ws-detail:${key}`, () => workspaceLive(key), 'ws-detail-revalidate'),
+        'ws-detail-open',
+      ),
     key: () => props.params.workspaceId,
     empty: EMPTY_DETAIL,
     clone: (snapshot) => ({
@@ -92,8 +101,15 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
     }),
     merge: mergeWorkspaceDetail,
     status: () => workspaceLive.status(props.params.workspaceId),
-    refresh: async () =>
-      (await getWorkspaceSnapshot(props.params.workspaceId)) ?? EMPTY_DETAIL,
+    // The durable poll keeps the roster cache warm (parity with the
+    // board's refresh writeback). EMPTY — no access or a failed read —
+    // never writes: a stale seed is recoverable, a wrong empty one is a
+    // flash of missing members.
+    refresh: async () => {
+      const snapshot = await getWorkspaceSnapshot(props.params.workspaceId);
+      if (snapshot) cachePut(`ws-detail:${props.params.workspaceId}`, snapshot);
+      return snapshot ?? EMPTY_DETAIL;
+    },
   });
   const detail = createMemo(() => {
     const view = engine.view();
