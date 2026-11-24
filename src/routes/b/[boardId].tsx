@@ -8,6 +8,7 @@ import { PriorityPill } from '../../components/PriorityPill';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
 import { perfFirstValue, perfTrack, perfStart, perfEnd, perfCancel } from '../../lib/perf';
 import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
+import { planDrop } from '../../lib/card-drop';
 import { trackRecentBoard, warmBoardActive } from '../../lib/prefetch';
 import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
@@ -119,20 +120,6 @@ const EMPTY_WORKSPACE: WorkspaceDetail = {
   deactivatedTeams: [],
   teamAccess: {},
 };
-
-/** Fractional position for a card dropped at display index `toIndex`. */
-function positionAt(cards: CardView[], listId: string, toIndex: number): number {
-  const positions = cards
-    .filter((card) => card.list_id === listId)
-    .map((card) => card.position)
-    .sort((a, b) => a - b);
-  const prev = positions[toIndex - 1];
-  const next = positions[toIndex];
-  if (prev === undefined && next === undefined) return 1;
-  if (prev === undefined) return next / 2;
-  if (next === undefined) return prev + 1;
-  return (prev + next) / 2;
-}
 
 const OP_LABELS: Record<string, string> = {
   addCard: 'Couldn\u2019t add that card',
@@ -469,6 +456,55 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
 
   const [dragging, setDragging] = createSignal<string | null>(null);
   const [dropHint, setDropHint] = createSignal<{ listId: string; index: number } | null>(null);
+
+  // ── auto-scroll while dragging (board card #50) ─────────────────────────
+  // Both axes: the horizontal board scroller and the hovered column's
+  // vertical scroller scroll at their edges. The pointer rides in a plain
+  // variable (the rAF loop makes no reactive reads); the loop lives
+  // exactly as long as the drag does.
+  let dragPoint: { x: number; y: number } | null = null;
+  onSettled(() => {
+    const onDragOver = (event: DragEvent) => {
+      if (dragging()) dragPoint = { x: event.clientX, y: event.clientY };
+    };
+    document.addEventListener('dragover', onDragOver);
+    return () => document.removeEventListener('dragover', onDragOver);
+  });
+  createEffect(
+    () => dragging(),
+    (cardId) => {
+      if (!cardId) return;
+      const EDGE = 90;
+      const SPEED = 18;
+      const step = () => {
+        const point = dragPoint;
+        if (point) {
+          const board = document.querySelector<HTMLElement>('[data-board-scroll]');
+          if (board) {
+            const rect = board.getBoundingClientRect();
+            // Only while the pointer sits in the board's vertical band.
+            if (point.y > rect.top - 60 && point.y < rect.bottom + 60) {
+              if (point.x - rect.left < EDGE) board.scrollLeft -= SPEED;
+              else if (rect.right - point.x < EDGE) board.scrollLeft += SPEED;
+            }
+          }
+          const column = document
+            .elementFromPoint(point.x, point.y)
+            ?.closest<HTMLElement>('[data-column]')
+            ?.querySelector<HTMLElement>('[data-cards-scroll]');
+          if (column) {
+            const rect = column.getBoundingClientRect();
+            if (point.y - rect.top < EDGE) column.scrollTop -= SPEED;
+            else if (rect.bottom - point.y < EDGE) column.scrollTop += SPEED;
+          }
+        }
+        raf = requestAnimationFrame(step);
+      };
+      let raf = requestAnimationFrame(step);
+      return () => cancelAnimationFrame(raf);
+    },
+  );
+
   const [openCardId, setOpenCardId] = createSignal<string | null>(null);
   // Detail hover cards over @mentions and #citations.
   const [hover, setHover] = createSignal<
@@ -555,10 +591,25 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   };
 
   const moveCard = (cardId: string, toListId: string, toIndex: number) => {
-    const position = positionAt(view().cards, toListId, toIndex);
+    // The planner never ties (lib/card-drop.ts): a healthy gap takes the
+    // midpoint; a degenerate zone — tied neighbours, or a gap halved to
+    // float precision — heals: the segment re-spreads across its gap
+    // and the displaced cards ride along as extra move ops. Without the
+    // heal, a drop inside a tie computed (1+1)/2 = 1: the card JOINED
+    // the tie and the fold's re-merge shuffled it seconds later.
+    const drop = planDrop(view().cards, toListId, toIndex, cardId);
+    for (const heal of drop.heals) {
+      // A provisional (relayed) card's write lives on its author's
+      // machine — healing it locally would fight the prediction.
+      if (engine.isTemp(heal.cardId)) continue;
+      runOp(
+        { kind: 'move-card', cardId: heal.cardId, listId: toListId, position: heal.position },
+        () => moveCardServer(heal.cardId, toListId, heal.position),
+      );
+    }
     runOp(
-      { kind: 'move-card', cardId, listId: toListId, position },
-      () => moveCardServer(cardId, toListId, position),
+      { kind: 'move-card', cardId, listId: toListId, position: drop.position },
+      () => moveCardServer(cardId, toListId, drop.position),
     );
   };
 
@@ -1077,7 +1128,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           </span>
         </header>
 
-        <div class="flex flex-1 gap-4 overflow-x-auto p-4">
+        <div data-board-scroll class="flex flex-1 gap-4 overflow-x-auto p-4">
           <For each={view().lists}>
             {(list) => (
               <BoardColumn
@@ -1455,7 +1506,7 @@ function BoardColumn(props: {
       </header>
 
       <Show when={!props.collapsed}>
-      <div class="flex flex-1 flex-col gap-2 overflow-y-auto p-2.5">
+      <div data-cards-scroll class="flex flex-1 flex-col gap-2 overflow-y-auto p-2.5">
         <For each={props.cards}>
           {(card, index) => (
             <>
