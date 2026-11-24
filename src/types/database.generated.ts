@@ -1126,6 +1126,8 @@ export type Database = {
     }
     Functions: {
       accept_workspace_invite: { Args: { p_token: string }; Returns: string }
+      allocate_card_position: { Args: { p_list_id: string }; Returns: number }
+      allocate_list_position: { Args: { p_board_id: string }; Returns: number }
       auth_check_email: { Args: { p_email: string }; Returns: Json }
       board_card_comment_stats: {
         Args: { p_board_id: string }

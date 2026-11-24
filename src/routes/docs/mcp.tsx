@@ -22,7 +22,7 @@ const TOOLS: { name: string; args: string; returns: string; note?: string }[] = 
   { name: 'delete_list', args: 'list_id', returns: '—', note: 'destructive: removes the list and its cards' },
   { name: 'create_card', args: 'list_id, title, description?', returns: 'card_id' },
   { name: 'update_card', args: 'card_id, title?/description?/priority?', returns: '—', note: "priority: 'low' | 'medium' | 'high' | 'urgent' | '' (clear)" },
-  { name: 'move_card', args: 'card_id, list_id, position', returns: '—', note: 'position is a number; peek at the target list first to pick one' },
+  { name: 'move_card', args: 'card_id, list_id, position?', returns: '—', note: 'position omitted = append at the end (atomic, concurrency-safe); explicit position is absolute (whole numbers)' },
   { name: 'delete_card', args: 'card_id', returns: '—' },
   { name: 'add_comment', args: 'card_id, body', returns: 'comment_id' },
   { name: 'list_comments', args: 'card_id, cursor?, limit?', returns: '{ items, next_cursor } — the card\'s comments, oldest first' },

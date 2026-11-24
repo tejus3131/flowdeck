@@ -195,15 +195,16 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'move_card',
-    description: 'Move a card to a list at a position. Positions are numbers; use whole numbers (1, 2, 3…).',
+    description:
+      'Move a card to a list. With position: an absolute number (use whole numbers, 1, 2, 3…). Without position: appends at the end of the list — atomic and safe for concurrent movers.',
     inputSchema: {
       type: 'object',
       properties: {
         card_id: { type: 'string', format: 'uuid' },
         list_id: { type: 'string', format: 'uuid' },
-        position: { type: 'number' },
+        position: { type: 'number', description: 'Omit to append at the end of the list.' },
       },
-      required: ['card_id', 'list_id', 'position'],
+      required: ['card_id', 'list_id'],
       additionalProperties: false,
     },
     op: 'move_card',

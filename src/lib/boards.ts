@@ -809,17 +809,16 @@ export async function createList(boardId: string, name: string, clientOp?: strin
   const id = assertId(boardId, 'board id');
   const user = await requireUser(supabase);
   const listName = cleanText(name, 'List name', 80);
-  const { data: last } = await supabase
-    .from('lists')
-    .select('position')
-    .eq('board_id', id)
-    .order('position', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Atomic append (same allocator pattern as cards): the per-board
+  // counter row serializes concurrent list creations.
+  const { data: position, error: allocError } = await supabase.rpc('allocate_list_position', {
+    p_board_id: id,
+  });
+  if (allocError || position == null) throw new Error(allocError?.message ?? 'position allocation failed');
   const { error } = await supabase.from('lists').insert({
     board_id: id,
     name: listName,
-    position: (last?.position ?? 0) + 1,
+    position,
     ...(clientOp ? { client_op: clientOp } : {}),
   });
   if (error) throw new Error(error.message);
@@ -870,13 +869,13 @@ export async function createCard(listId: string, title: string, clientOp?: strin
     .maybeSingle();
   if (!list) throw new Error('List not found');
 
-  const { data: last } = await supabase
-    .from('cards')
-    .select('position')
-    .eq('list_id', id)
-    .order('position', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Atomic append: the allocator serializes concurrent creators on a
+  // per-list counter row, so parallel creates can't land on the same
+  // position (agents and humans alike).
+  const { data: position, error: allocError } = await supabase.rpc('allocate_card_position', {
+    p_list_id: id,
+  });
+  if (allocError || position == null) throw new Error(allocError?.message ?? 'position allocation failed');
 
   const { data: card, error } = await supabase
     .from('cards')
@@ -884,7 +883,7 @@ export async function createCard(listId: string, title: string, clientOp?: strin
       board_id: list.board_id,
       list_id: id,
       title: cardTitle,
-      position: (last?.position ?? 0) + 1,
+      position,
       created_by: user.id,
       ...(clientOp ? { client_op: clientOp } : {}),
     })
