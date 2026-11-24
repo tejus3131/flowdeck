@@ -5,6 +5,7 @@
 // team's access to boards they can edit.
 import { createSupabaseRequestClient } from '../server/supabase';
 import { filterInaccessible, insertNotifications } from '../server/notify';
+import { recapTokensForUsers } from './tokens';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -189,6 +190,9 @@ export async function addTeamMember(input: {
     { onConflict: 'team_id,user_id' },
   );
   if (error) throw new Error(error.message);
+  // A team-admin seat can change the board-creation gate for them —
+  // their saved MCP tokens follow the new capability.
+  await recapTokensForUsers([input.userId]);
   // The person learns they're on the team (a toast wherever they are).
   try {
     const actor = await requireUser(supabase);
@@ -222,6 +226,7 @@ export async function setTeamMemberRole(input: {
     .eq('team_id', input.teamId)
     .eq('user_id', input.userId);
   if (error) throw new Error(error.message);
+  await recapTokensForUsers([input.userId]);
   return true;
 }
 
@@ -240,6 +245,7 @@ export async function removeTeamMember(input: {
     .eq('team_id', input.teamId)
     .eq('user_id', input.userId);
   if (error) throw new Error(error.message);
+  await recapTokensForUsers([input.userId]);
   try {
     const actor = await requireUser(supabase);
     await insertNotifications([

@@ -3,14 +3,20 @@
 // revoke — with a warning that revoking means reconnecting the client.
 import { Title } from '@solidjs/meta';
 import { RouteProps, useNavigate } from '@solidjs/router';
-import { Show, createEffect, createSignal, onCleanup } from 'solid-js';
+import { liveQuery } from '@solidjs/router';
+import { Show, createEffect, createSignal, onCleanup, onSettled } from 'solid-js';
 
 import { PermissionPicker } from '../../components/PermissionPicker';
 import { listMyWorkspaceChoices } from '../../lib/mcp-auth';
 import {
+  capFromChoice,
+  capSelection,
+  normalizeSelection,
+  selectionToWorkspaceOps,
   workspaceOpsToSelection,
   type PermissionSelection,
 } from '../../lib/mcp-permissions';
+import { myMembershipWatch } from '../../lib/workspaces';
 import {
   getConnection,
   renameConnection,
@@ -61,6 +67,30 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
     })(),
   );
 
+  // ── live caps ─────────────────────────────────────────────────────────
+  // The picker's offerings depend on org-level facts that can change
+  // under the page: my role in a workspace, the board-creation policy, a
+  // membership appearing or vanishing. The same membership stream the
+  // app-wide watcher feeds on drives this page: on every event the
+  // choices re-read and the CURRENT selection is clamped to the new
+  // caps, so a demotion takes admin actions out of the picker while the
+  // page is open — not on the next reload.
+  const wsWatch = liveQuery(myMembershipWatch, 'my-ws');
+  onSettled(() => {
+    void (async () => {
+      try {
+        for await (const _event of await wsWatch()) {
+          const choices = await listMyWorkspaceChoices();
+          setWorkspaces(choices);
+          const caps = Object.fromEntries(choices.map((ws) => [ws.id, capFromChoice(ws)]));
+          setSelection((current) => capSelection(current, caps));
+        }
+      } catch {
+        // best effort — the next visit re-reads everything
+      }
+    })();
+  });
+
   // ── autosave ─────────────────────────────────────────────────────────
   // No save buttons: every change saves itself. Single-flight per field —
   // a save in flight never stacks; the latest change wins when it lands.
@@ -108,10 +138,22 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
     permsInFlight = true;
     setError(null);
     setStatus('Saving…');
+    // What was sent — the server's answer is compared against this.
+    const sent = selection();
     try {
-      await updateConnectionPermissions(props.params.tokenId, selection());
-      // Success is silence: the save just lands, no "Saved" banner.
-      setStatus(null);
+      const stored = await updateConnectionPermissions(props.params.tokenId, sent);
+      // The server caps the selection to the user's CURRENT roles. If it
+      // stripped anything, say so and reflect what actually landed —
+      // never a silent strip the page would quietly undo on the next
+      // toggle. Only applied when the user hasn't edited since the save
+      // started (their newer edits win; the next save carries them).
+      const expected = selectionToWorkspaceOps(normalizeSelection(sent));
+      if (JSON.stringify(expected) !== JSON.stringify(stored)) {
+        if (selection() === sent) setSelection(workspaceOpsToSelection(stored));
+        setStatus('Saved — some actions were removed to match your current role.');
+      } else {
+        setStatus(null);
+      }
       if (lastFailed === 'perms') lastFailed = null;
     } catch (err) {
       setStatus(null);

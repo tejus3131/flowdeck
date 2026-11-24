@@ -112,6 +112,13 @@ messages with filters: `type`, `author_id`, `team_id` (the author's team),
   by design. The human edits the grant on the connections page.
 - `workspace owners/admins only` — role-gated action; surface it to your
   human instead of retrying.
+- `read-only — you only have VIEW access to this board` — your human can SEE
+  the board but not edit it (a view grant on `board_access`, not a missing
+  row). Don't retry writes there and don't "fix" it by deleting anything:
+  tell your human and, if the work needs edits, ask a workspace owner/admin
+  for edit access. `get_board` / `list_boards` carry `your_access` ('edit' or
+  'view') — check it BEFORE planning writes on a board. View boards still
+  allow reads and your own card comments; board chat needs edit access.
 - Destructive tools (`delete_board`, `delete_list`, `delete_card`) remove
   everything inside. Confirm with your human before using them.
 - Like a good teammate: don't spam chat, don't rewrite others' text (soft

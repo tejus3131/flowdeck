@@ -8,6 +8,7 @@ import { stringifySetCookie } from 'cookie';
 
 import { createSupabaseRequestClient, createSupabaseServiceClient } from '../server/supabase';
 import { filterInaccessible, insertNotifications } from '../server/notify';
+import { recapTokensForUsers } from './tokens';
 import { env } from 'virtual:solid-env/server';
 import { live } from '@solidjs/web/server-functions';
 import { producerControls } from './boards';
@@ -442,12 +443,15 @@ export const workspaceStream = live(
   },
 );
 
-/** Watches MY membership rows: when one vanishes (removed, left, or the
- *  workspace was deleted — the cascade deletes memberships), every page
- *  hears about it and the app can fall back to the workspace picker. One
- *  yield per disappearance; the client decides what to do. */
+/** Watches MY membership rows and the workspaces I belong to: when a
+ *  membership vanishes (removed, left, or the workspace was deleted — the
+ *  cascade deletes memberships), when one of my roles changes (promoted
+ *  or demoted — the connection page's permission caps depend on it), or
+ *  when a workspace I'm in changes policy (board_creation), every page
+ *  hears about it and revalidates. One yield per change; the client
+ *  decides what to do. */
 export const myMembershipWatch = live(
-  async function* (): AsyncGenerator<'removed'> {
+  async function* (): AsyncGenerator<'removed' | 'changed'> {
     'use server';
     const supabase = createSupabaseRequestClient();
     const {
@@ -455,6 +459,7 @@ export const myMembershipWatch = live(
     } = await supabase.auth.getUser();
     if (!user) return;
     const control = producerControls();
+    let removed = false;
     const channel = supabase
       .channel(`my-memberships:${user.id}`)
       .on(
@@ -463,8 +468,37 @@ export const myMembershipWatch = live(
         (payload) => {
           // The DELETE payload carries the row's key columns.
           const old = payload.old as { workspace_id?: string } | null;
-          if (old?.workspace_id) control.onChanged();
+          if (old?.workspace_id) {
+            removed = true;
+            control.onChanged();
+          }
         },
+      )
+      // Role changes: a promotion/demotion reshapes what the permission
+      // picker may offer — the connection page must re-read its caps.
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'workspace_members', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          const record = payload as { old?: { role?: string }; new?: { role?: string } };
+          // Only actual role changes matter (no-op updates are noise).
+          if (record.old?.role !== record.new?.role) control.onChanged();
+        },
+      )
+      // New membership: the org becomes grantable on the consent and
+      // connection pages.
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'workspace_members', filter: `user_id=eq.${user.id}` },
+        () => control.onChanged(),
+      )
+      // Workspace-level policy (board_creation, rename): realtime
+      // delivers only rows the subscriber can see (RLS), so this is my
+      // workspaces only.
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'workspaces' },
+        () => control.onChanged(),
       )
       .on('system', {}, (payload: { status?: string; message?: string }) => {
         if (payload?.status === 'error') {
@@ -481,7 +515,8 @@ export const myMembershipWatch = live(
         // A beat of quiet: a workspace delete cascades one membership per
         // member, and revalidating once is enough.
         await new Promise((resolve) => setTimeout(resolve, 200));
-        yield 'removed';
+        yield removed ? 'removed' : 'changed';
+        removed = false;
       }
     } finally {
       void supabase.removeChannel(channel);
@@ -686,6 +721,12 @@ export async function updateBoardCreation(
     .update({ board_creation: policy })
     .eq('id', workspaceId);
   if (error) throw new Error(error.message);
+  // The create-board gate moved for every member; saved tokens follow.
+  const { data: members } = await supabase
+    .from('workspace_members')
+    .select('user_id')
+    .eq('workspace_id', workspaceId);
+  await recapTokensForUsers((members ?? []).map((row) => row.user_id as string));
   return true;
 }
 
@@ -729,8 +770,15 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
   if (workspace.owner_id !== user.id) {
     throw new Error('Only the workspace owner can delete it');
   }
+  // Capture the members before the cascade deletes their rows — their
+  // saved MCP tokens must stop advertising the dying workspace.
+  const { data: members } = await supabase
+    .from('workspace_members')
+    .select('user_id')
+    .eq('workspace_id', workspaceId);
   const { error } = await supabase.from('workspaces').delete().eq('id', workspaceId);
   if (error) throw new Error(error.message);
+  await recapTokensForUsers((members ?? []).map((row) => row.user_id as string));
   if (readWorkspaceCookie() === workspaceId) {
     const event = getRequestEvent();
     event?.response.headers.append(
@@ -1022,6 +1070,9 @@ export async function updateMemberRole(input: {
       console.error('override strip on promotion failed:', stripError);
     }
   }
+  // Their saved MCP tokens shrink to what the new role still backs —
+  // tools/list stops advertising powers the demotion took away.
+  await recapTokensForUsers([input.userId]);
   // The person learns their new role wherever they are.
   try {
     await insertNotifications([
@@ -1089,6 +1140,8 @@ export async function leaveWorkspace(workspaceId: string): Promise<boolean> {
     .eq('user_id', user.id);
   if (error) throw new Error(error.message);
   await stripWorkspaceAccess(supabase, workspaceId, user.id);
+  // Their saved MCP tokens drop this workspace's bucket entirely.
+  await recapTokensForUsers([user.id]);
 
   // This device shouldn't stay pointed at a workspace it left.
   if (readWorkspaceCookie() === workspaceId) {
@@ -1142,6 +1195,8 @@ export async function removeMember(input: {
     .eq('user_id', input.userId);
   if (error) throw new Error(error.message);
   await stripWorkspaceAccess(supabase, input.workspaceId, input.userId);
+  // Their saved MCP tokens drop this workspace's bucket entirely.
+  await recapTokensForUsers([input.userId]);
   return true;
 }
 

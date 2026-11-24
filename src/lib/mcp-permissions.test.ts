@@ -13,7 +13,9 @@ import {
   selectionToWorkspaceOps,
   toggleActionInSelection,
   toggleEntityInSelection,
+  capWorkspaceOps,
   toggleWorkspaceInSelection,
+  workspaceOps,
   workspaceOpsToSelection,
   type PermissionSelection,
 } from './mcp-permissions';
@@ -204,5 +206,120 @@ describe('taxonomy sanity', () => {
         expect(action.gate).toBeUndefined();
       }
     }
+  });
+});
+
+// ── the grant/request split ────────────────────────────────────────────────
+// 'Grant & request access' used to be one member-offered action — members
+// saw grant_board_access (an admin-tier power) next to their own. Now
+// request is member-level, grant is admin-tier, and the cap enforces it.
+
+describe('access entity: grant vs request', () => {
+  it('members keep request but lose grant', () => {
+    const capped = capSelection(
+      sel({ [WS]: { access: ['check', 'request', 'grant'] } }),
+      { [WS]: memberCap },
+    );
+    expect(capped.workspaces[WS].access).toEqual(['check', 'request']);
+  });
+
+  it('admins keep both', () => {
+    const capped = capSelection(
+      sel({ [WS]: { access: ['check', 'request', 'grant'] } }),
+      { [WS]: adminCap },
+    );
+    expect(capped.workspaces[WS].access).toEqual(['check', 'request', 'grant']);
+  });
+
+  it('the ops round-trip: request maps to request_board_access only', () => {
+    const ops = workspaceOps({ access: ['check', 'request'] });
+    expect(ops).toContain('request_board_access');
+    expect(ops).not.toContain('grant_board_access');
+    const back = workspaceOpsToSelection({ [WS]: ops }).workspaces[WS];
+    expect(back.access).toEqual(['check', 'request']);
+  });
+
+  it('grant_board_access is still grantable for admins (ALL_OPS intact)', () => {
+    expect(WORKSPACE_ENTITIES.flatMap((e) => e.actions).flatMap((a) => a.ops))
+      .toContain('grant_board_access');
+  });
+});
+
+// ── null stored ops (review round 2) ───────────────────────────────────────
+// updateConnectionPermissions returns null when a cap strips EVERYTHING;
+// workspaceOpsToSelection must tolerate it — the empty selection, never a
+// crash (same path legacy tokens with null workspace_ops take).
+
+describe('workspaceOpsToSelection null tolerance', () => {
+  it('returns the empty selection for null stored ops', () => {
+    expect(workspaceOpsToSelection(null)).toEqual({ workspaces: {}, account: {} });
+    expect(workspaceOpsToSelection(undefined)).toEqual({ workspaces: {}, account: {} });
+  });
+
+  it('a cap that strips a workspace grant round-trips to no workspace access', () => {
+    // A demoted member's leftover admin grant, capped away server-side:
+    // the workspace key disappears; only the account baseline (the
+    // identity pair every connection carries) remains.
+    const stored = selectionToWorkspaceOps(capSelection(
+      sel({ [WS]: { boards: ['delete'] } }),
+      { [WS]: memberCap },
+    ));
+    expect(stored).not.toBeNull();
+    // Only the baseline identity pair remains (it rides along per bucket
+    // by design); every workspace grant is gone.
+    expect(stored![WS]).toEqual(['get_me', 'list_workspaces']);
+    const round = workspaceOpsToSelection(stored);
+    // No workspace entity actions survive the strip; the account bucket
+    // is exactly the baseline reads (profile + workspace list).
+    expect(Object.values(round.workspaces).every((entities) => Object.keys(entities).length === 0)).toBe(true);
+    expect(round.account).toEqual({ profile: ['read'], workspaces: ['read'] });
+  });
+});
+// ── op-level recap (role changes vs saved tokens) ──────────────────────────
+// A demoted admin's stored grant must shrink to what their CURRENT role
+// can still back — tools/list stops advertising dead powers.
+
+describe('capWorkspaceOps', () => {
+  const full = [
+    'get_me', 'list_workspaces', // baseline — always survive
+    'list_boards', 'get_board', 'get_cards', // member reads
+    'create_card', 'update_card', 'move_card', 'delete_card',
+    'rename_list', 'update_list', // member writes
+    'delete_board', 'delete_list', // admin writes
+    'create_tag', 'rename_tag', 'merge_tags', // admin tag powers
+    'invite_member', 'resolve_access_request', // admin people powers
+    'create_board', // the gated op
+    'search',
+  ];
+
+  it('a member keeps member ops; admin powers fall away', () => {
+    const capped = capWorkspaceOps(full, memberCap);
+    for (const op of ['list_boards', 'create_card', 'update_card', 'search', 'get_me']) {
+      expect(capped).toContain(op);
+    }
+    for (const op of ['delete_board', 'delete_list', 'create_tag', 'invite_member', 'resolve_access_request', 'create_board']) {
+      expect(capped).not.toContain(op);
+    }
+  });
+
+  it('an admin keeps everything except owner-tier (there is none) — and the gate', () => {
+    const capped = capWorkspaceOps(full, adminCap);
+    expect(capped).toContain('delete_board');
+    expect(capped).toContain('invite_member');
+    // board creation is gated by board_creation policy, not role:
+    // adminCap has canCreateBoards: true here.
+    expect(capped).toContain('create_board');
+  });
+
+  it('the board-creation gate strips create_board when the policy closes', () => {
+    const closedMember = { role: 'member' as const, canCreateBoards: false };
+    expect(capWorkspaceOps(['create_board', 'get_me'], closedMember)).toEqual(['get_me']);
+    const openMember = { role: 'member' as const, canCreateBoards: true };
+    expect(capWorkspaceOps(['create_board', 'get_me'], openMember)).toEqual(['create_board', 'get_me']);
+  });
+
+  it('baseline identity ops always survive, unknown ops fall away', () => {
+    const capped = capWorkspaceOps(['get_me', 'list_workspaces', 'made_up_op'], memberCap);
+    expect(capped).toEqual(['get_me', 'list_workspaces']);
   });
 });

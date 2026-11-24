@@ -187,9 +187,14 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     description: 'Granting board access so mentions reach people.',
     actions: [
       { id: 'check', label: 'Check mention reach', ops: ['check_mention_access'], hint: 'See who a mention reaches', requires: 'boards.read' },
-      write('manage', 'Grant & request access', ['grant_board_access', 'request_board_access'], {
+      write('request', 'Ask admins for access', ['request_board_access'], {
         implies: 'check',
         requires: 'boards.read',
+      }),
+      write('grant', 'Grant board access', ['grant_board_access'], {
+        implies: 'check',
+        requires: 'boards.read',
+        role: 'admin',
       }),
       write('resolve', 'Resolve access requests', ['resolve_access_request'], {
         implies: 'check',
@@ -270,6 +275,25 @@ export type WorkspaceCap = {
   /** True when this workspace allows THIS user to create boards. */
   canCreateBoards: boolean;
 };
+
+/** The cap for one workspace choice row (the shape both the consent and
+ *  connection pages load): role + board-creation policy + team-admin
+ *  seat, resolved for THIS user. One derivation, shared by the picker,
+ *  the connection page's live clamp, and the server's cap code paths. */
+export function capFromChoice(ws: {
+  role: 'member' | 'admin' | 'owner';
+  board_creation: string;
+  is_team_admin: boolean;
+}): WorkspaceCap {
+  return {
+    role: ws.role,
+    canCreateBoards:
+      ws.role === 'owner' ||
+      ws.role === 'admin' ||
+      ws.board_creation === 'everyone' ||
+      (ws.board_creation === 'team_admins' && ws.is_team_admin),
+  };
+}
 
 /** Role rank for comparing caps. */
 const ROLE_RANK: Record<WorkspaceCap['role'], number> = { member: 0, admin: 1, owner: 2 };
@@ -614,6 +638,24 @@ export function accountOps(account: WorkspaceSelection): string[] {
     }
   }
   return [...ops];
+}
+
+/**
+ * Op-level cap for a saved token bucket: keeps an op only when the
+ * user's CURRENT cap (role + board-creation gate) can still grant it.
+ * Baseline identity ops always survive (every connection needs them).
+ * This is the runtime half of role changes: a demoted admin's stored
+ * grant shrinks to what they could grant today, so tools/list stops
+ * advertising powers their role no longer backs.
+ */
+export function capWorkspaceOps(ops: string[], cap: WorkspaceCap): string[] {
+  const grantable = new Set<string>();
+  for (const entity of WORKSPACE_ENTITIES) {
+    for (const action of entity.actions) {
+      if (actionOffered(action, cap)) action.ops.forEach((op) => grantable.add(op));
+    }
+  }
+  return [...new Set(ops.filter((op) => BASELINE_OPS.includes(op) || grantable.has(op)))];
 }
 
 /**

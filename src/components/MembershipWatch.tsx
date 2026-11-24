@@ -23,6 +23,10 @@ export function MembershipWatch() {
         for await (const _event of await watch()) {
           revalidate('workspaces');
           revalidate('boards');
+          // The MCP permission caps (role + board-creation policy) re-read
+          // too: the consent and connection pages must not serve stale
+          // offerings after a role change or a policy change.
+          revalidate('my-ws-choices');
           // Only bounce to the picker when there is no current workspace
           // left — people on OTHER workspaces stay exactly where they are.
           const list = await getMyWorkspaces();

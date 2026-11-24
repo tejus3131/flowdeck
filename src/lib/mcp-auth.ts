@@ -9,6 +9,8 @@
 // is stored with the code — the app never sees the verifier.
 import { createHash, randomBytes } from 'node:crypto';
 
+import { query } from '@solidjs/router';
+
 import { createSupabaseRequestClient } from '../server/supabase';
 
 import {
@@ -47,7 +49,7 @@ export async function mcpAuthSignedIn(): Promise<boolean> {
  * this workspace allows THEM to create boards (role + board_creation
  * policy + team-admin).
  */
-export async function listMyWorkspaceChoices(): Promise<
+export const listMyWorkspaceChoices = query(async (): Promise<
   {
     id: string;
     name: string;
@@ -55,7 +57,7 @@ export async function listMyWorkspaceChoices(): Promise<
     board_creation: string;
     is_team_admin: boolean;
   }[]
-> {
+> => {
   'use server';
   const supabase = createSupabaseRequestClient();
   const { data } = await supabase
@@ -94,7 +96,7 @@ export async function listMyWorkspaceChoices(): Promise<
     board_creation: (row.workspaces?.board_creation ?? 'team_admins') as string,
     is_team_admin: teamAdminOf.has(row.workspace_id),
   }));
-}
+}, 'my-ws-choices');
 
 function isHttpUrl(value: string): boolean {
   try {

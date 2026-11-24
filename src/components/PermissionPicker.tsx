@@ -13,10 +13,12 @@ import {
   ACCOUNT_ENTITIES,
   WORKSPACE_ENTITIES,
   actionOffered,
+  capFromChoice,
   offeredActions,
   toggleActionInSelection,
   toggleEntityInSelection,
   toggleWorkspaceInSelection,
+  type PermissionAction,
   type PermissionSelection,
   type WorkspaceSelection,
 } from '../lib/mcp-permissions';
@@ -63,14 +65,7 @@ export function PermissionPicker(props: {
   );
   const [openEntities, setOpenEntities] = createSignal<Set<string>>(new Set());
 
-  const capOf = (ws: WsChoice) => ({
-    role: ws.role,
-    canCreateBoards:
-      ws.role === 'owner' ||
-      ws.role === 'admin' ||
-      ws.board_creation === 'everyone' ||
-      (ws.board_creation === 'team_admins' && ws.is_team_admin),
-  });
+  const capOf = (ws: WsChoice) => capFromChoice(ws);
 
   const toggleIn = (set: () => Set<string>, key: string) =>
     set().has(key)
@@ -181,6 +176,36 @@ export function PermissionPicker(props: {
           // used to crash here).
           props.selection.workspaces[bucketId ?? ''] ?? {}
         : props.selection.account;
+    /** Actions gated above member level — rendered in their own group. */
+    const isAdminTier = (action: PermissionAction) => action.role === 'admin' || action.role === 'owner';
+    /** One checkbox row for an action. */
+    const actionCheckbox = (action: PermissionAction) => (
+      <label class="flex items-start gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+        <input
+          type="checkbox"
+          class="mt-0.5"
+          checked={(bucketSel()[entityId] ?? []).includes(action.id)}
+          onChange={(event) =>
+            props.onChange(
+              toggleActionInSelection(
+                props.selection,
+                bucket,
+                bucketId,
+                entityId,
+                action.id,
+                event.currentTarget.checked,
+              ),
+            )
+          }
+        />
+        <span>
+          {action.label}
+          <Show when={action.hint}>
+            <span class="block text-[10px] text-neutral-400">{action.hint}</span>
+          </Show>
+        </span>
+      </label>
+    );
     return (
       <div class="mb-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-900/50">
         <div class="flex items-center gap-2 px-2.5 py-2">
@@ -202,39 +227,24 @@ export function PermissionPicker(props: {
         </div>
         <Show when={expanded()}>
           <div class="grid grid-cols-1 gap-1.5 border-t border-neutral-200 px-3 py-2 sm:grid-cols-2 dark:border-neutral-700">
-            <For each={offeredActions(entity, cap)}>
-              {(action) => {
-                const checked = () => (bucketSel()[entityId] ?? []).includes(action.id);
-                return (
-                  <label class="flex items-start gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
-                    <input
-                      type="checkbox"
-                      class="mt-0.5"
-                      checked={checked()}
-                      onChange={(event) =>
-                        props.onChange(
-                          toggleActionInSelection(
-                            props.selection,
-                            bucket,
-                            bucketId,
-                            entityId,
-                            action.id,
-                            event.currentTarget.checked,
-                          ),
-                        )
-                      }
-                    />
-                    <span>
-                      {action.label}
-                      <Show when={action.hint}>
-                        <span class="block text-[10px] text-neutral-400">{action.hint}</span>
-                      </Show>
-                    </span>
-                  </label>
-                );
-              }}
+            <For each={offeredActions(entity, cap).filter((action) => !isAdminTier(action))}>
+              {(action) => actionCheckbox(action)}
             </For>
           </div>
+          {/* Admin/owner actions get their own clearly-labeled group — they
+              must never read as just another line among member permissions. */}
+          <Show when={offeredActions(entity, cap).some((action) => isAdminTier(action))}>
+            <div class="border-t border-neutral-200 px-3 py-2 dark:border-neutral-700">
+              <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Admin / owner actions
+              </p>
+              <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                <For each={offeredActions(entity, cap).filter((action) => isAdminTier(action))}>
+                  {(action) => actionCheckbox(action)}
+                </For>
+              </div>
+            </div>
+          </Show>
         </Show>
       </div>
     );
