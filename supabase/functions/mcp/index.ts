@@ -440,9 +440,49 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'list_notifications',
-    description: 'Your latest 50 notifications (mentions, assignments, invites, access requests).',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description:
+      'Your notifications (mentions, assignments, invites, access requests), newest first, with display names for actor/subject. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PAGE_PARAMS,
+        filter: {
+          type: 'string',
+          enum: ['all', 'unread', 'read'],
+          description: 'all (default), unread only, or read only.',
+        },
+      },
+      additionalProperties: false,
+    },
     op: 'list_notifications',
+  },
+  {
+    name: 'mark_notification_read',
+    description: 'Mark one of your notifications read.',
+    inputSchema: {
+      type: 'object',
+      properties: { notification_id: { type: 'string', format: 'uuid' } },
+      required: ['notification_id'],
+      additionalProperties: false,
+    },
+    op: 'mark_notification_read',
+  },
+  {
+    name: 'mark_notification_unread',
+    description: 'Mark one of your notifications unread again.',
+    inputSchema: {
+      type: 'object',
+      properties: { notification_id: { type: 'string', format: 'uuid' } },
+      required: ['notification_id'],
+      additionalProperties: false,
+    },
+    op: 'mark_notification_unread',
+  },
+  {
+    name: 'mark_all_notifications_read',
+    description: 'Mark every unread notification of yours read. Returns how many were marked.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    op: 'mark_all_notifications_read',
   },
   {
     name: 'set_status',
