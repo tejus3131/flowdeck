@@ -6,7 +6,7 @@ import { Title } from '@solidjs/meta';
 import { MembershipWatch } from '../../components/MembershipWatch';
 import { For } from 'solid-js';
 
-const MCP_URL = 'https://ylarhvcbpppujpjnpxkq.supabase.co/functions/v1/mcp';
+const MCP_URL = 'https://flowdeck.tejusgupta.dev/api/mcp';
 
 const TOOLS: { name: string; args: string; returns: string; note?: string }[] = [
   { name: 'list_boards', args: 'cursor?, limit?', returns: '{ items, next_cursor } — boards you can see, newest activity first' },

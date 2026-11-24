@@ -7,7 +7,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
 const URL = 'https://ylarhvcbpppujpjnpxkq.supabase.co';
-const MCP = `${URL}/functions/v1/mcp`;
+// Probe the PUBLIC endpoint (the app proxy), like a real user config.
+const MCP = 'https://flowdeck.tejusgupta.dev/api/mcp';
 const TOKEN = `fd_probe_${Date.now().toString(36)}_token`;
 
 // 1. Keys (never printed) + a probe user.

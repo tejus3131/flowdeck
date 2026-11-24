@@ -790,11 +790,15 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 // ── OAuth: browser-based authorization (the MCP spec flow) ────────────────
-// The edge function is the OAuth RESOURCE SERVER and (for discovery
-// simplicity) also advertises itself as the authorization server; the
-// consent page lives in the web app where the user's session is.
+// The edge function is the OAuth RESOURCE SERVER. The app origin is the
+// authorization server (it serves /.well-known/oauth-authorization-server
+// at its root and hosts the consent page); the app also proxies MCP traffic
+// at <app>/api/mcp, so the PUBLIC resource URL — what discovery documents
+// and 401 challenges advertise — is that proxy path, not this direct
+// Supabase URL. The direct URL keeps working as a fallback entry point.
 const APP_ORIGIN = Deno.env.get('APP_ORIGIN') ?? 'https://flowdeck.tejusgupta.dev';
 const RESOURCE_URL = `${new URL(Deno.env.get('SUPABASE_URL') ?? 'https://supabase.co').origin}/functions/v1/mcp`;
+const MCP_PUBLIC_URL = Deno.env.get('MCP_PUBLIC_URL') ?? `${APP_ORIGIN}/api/mcp`;
 
 /** base64url(SHA-256(x)) — the PKCE S256 challenge of a verifier. */
 async function pkceChallenge(verifier: string): Promise<string> {
@@ -839,7 +843,14 @@ function oauthError(status: number, code: string, description: string): Response
 function oauthDiscovery(pathname: string): Response | null {
   if (pathname.endsWith('/.well-known/oauth-protected-resource')) {
     return json(
-      { resource: RESOURCE_URL, authorization_servers: [RESOURCE_URL] },
+      // The advertised resource is the app's PROXY path (MCP_PUBLIC_URL):
+      // users should configure and discover <app>/api/mcp, never this
+      // direct Supabase URL. The authorization server is the APP origin —
+      // supabase.co's path-insertion and origin-root well-known URLs are
+      // unroutable, so clients doing RFC 8414 discovery against it (VS Code)
+      // fail. The app serves /.well-known/oauth-authorization-server at its
+      // origin root, which every client can reach.
+      { resource: MCP_PUBLIC_URL, authorization_servers: [APP_ORIGIN] },
       200,
       { 'Cache-Control': 'public, max-age=3600' },
     );
@@ -847,9 +858,11 @@ function oauthDiscovery(pathname: string): Response | null {
   if (pathname.endsWith('/.well-known/oauth-authorization-server')) {
     return json(
       {
-        issuer: RESOURCE_URL,
+        // Kept in sync with the app's /.well-known/oauth-authorization-server
+        // route so both origins advertise the same issuer and endpoints.
+        issuer: APP_ORIGIN,
         authorization_endpoint: `${APP_ORIGIN}/mcp/authorize`,
-        token_endpoint: `${RESOURCE_URL}/token`,
+        token_endpoint: `${MCP_PUBLIC_URL}/token`,
         response_types: ['code'],
         grant_types: ['authorization_code'],
         code_challenge_methods: ['S256'],
@@ -991,7 +1004,7 @@ Deno.serve(async (request) => {
       401,
       // RFC 9728 challenge: OAuth-capable clients start the browser flow
       // from this header alone.
-      { 'WWW-Authenticate': `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"` },
+      { 'WWW-Authenticate': `Bearer resource_metadata="${MCP_PUBLIC_URL}/.well-known/oauth-protected-resource"` },
     );
   }
   const tokenHash = await sha256Hex(presented);
@@ -1010,7 +1023,7 @@ Deno.serve(async (request) => {
     return json(
       { jsonrpc: '2.0', error: { code: -32001, message: 'Unknown token.' } },
       401,
-      { 'WWW-Authenticate': `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"` },
+      { 'WWW-Authenticate': `Bearer resource_metadata="${MCP_PUBLIC_URL}/.well-known/oauth-protected-resource"` },
     );
   }
   // Fire-and-forget last-used stamp (never blocks or fails the call).

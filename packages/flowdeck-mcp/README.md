@@ -16,7 +16,7 @@ The CLI is a dependency-free translator: it forwards MCP JSON-RPC from stdin to 
       "command": "npx",
       "args": ["flowdeck-mcp"],
       "env": {
-        "FLOWDECK_URL": "https://<your-project>.supabase.co/functions/v1/mcp",
+        "FLOWDECK_URL": "https://flowdeck.tejusgupta.dev/api/mcp",
         "FLOWDECK_TOKEN": "fd_…"
       }
     }
@@ -27,7 +27,7 @@ The CLI is a dependency-free translator: it forwards MCP JSON-RPC from stdin to 
 Or run it directly:
 
 ```sh
-FLOWDECK_URL=https://<your-project>.supabase.co/functions/v1/mcp \
+FLOWDECK_URL=https://flowdeck.tejusgupta.dev/api/mcp \
 FLOWDECK_TOKEN=fd_… \
 node index.mjs
 ```

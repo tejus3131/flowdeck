@@ -4,7 +4,7 @@ import { Title } from '@solidjs/meta';
 
 import { MembershipWatch } from '../../components/MembershipWatch';
 
-const MCP_URL = 'https://ylarhvcbpppujpjnpxkq.supabase.co/functions/v1/mcp';
+const MCP_URL = 'https://flowdeck.tejusgupta.dev/api/mcp';
 
 export default function CliDocsPage() {
   return (

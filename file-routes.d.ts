@@ -41,6 +41,30 @@ declare module "virtual:file-routes" {
       $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/[...404]"), Extract<"route", keyof typeof import("./src/routes/[...404]")>>>;
     },
     {
+      path: "/api/mcp/*path";
+      page: false;
+      $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"GET", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
+      $POST: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"POST", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
+      $PUT: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"PUT", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
+      $DELETE: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"DELETE", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
+      $PATCH: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"PATCH", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
+      $OPTIONS: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"OPTIONS", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
+      $HEAD: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"GET", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
+      $$route?: undefined;
+    },
+    {
+      path: "/api/mcp/";
+      page: false;
+      $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/index"), Extract<"GET", keyof typeof import("./src/routes/api/mcp/index")>>>;
+      $POST: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/index"), Extract<"POST", keyof typeof import("./src/routes/api/mcp/index")>>>;
+      $PUT: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/index"), Extract<"PUT", keyof typeof import("./src/routes/api/mcp/index")>>>;
+      $DELETE: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/index"), Extract<"DELETE", keyof typeof import("./src/routes/api/mcp/index")>>>;
+      $PATCH: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/index"), Extract<"PATCH", keyof typeof import("./src/routes/api/mcp/index")>>>;
+      $OPTIONS: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/index"), Extract<"OPTIONS", keyof typeof import("./src/routes/api/mcp/index")>>>;
+      $HEAD: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/index"), Extract<"GET", keyof typeof import("./src/routes/api/mcp/index")>>>;
+      $$route?: undefined;
+    },
+    {
       path: "/auth/confirm";
       page: false;
       $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/auth/confirm"), Extract<"GET", keyof typeof import("./src/routes/auth/confirm")>>>;
@@ -117,6 +141,13 @@ declare module "virtual:file-routes" {
       path: "/w/:workspaceId/t/:teamId";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/t/[teamId]"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/t/[teamId]")>>>;
+      $$route?: undefined;
+    },
+    {
+      path: "/.well-known/oauth-authorization-server";
+      page: false;
+      $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/well-known/oauth-authorization-server"), Extract<"GET", keyof typeof import("./src/routes/well-known/oauth-authorization-server")>>>;
+      $HEAD: FileRouteLazyRef<Pick<typeof import("./src/routes/well-known/oauth-authorization-server"), Extract<"GET", keyof typeof import("./src/routes/well-known/oauth-authorization-server")>>>;
       $$route?: undefined;
     }
   ];
