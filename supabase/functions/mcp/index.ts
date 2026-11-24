@@ -29,16 +29,39 @@ type ToolDef = {
   op: string;
 };
 
+// Shared cursor-pagination params. Every list-shaped read returns
+// { items, next_cursor }: next_cursor is an opaque string that is
+// null/absent when the list is exhausted; pass it back as `cursor`
+// for the next page.
+const PAGE_PARAMS = {
+  cursor: {
+    type: 'string',
+    description: 'Opaque cursor from a previous page (the next_cursor value); omit for the first page.',
+  },
+  limit: {
+    type: 'integer',
+    minimum: 1,
+    maximum: 200,
+    description: 'Page size. Default 50, max 200.',
+  },
+};
+
 const TOOLS: ToolDef[] = [
   {
     name: 'list_boards',
-    description: 'List every board the account can see (newest activity first).',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description:
+      'List boards the account can see, newest activity first. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...PAGE_PARAMS },
+      additionalProperties: false,
+    },
     op: 'list_boards',
   },
   {
     name: 'get_board',
-    description: 'One board with all its lists and cards. Use this to discover list ids for card creation.',
+    description:
+      'One board with its lists (no cards or messages). Use this to discover list ids, then get_cards(list_id) for cards and list_board_messages(board_id) for the board chat.',
     inputSchema: {
       type: 'object',
       properties: { board_id: { type: 'string', format: 'uuid' } },
@@ -46,6 +69,30 @@ const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     op: 'get_board',
+  },
+  {
+    name: 'get_board_full',
+    description:
+      'Legacy one-call payload: board + lists + ALL cards + ALL chat messages, unpaged. Flooding risk on active boards — prefer get_board + get_cards + list_board_messages.',
+    inputSchema: {
+      type: 'object',
+      properties: { board_id: { type: 'string', format: 'uuid' } },
+      required: ['board_id'],
+      additionalProperties: false,
+    },
+    op: 'get_board_full',
+  },
+  {
+    name: 'get_cards',
+    description:
+      'Cards in one list, in board order. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
+    inputSchema: {
+      type: 'object',
+      properties: { list_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
+      required: ['list_id'],
+      additionalProperties: false,
+    },
+    op: 'get_cards',
   },
   {
     name: 'create_board',
@@ -185,10 +232,11 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'list_comments',
-    description: 'List the comments on a card.',
+    description:
+      'Comments on a card, oldest first. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
     inputSchema: {
       type: 'object',
-      properties: { card_id: { type: 'string', format: 'uuid' } },
+      properties: { card_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
       required: ['card_id'],
       additionalProperties: false,
     },
@@ -202,8 +250,13 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'list_workspaces',
-    description: 'Every workspace you belong to, with your role in each.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description:
+      'Every workspace you belong to, with your role in each. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...PAGE_PARAMS },
+      additionalProperties: false,
+    },
     op: 'list_workspaces',
   },
   {
@@ -219,10 +272,11 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'list_teams',
-    description: "A workspace's teams with their members (ids and team roles).",
+    description:
+      "A workspace's teams with their members (ids and team roles), oldest first. Returns { items, next_cursor } — pass next_cursor as cursor to page through.",
     inputSchema: {
       type: 'object',
-      properties: { workspace_id: { type: 'string', format: 'uuid' } },
+      properties: { workspace_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
       required: ['workspace_id'],
       additionalProperties: false,
     },
@@ -280,6 +334,18 @@ const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     op: 'post_board_message',
+  },
+  {
+    name: 'list_board_messages',
+    description:
+      'Board chat messages, oldest first. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
+    inputSchema: {
+      type: 'object',
+      properties: { board_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
+      required: ['board_id'],
+      additionalProperties: false,
+    },
+    op: 'list_board_messages',
   },
   {
     name: 'invite_member',
