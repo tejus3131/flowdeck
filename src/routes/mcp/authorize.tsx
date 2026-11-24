@@ -52,6 +52,18 @@ export default function McpAuthorizePage() {
     }
   };
 
+  // The connection's name: pre-filled with a guess from the callback host
+  // (VS Code redirects via vscode.dev), editable before Allow.
+  const suggestName = () => {
+    const host = redirectHost().toLowerCase();
+    if (host.includes('vscode.dev')) return 'VS Code';
+    if (host.includes('cursor')) return 'Cursor';
+    if (host.includes('claude')) return 'Claude';
+    if (loopback()) return 'MCP client';
+    return host || 'MCP connection';
+  };
+  const [name, setName] = createSignal('');
+
   const valid = () =>
     clientId().length > 0 &&
     redirectUri().length > 0 &&
@@ -107,6 +119,7 @@ export default function McpAuthorizePage() {
     setError(null);
     try {
       const { redirectTo } = await approveMcpClient({
+        connectionName: name().trim() || suggestName(),
         clientId: clientId(),
         redirectUri: redirectUri(),
         codeChallenge: codeChallenge(),
@@ -181,6 +194,20 @@ export default function McpAuthorizePage() {
           <p class="text-neutral-500 dark:text-neutral-400">
             Callback host: <span class="font-mono">{redirectHost()}</span>
           </p>
+          <label class="block">
+            <span class="mb-1 block font-medium">Name this connection</span>
+            <input
+              type="text"
+              value={name() || suggestName()}
+              maxlength="80"
+              onInput={(event) => setName(event.currentTarget.value)}
+              placeholder="e.g. VS Code"
+              class="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            />
+            <span class="mt-1 block text-xs text-neutral-400">
+              Shows on your Profile page — you'll revoke and manage it by this name.
+            </span>
+          </label>
           <div class="border-t border-neutral-200 pt-3 dark:border-neutral-800">
             <p class="mb-2 font-medium">What the agent can do</p>
             <label class="mb-2 flex items-center gap-2 text-sm font-medium">

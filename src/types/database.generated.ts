@@ -703,10 +703,12 @@ export type Database = {
           redirect_uri: string
           used_at: string | null
           user_id: string
+          connection_name: string | null
           workspace_scope: string[] | null
           allowed_ops: string[] | null
         }
         Insert: {
+          connection_name?: string | null
           challenge_method?: string
           client_id: string
           code_challenge: string

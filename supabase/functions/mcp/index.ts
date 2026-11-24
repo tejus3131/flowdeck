@@ -976,7 +976,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
 
   const { data: stored } = await service
     .from('mcp_auth_codes')
-    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops')
+    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops, connection_name')
     .eq('code_hash', await sha256Hex(code))
     .maybeSingle();
   if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
@@ -1006,7 +1006,9 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     .join('')}`;
   const { error: insertError } = await service.from('api_tokens').insert({
     user_id: stored.user_id,
-    name: `MCP: ${clientId}`.slice(0, 60),
+    // The user-named connection from the consent page; the generated
+    // fallback only appears for pre-naming clients.
+    name: (stored.connection_name || `MCP: ${clientId}`).slice(0, 80),
     token_hash: await sha256Hex(token),
     workspace_scope: stored.workspace_scope ?? null,
     allowed_ops: stored.allowed_ops ?? null,

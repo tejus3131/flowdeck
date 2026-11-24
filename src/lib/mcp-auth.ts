@@ -21,8 +21,9 @@ export type McpAuthorizeInput = {
   workspaceIds?: string[];
   /** Tool category ids to grant. `['*']` = every tool (explicit full grant). */
   toolCategories?: string[];
+  /** What the user named this connection — lands on the token. */
+  connectionName?: string;
 };
-
 /** Tool categories the consent page offers. The SAFE default is the
  * read-only surface (plus the agent's own profile/status/inbox);
  * everything that writes or administers is opt-in. The map lives here —
@@ -220,8 +221,11 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     throw new Error('This authorization request must use PKCE (S256) — ask the client to retry.');
   }
 
-  const code = `mcp_${randomBytes(24).toString('hex')}`;
-  const codeHash = createHash('sha256').update(code).digest('hex');
+  // The connection's name: user-chosen on the consent page, bounded and
+  // trimmed; the edge mints it onto the token (falling back to a default).
+  const connectionName = String(input.connectionName ?? '').trim().slice(0, 80) || null;
+
+  const code = `mcp_${randomBytes(24).toString('hex')}`;  const codeHash = createHash('sha256').update(code).digest('hex');
   const { error } = await supabase.from('mcp_auth_codes').insert({
     code_hash: codeHash,
     user_id: user.id,
@@ -229,6 +233,7 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     redirect_uri: redirectUri,
     code_challenge: codeChallenge,
     challenge_method: 'S256',
+    connection_name: connectionName,
     workspace_scope: workspaceScope,
     allowed_ops: allowedOps,
   });
