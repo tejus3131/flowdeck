@@ -13,6 +13,7 @@ import {
   workspaceStream,
   type WorkspaceDetail,
 } from '../lib/workspaces';
+import { cacheGet, cachePut, cachedStream } from '../lib/cache';
 
 const PRIORITIES = ['', 'urgent', 'high', 'medium', 'low'];
 
@@ -40,10 +41,18 @@ export default function SearchPage() {
         setDirty(true);
       }
       void (async () => {
+        // Roster cache first (any board/members/team/search visit warms
+        // the same key): the filter bar paints its people instantly, the
+        // fetches behind revalidate and write back.
+        const cached = await cacheGet<WorkspaceDetail>(`ws-detail:${id}`);
+        if (cached) setDetail(cached);
         const first = await getWorkspaceSnapshot(id).catch(() => null);
-        if (first) setDetail(first);
+        if (first) {
+          setDetail(first);
+          cachePut(`ws-detail:${id}`, first);
+        }
         try {
-          for await (const next of workspaceLive(id)) {
+          for await (const next of cachedStream(`ws-detail:${id}`, () => workspaceLive(id))) {
             setDetail(next);
             setDirty(true);
           }

@@ -17,6 +17,8 @@ import {
 } from '../lib/boards';
 import { createEngine } from '../lib/sync';
 import { warmRecentBoards } from '../lib/prefetch';
+import { cacheGet, cachePut } from '../lib/cache';
+import type { WorkspaceDetail } from '../lib/workspaces';
 import { getMyWorkspaces, createWorkspace, enterWorkspaceOrdered, getWorkspaceSnapshot, switchWorkspaceOrdered } from '../lib/workspaces';
 import { createWorkspaceRelay } from '../lib/workspace-relay';
 import { MembershipWatch } from '../components/MembershipWatch';
@@ -102,8 +104,17 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
         setWsMembers([]);
         return;
       }
+      // Roster cache first (any board/members/team/search visit warms the
+      // same key): the member avatars paint instantly on reload; the
+      // fetch behind revalidates and writes back.
+      void cacheGet<WorkspaceDetail>(`ws-detail:${id}`).then((cached) => {
+        if (cached) setWsMembers(cached.members);
+      });
       void getWorkspaceSnapshot(id)
-        .then((detail) => setWsMembers(detail?.members ?? []))
+        .then((detail) => {
+          setWsMembers(detail?.members ?? []);
+          if (detail) cachePut(`ws-detail:${id}`, detail);
+        })
         .catch(() => setWsMembers([]));
     },
   );

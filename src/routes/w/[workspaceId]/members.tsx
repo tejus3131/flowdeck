@@ -42,7 +42,7 @@ import {
   setTeamMemberRole,
 } from '../../../lib/teams';
 import { errorMessage } from '../../../lib/error-message';
-import { cachedStream } from '../../../lib/cache';
+import { cachedStream, cachePut } from '../../../lib/cache';
 import { perfFirstValue } from '../../../lib/perf';
 
 const ROLE_STYLE: Record<WorkspaceRole, string> = {
@@ -101,8 +101,15 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
     }),
     merge: mergeWorkspaceDetail,
     status: () => workspaceLive.status(props.params.workspaceId),
-    refresh: async () =>
-      (await getWorkspaceSnapshot(props.params.workspaceId)) ?? EMPTY_DETAIL,
+    // The durable poll keeps the roster cache warm (parity with the
+    // board's refresh writeback). EMPTY — no access or a failed read —
+    // never writes: a stale seed is recoverable, a wrong empty one is a
+    // flash of missing members.
+    refresh: async () => {
+      const snapshot = await getWorkspaceSnapshot(props.params.workspaceId);
+      if (snapshot) cachePut(`ws-detail:${props.params.workspaceId}`, snapshot);
+      return snapshot ?? EMPTY_DETAIL;
+    },
   });
   const detail = createMemo(() => {
     const view = engine.view();
