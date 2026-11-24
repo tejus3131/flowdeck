@@ -88,9 +88,11 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
     setStatus('Saving…');
     try {
       await renameConnection(props.params.tokenId, name());
-      setStatus('Saved');
+      // Success is silence: the save just lands, no "Saved" banner.
+      setStatus(null);
       if (lastFailed === 'name') lastFailed = null;
     } catch (err) {
+      setStatus(null);
       lastFailed = 'name';
       setError(err instanceof Error ? err.message : 'Could not save the name');
     } finally {
@@ -108,9 +110,11 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
     setStatus('Saving…');
     try {
       await updateConnectionPermissions(props.params.tokenId, selection());
-      setStatus('Saved — new calls pick it up immediately');
+      // Success is silence: the save just lands, no "Saved" banner.
+      setStatus(null);
       if (lastFailed === 'perms') lastFailed = null;
     } catch (err) {
+      setStatus(null);
       lastFailed = 'perms';
       setError(err instanceof Error ? err.message : 'Could not save the permissions');
     } finally {
@@ -179,7 +183,6 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
               onInput={(event) => onNameInput(event.currentTarget.value)}
               class="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             />
-            <span class="shrink-0 self-center text-xs text-neutral-400">{status()}</span>
           </div>
         </label>
 
@@ -193,9 +196,7 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
         </div>
 
         <Show when={status()}>
-          <p class="mt-3 rounded-xl bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
-            {status()}
-          </p>
+          <p class="mt-3 text-xs text-neutral-400">{status()}</p>
         </Show>
         <Show when={error()}>
           <p role="alert" class="mt-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">

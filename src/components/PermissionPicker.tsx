@@ -29,12 +29,6 @@ type WsChoice = {
   is_team_admin: boolean;
 };
 
-const ROLE_LABEL: Record<WsChoice['role'], string> = {
-  member: 'member',
-  admin: 'admin',
-  owner: 'owner',
-};
-
 /** Tri-state indicator: null unchecked, true checked, false indeterminate. */
 function TriState(props: { state: boolean | null; onChange: () => void; label?: string }) {
   return (
@@ -138,25 +132,33 @@ export function PermissionPicker(props: {
             class="flex flex-1 items-center justify-between text-left"
             onClick={() => setOpenOrgs(toggleIn(openOrgs, key))}
           >
-            <span class="text-sm font-medium">
-              {ws.name}{' '}
-              <span class="text-xs font-normal text-neutral-400">
-                you are {ROLE_LABEL[ws.role]}
-              </span>
-            </span>
+            <span class="text-sm font-medium">{ws.name}</span>
             <span class="text-xs text-neutral-400">{expanded() ? '▲' : '▼'}</span>
           </button>
         </div>
         <Show when={expanded()}>
-          <div class="border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
-            <For each={WORKSPACE_ENTITIES}>
-              {(entity) => (
-                <Show when={offeredActions(entity, cap).length > 0}>
-                  {entityRow('workspaces', ws.id, entity.id, cap)}
-                </Show>
-              )}
-            </For>
-          </div>
+          {/* An unselected org grants nothing (its key is gone from the
+              selection), so there is nothing to expand into — show a hint
+              instead of the entity list. This is also what keeps an
+              entity from being opened while its org is off. */}
+          <Show
+            when={props.selection.workspaces[ws.id]}
+            fallback={
+              <p class="border-t border-neutral-200 px-3 py-2.5 text-xs text-neutral-400 dark:border-neutral-800">
+                No access granted — turn this workspace on to choose what the agent may do in it.
+              </p>
+            }
+          >
+            <div class="border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
+              <For each={WORKSPACE_ENTITIES}>
+                {(entity) => (
+                  <Show when={offeredActions(entity, cap).length > 0}>
+                    {entityRow('workspaces', ws.id, entity.id, cap)}
+                  </Show>
+                )}
+              </For>
+            </div>
+          </Show>
         </Show>
       </div>
     );
@@ -174,7 +176,10 @@ export function PermissionPicker(props: {
     const expanded = () => openEntities().has(key);
     const bucketSel = () =>
       bucket === 'workspaces'
-        ? props.selection.workspaces[bucketId ?? '']
+        ? // An unselected org has no key in the selection — never read
+          // through undefined (expanding an entity while its org is off
+          // used to crash here).
+          props.selection.workspaces[bucketId ?? ''] ?? {}
         : props.selection.account;
     return (
       <div class="mb-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-900/50">
@@ -253,8 +258,7 @@ export function PermissionPicker(props: {
 
       <p class="text-xs text-neutral-400">
         Writes switch their reads on automatically, and switching a read off switches every
-        dependent write off — a write without its read can't be granted. You only ever see what
-        your own role in each workspace allows.
+        dependent write off — a write without its read can't be granted.
       </p>
     </div>
   );
