@@ -16,8 +16,9 @@
 //   GET https://<app>/.well-known/oauth-authorization-server
 //
 // The endpoints it points at are absolute: the consent page lives here
-// on the app, the token exchange stays on the edge function (same
-// database for mcp_auth_codes and api_tokens either way).
+// on the app, and the token exchange is proxied through
+// <app>/api/mcp/token (same database for mcp_auth_codes and api_tokens
+// either way).
 import type { APIHandler, APIEvent } from 'filesystem-routing/api';
 
 // The token exchange is proxied through the app too (`/api/mcp/token`
@@ -33,14 +34,20 @@ export const GET: APIHandler = async (event: APIEvent) => {
     response_types: ['code'],
     grant_types: ['authorization_code'],
     code_challenge_methods: ['S256'],
-    // Directory information: no client registration yet — local
-    // clients register themselves by redirecting to loopback.
-    registration_endpoint: null,
+    // No registration_endpoint: dynamic client registration isn't
+    // offered — local clients register themselves by redirecting to
+    // loopback — and RFC 8414 URL fields must be strings when present,
+    // so the key is omitted rather than nulled.
   };
   return new Response(JSON.stringify(body), {
     headers: {
       'content-type': 'application/json',
-      'cache-control': 'public, max-age=3600',
+      // The document is built from the request origin, so a shared cache
+      // could otherwise serve one host's metadata under another (apex vs
+      // www vs workers.dev previews). Short TTL keeps that self-healing;
+      // the edge function's copy is fine at 3600 because its issuer is
+      // the fixed APP_ORIGIN env.
+      'cache-control': 'public, max-age=60',
       'access-control-allow-origin': '*',
     },
   });
