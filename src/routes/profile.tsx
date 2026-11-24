@@ -201,7 +201,7 @@ export default function ProfilePage() {
   // ── passkey ────────────────────────────────────────────────────────────
   const [passkeyBusy, setPasskeyBusy] = createSignal(false);  const [passkeyError, setPasskeyError] = createSignal<string | null>(null);
 
-  // ── API tokens (MCP / CLI) ────────────────────────────────────────────
+  // ── API tokens (MCP) ──────────────────────────────────────────────────────
   const tokens = createMemo(() => getMyTokens());
   const [tokenName, setTokenName] = createSignal('');
   const [tokenBusy, setTokenBusy] = createSignal(false);
@@ -393,7 +393,7 @@ export default function ProfilePage() {
 
             <Section title="API tokens">
               <p class="-mt-1 mb-3 text-sm text-neutral-500 dark:text-neutral-400">
-                Connect AI agents and the CLI. Tokens act as your account —
+                Connect AI agents. Tokens act as your account —
                 everything the web app can do, and nothing more.
               </p>
               <form class="flex flex-col gap-2 sm:flex-row" onSubmit={mint}>
@@ -511,12 +511,6 @@ export default function ProfilePage() {
                   class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
                 >
                   MCP connection docs
-                </a>
-                <a
-                  href="/docs/cli"
-                  class="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                >
-                  CLI setup docs
                 </a>
               </div>
             </Section>
