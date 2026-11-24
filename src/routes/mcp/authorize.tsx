@@ -63,15 +63,14 @@ export default function McpAuthorizePage() {
     }
   };
 
-  const valid =
+  const valid = () =>
     clientId().length > 0 &&
     redirectUri().length > 0 &&
     codeChallenge().length > 0 &&
     challengeMethod() === 'S256';
 
-  const allow = async (event: SubmitEvent) => {
-    event.preventDefault();
-    if (busy() || !valid) return;
+  const allow = async () => {
+    if (busy() || !valid()) return;
     setBusy(true);
     setError(null);
     try {

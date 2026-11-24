@@ -851,13 +851,11 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
       if (eq !== -1) params.set(pair.slice(0, eq), pair.slice(eq + 1));
     }
   }
-  const decode = (value: string | null) => (value ? decodeURIComponent(value) : null);
-
-  const grantType = decode(params.get('grant_type'));
-  const code = decode(params.get('code'));
-  const verifier = decode(params.get('code_verifier'));
-  const clientId = decode(params.get('client_id'));
-  const redirectUri = decode(params.get('redirect_uri'));
+  const grantType = params.get('grant_type');
+  const code = params.get('code');
+  const verifier = params.get('code_verifier');
+  const clientId = params.get('client_id');
+  const redirectUri = params.get('redirect_uri');
 
   if (grantType !== 'authorization_code') {
     return oauthError(400, 'unsupported_grant_type', 'only authorization_code is supported');

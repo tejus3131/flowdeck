@@ -115,8 +115,8 @@ begin
             select b.id, b.name, b.workspace_id, b.updated_at
             from public.boards b
             where public.mcp_scope_ok(v_scope, b.workspace_id)
-              and (v_cur_key is null)
-               or (b.updated_at, b.id) <= (v_cur_key::timestamptz, v_cur_id)
+              and (v_cur_key is null
+                   or (b.updated_at, b.id) <= (v_cur_key::timestamptz, v_cur_id))
             order by b.updated_at desc, b.id desc
             limit v_limit
           ) p
@@ -125,8 +125,8 @@ begin
           select b.updated_at::text || '|' || b.id::text
           from public.boards b
           where public.mcp_scope_ok(v_scope, b.workspace_id)
-            and (v_cur_key is null)
-             or (b.updated_at, b.id) <= (v_cur_key::timestamptz, v_cur_id)
+            and (v_cur_key is null
+                 or (b.updated_at, b.id) <= (v_cur_key::timestamptz, v_cur_id))
           order by b.updated_at desc, b.id desc
           offset v_limit limit 1
         )
@@ -605,8 +605,11 @@ begin
       return jsonb_build_object('ok', true, 'data', null);
 
     when 'mark_all_notifications_read' then
-      update public.notifications set seen_at = now()
-      where user_id = p_user_id and seen_at is null;
+      update public.notifications n set seen_at = now()
+      where n.user_id = p_user_id and n.seen_at is null
+        and (cardinality(v_scope) = 0 or exists (
+              select 1 from public.boards b
+              where b.id = n.board_id and public.mcp_scope_ok(v_scope, b.workspace_id)));
       get diagnostics v_count = row_count;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('marked', v_count));
 
@@ -1122,20 +1125,22 @@ begin
         );
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('message_id', v_new_id));
 
+    when 'edit_board_message' then
+      -- Own messages always; any message for workspace owners/admins (RLS).
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.board_messages m join public.boards b on b.id = m.board_id where m.id = (p_arg->>'message_id')::uuid)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
-      -- Own messages always; any message for workspace owners/admins (RLS).
       update public.board_messages
       set body = left(p_arg->>'body', 4000), edited_at = now()
       where id = (p_arg->>'message_id')::uuid and deleted_at is null;
       if not found then raise exception 'message not found or no access'; end if;
       return jsonb_build_object('ok', true, 'data', null);
 
+    when 'delete_board_message' then
+      -- Soft delete: the row stays for history, every read hides it.
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.board_messages m join public.boards b on b.id = m.board_id where m.id = (p_arg->>'message_id')::uuid)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
-      -- Soft delete: the row stays for history, every read hides it.
       update public.board_messages
       set deleted_at = now()
       where id = (p_arg->>'message_id')::uuid and deleted_at is null;
@@ -1149,7 +1154,10 @@ begin
       end if;
       insert into public.workspaces (name, slug, owner_id)
       values (left(coalesce(p_arg->>'name', 'Untitled'), 80),
-              'ws-' || left(p_user_id::text, 8) || '-' || floor(extract(epoch from now()))::int::text,
+              -- Random suffix: two workspaces in the same second by the
+              -- same user no longer collide on the slug.
+              'ws-' || left(p_user_id::text, 8) || '-' || floor(extract(epoch from now()))::int::text
+                || '-' || substr(md5(random()::text), 1, 4),
               p_user_id)
       returning id into v_new_id;
       insert into public.workspace_members (workspace_id, user_id, role)
