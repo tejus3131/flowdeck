@@ -1200,6 +1200,14 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                     ? presence.remoteDrag()!.index ?? null
                     : null
                 }
+                // The preview renders the actual card data — the ghost is
+                // the card, not a placeholder shape.
+                draggedCard={dragging() ? view().cards.find((c) => c.id === dragging()) ?? null : null}
+                remoteDragCard={
+                  presence.remoteDrag()?.cardId
+                    ? view().cards.find((c) => c.id === presence.remoteDrag()!.cardId) ?? null
+                    : null
+                }
                 isTemp={engine.isTemp(list.id)}
                 canEdit={canEdit()}
                 onDragStart={(cardId, height) => {
@@ -1455,6 +1463,54 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   );
 }
 
+/** A card's face — title plus the meta row (priority, tags, assignees).
+ *  Shared by the real card article and the drag previews, so a preview
+ *  IS the card it stands for, never a generic placeholder. */
+function CardFace(props: { card: CardView; members: Member[] }) {
+  return (
+    <>
+      <p class="pr-5">{props.card.title}</p>
+      <div class="mt-1 flex flex-wrap items-center gap-1">
+        <Show when={props.card.priority}>
+          {(priority) => <PriorityPill priority={priority()} />}
+        </Show>
+        <For each={props.card.tags.slice(0, 3)}>
+          {(tag) => (
+            <span class="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+              #{tag.name}
+            </span>
+          )}
+        </For>
+        <span class="flex -space-x-1.5">
+          <For each={props.card.assignees.slice(0, 4)}>
+            {(userId) => {
+              const member = () => props.members.find((m) => m.user_id === userId);
+              return (
+                <span
+                  class="rounded-full ring-1 ring-white dark:ring-neutral-900"
+                  title={`Assigned to ${member()?.display_name ?? userId}`}
+                >
+                  <Avatar
+                    src={member()?.avatar_url}
+                    name={member()?.display_name}
+                    email={member()?.email}
+                    size="sm"
+                  />
+                </span>
+              );
+            }}
+          </For>
+          <Show when={props.card.assignees.length > 4}>
+            <span class="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-[10px] font-semibold text-neutral-600 ring-1 ring-white dark:bg-neutral-700 dark:text-neutral-200 dark:ring-neutral-900">
+              +{props.card.assignees.length - 4}
+            </span>
+          </Show>
+        </span>
+      </div>
+    </>
+  );
+}
+
 function BoardColumn(props: {
   list: ListRow;
   cards: CardView[];
@@ -1466,6 +1522,10 @@ function BoardColumn(props: {
   dragHeight: number | null;
   /** Another viewer's hover slot in this column (their ghost, live). */
   remoteDropHint: number | null;
+  /** The dragged card itself — the ghost renders it as a live preview. */
+  draggedCard: CardView | null;
+  /** The remote-dragged card, when this board's view has it. */
+  remoteDragCard: CardView | null;
   isTemp: boolean;
   canEdit: boolean;
   adding: boolean;
@@ -1691,35 +1751,72 @@ function BoardColumn(props: {
           {(card, index) => (
             <>
               <Show when={props.dropHint === index()}>
-                {/* The ghost: card-sized space opens where the drop would
-                    land — the cards around it glide apart (FLIP below).
-                    shrink-0: a scrolling column is over-full and flex
-                    compresses contentless children to their border —
-                    without it the ghost collapses to a line. */}
-                <div
-                  data-drop-placeholder
-                  class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
-                  style={{ height: `${props.dragHeight ?? 72}px` }}
-                />
+                {/* The ghost is the card itself: a faded, inert clone of
+                    the dragged card (Trello's placeholder) gliding where
+                    the drop would land — hover the original spot and the
+                    card appears to never have left. Fixed height = the
+                    real card's measured height, so the drop handoff is a
+                    1:1 swap. shrink-0: a scrolling column is over-full
+                    and flex compresses contentless children to their
+                    border — without it the ghost collapses to a line. */}
+                <Show
+                  when={props.draggedCard}
+                  fallback={
+                    <div
+                      data-drop-placeholder
+                      class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                      style={{ height: `${props.dragHeight ?? 72}px` }}
+                    />
+                  }
+                >
+                  {(card) => (
+                    <div
+                      data-drop-placeholder
+                      class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-60 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
+                      style={{ height: `${props.dragHeight ?? 72}px` }}
+                    >
+                      <CardFace card={card()} members={props.members} />
+                    </div>
+                  )}
+                </Show>
               </Show>
               <Show
                 when={
                   props.remoteDropHint === index() && props.remoteDropHint !== props.dropHint
                 }
               >
-                {/* A peer's ghost: someone else is hovering their card into
-                    this slot — rendered live from their broadcasts, amber
-                    to match the "moving…" ring on the card they hold.
+                {/* A peer's card in flight: their live preview clone —
+                    amber-ringed with the mover's name, so viewers watch
+                    the card itself move. Dashed fallback when this view
+                    can't see the card (e.g. a still-materializing temp).
                     Skipped when the local ghost already occupies the slot. */}
-                <div
-                  data-drop-placeholder
-                  class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
-                  style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                <Show
+                  when={props.remoteDragCard}
+                  fallback={
+                    <div
+                      data-drop-placeholder
+                      class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
+                      style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                    >
+                      <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                        {props.remoteDrag?.name} moving…
+                      </span>
+                    </div>
+                  }
                 >
-                  <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                    {props.remoteDrag?.name} moving…
-                  </span>
-                </div>
+                  {(card) => (
+                    <div
+                      data-drop-placeholder
+                      class="pointer-events-none relative shrink-0 rounded-xl border-2 border-amber-400/80 bg-white p-3 text-sm shadow-xs dark:border-amber-500/70 dark:bg-neutral-900"
+                      style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                    >
+                      <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                        {props.remoteDrag?.name} moving…
+                      </span>
+                      <CardFace card={card()} members={props.members} />
+                    </div>
+                  )}
+                </Show>
               </Show>
               <article
                 data-card
@@ -1746,7 +1843,17 @@ function BoardColumn(props: {
                 // win a comparison for a pointer inside the column).
                 class={[
                   'group relative cursor-pointer rounded-xl border border-neutral-200/80 bg-white p-3 text-sm shadow-xs transition hover:border-indigo-300 hover:shadow-sm active:cursor-grabbing dark:border-neutral-700/80 dark:bg-neutral-900 dark:hover:border-indigo-700',
-                  { hidden: props.dragging === card.id },
+                  // …and for peers too: while someone else's preview is in
+                  // this column, the card they're moving is here as its
+                  // amber clone instead — one representation, not card +
+                  // ghost both. Cross-column hovers keep the ringed card
+                  // visible at home (no vanish gap before the first hover,
+                  // no missing card while the pointer floats elsewhere).
+                  {
+                    hidden:
+                      props.dragging === card.id ||
+                      (props.remoteDrag?.cardId === card.id && props.remoteDropHint !== null),
+                  },
                   { 'ring-2 ring-amber-400': props.remoteDrag?.cardId === card.id },
                 ]}
               >
@@ -1755,44 +1862,7 @@ function BoardColumn(props: {
                     {props.remoteDrag!.name} moving…
                   </span>
                 </Show>
-                <p class="pr-5">{card.title}</p>
-                {/* Assignment at a glance: priority, tags, assignee avatar. */}
-                <div class="mt-1 flex flex-wrap items-center gap-1">
-                  <Show when={card.priority}>
-                    {(priority) => <PriorityPill priority={priority()} />}
-                  </Show>
-                  <For each={card.tags.slice(0, 3)}>
-                    {(tag) => (
-                      <span class="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-                        #{tag.name}
-                      </span>
-                    )}
-                  </For>
-                  <span class="flex -space-x-1.5">
-                    <For each={card.assignees.slice(0, 4)}>
-                      {(userId) => {
-                        const member = () => props.members.find((m) => m.user_id === userId);
-                        return (
-                          <span
-                            class="rounded-full ring-1 ring-white dark:ring-neutral-900"
-                            title={`Assigned to ${member()?.display_name ?? userId}`}
-                          >
-                            <Avatar
-                              src={member()?.avatar_url}
-                              name={member()?.display_name}
-                              email={member()?.email}
-                              size="sm"
-                            />
-                          </span>
-                        );
-                      }}
-                    </For>
-                    <Show when={card.assignees.length > 4}>
-                      <span class="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-[10px] font-semibold text-neutral-600 ring-1 ring-white dark:bg-neutral-700 dark:text-neutral-200 dark:ring-neutral-900">
-                        +{card.assignees.length - 4}
-                      </span>
-                    </Show>
-                  </span>                </div>
+                <CardFace card={card} members={props.members} />
                 <Show when={card.description}>
                   <button
                     type="button"
@@ -1831,11 +1901,26 @@ function BoardColumn(props: {
           )}
         </For>
         <Show when={props.dropHint === props.cards.length && props.cards.length > 0}>
-          <div
-            data-drop-placeholder
-            class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
-            style={{ height: `${props.dragHeight ?? 72}px` }}
-          />
+          <Show
+            when={props.draggedCard}
+            fallback={
+              <div
+                data-drop-placeholder
+                class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                style={{ height: `${props.dragHeight ?? 72}px` }}
+              />
+            }
+          >
+            {(card) => (
+              <div
+                data-drop-placeholder
+                class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-60 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
+                style={{ height: `${props.dragHeight ?? 72}px` }}
+              >
+                <CardFace card={card()} members={props.members} />
+              </div>
+            )}
+          </Show>
         </Show>
         <Show
           when={
@@ -1845,16 +1930,34 @@ function BoardColumn(props: {
         >
           {/* A peer hovering past the last card — no length guard, unlike
               the local site: an empty column has no ringed source card to
-              signal the drag, so the ghost is the only thing peers see. */}
-          <div
-            data-drop-placeholder
-            class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
-            style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+              signal the drag, so the preview is the only thing peers see. */}
+          <Show
+            when={props.remoteDragCard}
+            fallback={
+              <div
+                data-drop-placeholder
+                class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
+                style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+              >
+                <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                  {props.remoteDrag?.name} moving…
+                </span>
+              </div>
+            }
           >
-            <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-              {props.remoteDrag?.name} moving…
-            </span>
-          </div>
+            {(card) => (
+              <div
+                data-drop-placeholder
+                class="pointer-events-none relative shrink-0 rounded-xl border-2 border-amber-400/80 bg-white p-3 text-sm shadow-xs dark:border-amber-500/70 dark:bg-neutral-900"
+                style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+              >
+                <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                  {props.remoteDrag?.name} moving…
+                </span>
+                <CardFace card={card()} members={props.members} />
+              </div>
+            )}
+          </Show>
         </Show>
 
         {/* Add-card (editors only): the input ALWAYS clears instantly on
