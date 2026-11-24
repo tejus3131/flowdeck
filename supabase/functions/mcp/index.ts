@@ -839,7 +839,12 @@ function oauthError(status: number, code: string, description: string): Response
 function oauthDiscovery(pathname: string): Response | null {
   if (pathname.endsWith('/.well-known/oauth-protected-resource')) {
     return json(
-      { resource: RESOURCE_URL, authorization_servers: [RESOURCE_URL] },
+      // The authorization server is the APP origin, not this resource:
+      // supabase.co's path-insertion and origin-root well-known URLs are
+      // unroutable, so clients doing RFC 8414 discovery against it (VS Code)
+      // fail. The app serves /.well-known/oauth-authorization-server at its
+      // origin root, which every client can reach.
+      { resource: RESOURCE_URL, authorization_servers: [APP_ORIGIN] },
       200,
       { 'Cache-Control': 'public, max-age=3600' },
     );
@@ -847,7 +852,9 @@ function oauthDiscovery(pathname: string): Response | null {
   if (pathname.endsWith('/.well-known/oauth-authorization-server')) {
     return json(
       {
-        issuer: RESOURCE_URL,
+        // Kept in sync with the app's /.well-known/oauth-authorization-server
+        // route so both origins advertise the same issuer.
+        issuer: APP_ORIGIN,
         authorization_endpoint: `${APP_ORIGIN}/mcp/authorize`,
         token_endpoint: `${RESOURCE_URL}/token`,
         response_types: ['code'],

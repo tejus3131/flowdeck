@@ -118,6 +118,13 @@ declare module "virtual:file-routes" {
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/t/[teamId]"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/t/[teamId]")>>>;
       $$route?: undefined;
+    },
+    {
+      path: "/.well-known/oauth-authorization-server";
+      page: false;
+      $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/well-known/oauth-authorization-server"), Extract<"GET", keyof typeof import("./src/routes/well-known/oauth-authorization-server")>>>;
+      $HEAD: FileRouteLazyRef<Pick<typeof import("./src/routes/well-known/oauth-authorization-server"), Extract<"GET", keyof typeof import("./src/routes/well-known/oauth-authorization-server")>>>;
+      $$route?: undefined;
     }
   ];
   export default routes;

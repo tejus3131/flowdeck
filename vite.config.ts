@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { fileRoutes } from 'filesystem-routing/vite';
+import { routePathFromFile } from 'filesystem-routing';
 import { defineConfig } from 'vitest/config';
 import solid from '@solidjs/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
@@ -50,7 +51,19 @@ export default defineConfig({
     }),
     // `httpMethods` also scans route modules for GET/POST/... exports (API
     // routes); handler modules never enter the client bundle.
-    fileRoutes({ httpMethods: true, types: true }),
+    //
+    // `toPath`: the scanner's glob skips dot-directories, so RFC 8414
+    // well-known routes live in `src/routes/well-known/` and are mapped to
+    // their real `/.well-known/...` paths here. Everything else keeps the
+    // default page convention.
+    fileRoutes({
+      httpMethods: true,
+      types: true,
+      toPath: (routeFile) =>
+        routeFile.startsWith('/well-known/')
+          ? routePathFromFile(`/.well-known/${routeFile.slice('/well-known/'.length)}`)
+          : routePathFromFile(routeFile),
+    }),
   ],
   server: {
     port: 3000,
