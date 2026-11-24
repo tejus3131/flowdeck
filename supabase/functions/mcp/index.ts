@@ -280,6 +280,30 @@ const TOOLS: ToolDef[] = [
     op: 'add_comment',
   },
   {
+    name: 'edit_comment',
+    description:
+      'Edit a card comment. Authors edit their own; workspace owners/admins can edit anyone\'s. The comment keeps an edited marker.',
+    inputSchema: {
+      type: 'object',
+      properties: { comment_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 2000 } },
+      required: ['comment_id', 'body'],
+      additionalProperties: false,
+    },
+    op: 'edit_comment',
+  },
+  {
+    name: 'delete_comment',
+    description:
+      'Delete a card comment (soft delete: hidden from reads, kept for history). Authors delete their own; workspace owners/admins can delete anyone\'s.',
+    inputSchema: {
+      type: 'object',
+      properties: { comment_id: { type: 'string', format: 'uuid' } },
+      required: ['comment_id'],
+      additionalProperties: false,
+    },
+    op: 'delete_comment',
+  },
+  {
     name: 'list_comments',
     description:
       'Comments on a card, oldest first. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
@@ -409,6 +433,30 @@ const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     op: 'post_board_message',
+  },
+  {
+    name: 'edit_board_message',
+    description:
+      'Edit a board chat message. Authors edit their own; workspace owners/admins can edit anyone\'s. Edits are soft — the row keeps an edited marker.',
+    inputSchema: {
+      type: 'object',
+      properties: { message_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 4000 } },
+      required: ['message_id', 'body'],
+      additionalProperties: false,
+    },
+    op: 'edit_board_message',
+  },
+  {
+    name: 'delete_board_message',
+    description:
+      'Delete a board chat message (soft delete: hidden from reads, kept for history). Authors delete their own; workspace owners/admins can delete anyone\'s.',
+    inputSchema: {
+      type: 'object',
+      properties: { message_id: { type: 'string', format: 'uuid' } },
+      required: ['message_id'],
+      additionalProperties: false,
+    },
+    op: 'delete_board_message',
   },
   {
     name: 'list_board_messages',

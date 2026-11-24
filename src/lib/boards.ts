@@ -1332,6 +1332,7 @@ export async function getCardComments(
     .from('card_comments')
     .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
     .eq('card_id', resolved)
+    .is('deleted_at', null)
     .order('seq', { ascending: false })
     .limit(limit);
   if (before) query = query.lt('seq', before);
@@ -1401,6 +1402,7 @@ export const cardCommentsStream = live(async function* (
       .from('card_comments')
       .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
       .eq('card_id', id)
+      .is('deleted_at', null)
       .order('seq', { ascending: false })
       .limit(30);
     if (error) throw new Error(error.message);
@@ -1580,6 +1582,7 @@ async function boardChatSnapshot(
     .from('board_messages')
     .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
     .eq('board_id', boardId)
+    .is('deleted_at', null)
     .order('seq', { ascending: false })
     .limit(100);
   if (error) throw new Error(error.message);
