@@ -49,7 +49,8 @@ const PAGE_PARAMS = {
 /** Per-connection tool permissions: allowed_ops is a flat list of op
  * names; NULL/empty keeps the account-wide behavior (every tool). */
 function opAllowed(allowedOps: string[] | null | undefined, op: string): boolean {
-  if (!allowedOps || allowedOps.length === 0) return true;
+  // null/undefined = a legacy account-wide token; [] = nothing granted.
+  if (allowedOps === null || allowedOps === undefined) return true;
   return allowedOps.includes(op);
 }
 
@@ -423,8 +424,8 @@ const TOOLS: ToolDef[] = [
         board_id: { type: 'string', format: 'uuid' },
         tag_id: { type: 'string', format: 'uuid', description: 'Cards carrying this tag.' },
         priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
-        from: { type: 'string', description: 'ISO 8601; bounds created_at below.' },
-        to: { type: 'string', description: 'ISO 8601; bounds created_at above.' },
+        from: { type: 'string', description: 'ISO 8601; lower bound on created_at (updated_at for type=board).' },
+        to: { type: 'string', description: 'ISO 8601; upper bound on created_at (updated_at for type=board).' },
         ...PAGE_PARAMS,
       },
       additionalProperties: false,
@@ -822,7 +823,10 @@ function rateAllow(key: string, capacity: number, refillPerSecond: number): bool
   return true;
 }
 function clientIp(request: Request): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  // The LAST hop is appended by the trusted platform proxy; the first
+  // is client-controlled (round-3: first-hop keying was spoofable).
+  const hops = request.headers.get('x-forwarded-for')?.split(',').map((h) => h.trim()) ?? [];
+  return hops[hops.length - 1] ?? 'unknown';
 }
 
 function oauthError(status: number, code: string, description: string): Response {
@@ -863,15 +867,16 @@ function oauthDiscovery(pathname: string): Response | null {
  * last-used tracking with the profile page). */
 async function oauthTokenExchange(request: Request, service: ReturnType<typeof createClient>): Promise<Response> {
   const contentType = request.headers.get('content-type') ?? '';
-  const params = new URLSearchParams();
+  let params: URLSearchParams;
   if (contentType.includes('application/json')) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    params = new URLSearchParams();
     for (const [key, value] of Object.entries(body)) params.set(key, String(value));
   } else {
-    for (const pair of (await request.text()).split('&')) {
-      const eq = pair.indexOf('=');
-      if (eq !== -1) params.set(pair.slice(0, eq), pair.slice(eq + 1));
-    }
+    // URLSearchParams percent-decodes application/x-www-form-urlencoded
+    // per RFC 6749 — redirect_uri=https%3A%2F%2F… must match the stored
+    // raw URI after decoding (round-3: the manual split didn't decode).
+    params = new URLSearchParams(await request.text());
   }
   const grantType = params.get('grant_type');
   const code = params.get('code');
@@ -1008,8 +1013,12 @@ Deno.serve(async (request) => {
       { 'WWW-Authenticate': `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"` },
     );
   }
-  // Fire-and-forget last-used stamp.
-  void service.from('api_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', tokenRow.id);
+  // Fire-and-forget last-used stamp (never blocks or fails the call).
+  void service
+    .from('api_tokens')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', tokenRow.id)
+    .then(() => undefined, () => undefined);
 
   // ── JSON-RPC dispatch ──────────────────────────────────────────────────
   let message: {
@@ -1045,6 +1054,8 @@ Deno.serve(async (request) => {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER_INFO,
+        instructions:
+          'Flowdeck boards, cards and chat. Start with get_me and list_workspaces; every list tool pages with next_cursor. Mentions use [Name](user:UUID) links — call check_mention_access first for people who may not see the board. This server is stateless: no sessions, no DELETE (the spec allows a stateless streamable-HTTP server); every call carries its own Bearer token.',
       });
     }
     case 'notifications/initialized':

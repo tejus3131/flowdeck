@@ -14,7 +14,7 @@
 -- nothing more.
 
 -- Cursor helpers: every cursor is "<sort_key>|<uuid>"; these two split it.
--- Immutable + leakproof so they can inline into keyset predicates.
+-- Immutable so they can inline into keyset predicates.
 create or replace function public.mcp_cursor_key(p_cursor text)
 returns text
 language sql

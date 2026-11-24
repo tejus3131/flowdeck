@@ -30,7 +30,8 @@ create or replace function public.mcp_scope_ok(p_scope uuid[], p_ws uuid)
 returns boolean
 language sql
 immutable
-as $$ select cardinality(coalesce(p_scope, '{}'::uuid[])) = 0 or p_ws = any (p_scope) $$;
+as $$ select coalesce(cardinality(coalesce(p_scope, '{}'::uuid[])) = 0
+                    or (p_ws is not null and p_ws = any (p_scope)), false) $$;
 
 revoke execute on function public.mcp_scope_ok(uuid[], uuid) from anon;
 
@@ -60,6 +61,74 @@ begin
   return new;
 end;
 $$;
+
+-- Round-3 review: search runs leading-wildcard ILIKE over four tables;
+-- pg_trgm GIN indexes keep it off the sequential-scan path at scale.
+create extension if not exists pg_trgm;
+create index if not exists cards_title_trgm_idx on public.cards using gin (title gin_trgm_ops);
+create index if not exists cards_description_trgm_idx on public.cards using gin (description gin_trgm_ops);
+create index if not exists card_comments_body_trgm_idx on public.card_comments using gin (body gin_trgm_ops);
+create index if not exists board_messages_body_trgm_idx on public.board_messages using gin (body gin_trgm_ops);
+create index if not exists boards_name_trgm_idx on public.boards using gin (name gin_trgm_ops);
+
+-- Round-3 review: chat_seq rows had no FK (the scope is polymorphic) and
+-- orphaned forever; boards delete and cards delete now clean their
+-- counters.
+create or replace function public.chat_seq_board_cleanup()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.chat_seq where kind = 'board_message' and scope = old.id;
+  return old;
+end;
+$$;
+
+create or replace function public.chat_seq_card_cleanup()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.chat_seq where kind = 'card_comment' and scope = old.id;
+  return old;
+end;
+$$;
+
+create trigger chat_seq_board_cleanup after delete on public.boards
+  for each row execute function public.chat_seq_board_cleanup();
+create trigger chat_seq_card_cleanup after delete on public.cards
+  for each row execute function public.chat_seq_card_cleanup();
+
+-- Round-3 review: own-row edit rights now also require CURRENT board
+-- access (0038's policies kept them forever after removal).
+drop policy if exists board_messages_update on public.board_messages;
+create policy board_messages_update on public.board_messages
+  for update using (
+    (user_id = auth.uid() and public.user_board_access(board_id) is not null)
+    or public.user_is_workspace_admin_of_board(board_id)
+  );
+
+drop policy if exists comments_update on public.card_comments;
+create policy comments_update on public.card_comments
+  for update using (
+    (user_id = auth.uid()
+     and exists (
+       select 1 from public.cards c
+       where c.id = card_comments.card_id
+         and public.user_board_access(c.board_id) is not null))
+    or exists (
+      select 1 from public.cards c
+      join public.boards b on b.id = c.board_id
+      join public.workspace_members wm on wm.workspace_id = b.workspace_id
+      where c.id = card_comments.card_id
+        and wm.user_id = auth.uid()
+        and wm.role in ('owner', 'admin')
+    )
+  );
 
 create trigger cards_list_board_check
   before insert or update of list_id, board_id on public.cards
@@ -126,6 +195,72 @@ revoke execute on function public.mcp_cursor_tstz(text) from anon;
 revoke execute on function public.mcp_cursor_num(text) from anon;
 revoke execute on function public.mcp_cursor_int(text) from anon;
 
+-- The uuid half of a cursor gets the same safe parsing the key half
+-- got in round 2 (a raw cast here surfaced 22P02, not 'malformed cursor').
+create or replace function public.mcp_cursor_id(p_cursor text)
+returns uuid
+language plpgsql
+immutable
+as $$
+declare v_id uuid;
+begin
+  begin
+    v_id := nullif(split_part(coalesce(p_cursor, ''), '|', 2), '')::uuid;
+  exception when others then
+    return null;
+  end;
+  return v_id;
+end;
+$$;
+
+-- Round-3 review: dismissal of OTHER users' access_request rows needs
+-- elevated rights. The op used to hop roles (set role service_role),
+-- which only works when the session user holds that role — a
+-- portability hazard (it happened to work under the superuser replay).
+-- This SECURITY DEFINER helper carries its own guard: only a workspace
+-- owner/admin OF THE BOARD (checked against the CALLER's claims) may
+-- dismiss, so granting it to authenticated is safe.
+create or replace function public.mcp_dismiss_access_requests(
+  p_board_id uuid,
+  p_user_id uuid,
+  p_team_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_askers uuid[];
+  v_cards  uuid[];
+begin
+  if not exists (
+    select 1 from public.boards b
+    join public.workspace_members wm on wm.workspace_id = b.workspace_id
+    where b.id = p_board_id
+      and wm.user_id = auth.uid()
+      and wm.role in ('owner', 'admin')
+  ) then
+    raise exception 'only workspace owners and admins can resolve access requests';
+  end if;
+  select coalesce(array_agg(distinct n.actor_id) filter (where n.actor_id is not null), '{}'::uuid[]),
+         coalesce(array_agg(distinct n.card_id) filter (where n.card_id is not null), '{}'::uuid[])
+  into v_askers, v_cards
+  from public.notifications n
+  where n.kind = 'access_request' and n.board_id = p_board_id and n.seen_at is null
+    and ((p_user_id is not null and n.subject_id = p_user_id)
+      or (p_team_id is not null and n.subject_team_id = p_team_id));
+  delete from public.notifications n
+  where n.kind = 'access_request' and n.board_id = p_board_id and n.seen_at is null
+    and ((p_user_id is not null and n.subject_id = p_user_id)
+      or (p_team_id is not null and n.subject_team_id = p_team_id));
+  return jsonb_build_object('askers', to_jsonb(v_askers), 'cards', to_jsonb(v_cards));
+end;
+$$;
+
+revoke execute on function public.mcp_dismiss_access_requests(uuid, uuid, uuid) from public;
+grant execute on function public.mcp_dismiss_access_requests(uuid, uuid, uuid) to authenticated, service_role;
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,
@@ -153,6 +288,7 @@ declare
   v_count    int;
   v_title    text;
   v_prio     text;
+  v_desc     text;
   -- search
   v_query    text;
   v_type     text;
@@ -164,6 +300,7 @@ declare
   v_page     jsonb;
   v_askers   uuid[];
   v_cards    uuid[];
+  v_dismissed jsonb;
   v_scope    uuid[];
 begin
   if p_user_id is null or not exists (select 1 from public.profiles where id = p_user_id) then
@@ -225,6 +362,9 @@ begin
 
     when 'get_board' then
       v_board_id := (p_arg->>'board_id')::uuid;
+      if not exists (select 1 from public.boards b where b.id = v_board_id) then
+        raise exception 'board not found or no access';
+      end if;
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
@@ -244,6 +384,9 @@ begin
     -- prefer get_board + get_cards + list_board_messages.
     when 'get_board_full' then
       v_board_id := (p_arg->>'board_id')::uuid;
+      if not exists (select 1 from public.boards b where b.id = v_board_id) then
+        raise exception 'board not found or no access';
+      end if;
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
@@ -563,7 +706,10 @@ begin
     when 'update_me' then
       -- The app's profile edit: display name only (avatar is a file upload).
       if p_arg ? 'display_name' then
-        update public.profiles set display_name = left(p_arg->>'display_name', 80)
+        if nullif(btrim(p_arg->>'display_name'), '') is null then
+          raise exception 'display name cannot be empty';
+        end if;
+        update public.profiles set display_name = left(btrim(p_arg->>'display_name'), 80)
         where id = p_user_id;
       end if;
       return jsonb_build_object('ok', true, 'data', null);
@@ -737,12 +883,19 @@ begin
       v_query := case when v_query is null then null
                       else replace(replace(replace(v_query, '\', '\\'), '%', '\%'), '_', '\_') end;
       v_type   := nullif(p_arg->>'type', '');
+      if v_type is not null and v_type not in ('card', 'comment', 'message', 'board', 'all') then
+        raise exception 'type must be one of card, comment, message, board, all';
+      end if;
       v_author := nullif(p_arg->>'author_id', '')::uuid;
       v_team   := nullif(p_arg->>'team_id', '')::uuid;
       v_tag    := nullif(p_arg->>'tag_id', '')::uuid;
       v_board_id := nullif(p_arg->>'board_id', '')::uuid;
-      v_from   := nullif(p_arg->>'from', '')::timestamptz;
-      v_to     := nullif(p_arg->>'to', '')::timestamptz;
+      begin
+        v_from := nullif(p_arg->>'from', '')::timestamptz;
+        v_to   := nullif(p_arg->>'to', '')::timestamptz;
+      exception when others then
+        raise exception 'invalid from/to — use ISO 8601 dates';
+      end;
       v_cur := nullif(p_arg->>'cursor', '');
       v_cur_id := public.mcp_cursor_id(v_cur);
       if v_cur is not null and v_cur_id is null then
@@ -859,6 +1012,20 @@ begin
       end if;
       if not public.mcp_scope_ok(v_scope, v_ws) then
         raise exception 'this connection is not scoped to that workspace';
+      end if;
+      -- The workspace's board-creation policy, same rule as the web UI.
+      if not (
+        public.user_workspace_role(v_ws) in ('owner', 'admin')
+        or (select w.board_creation from public.workspaces w where w.id = v_ws) = 'everyone'
+        or ((select w.board_creation from public.workspaces w where w.id = v_ws) = 'team_admins'
+            and exists (
+              select 1 from public.team_members tm
+              join public.teams t on t.id = tm.team_id
+              where t.workspace_id = v_ws
+                and tm.user_id = p_user_id
+                and tm.role = 'admin'))
+      ) then
+        raise exception 'this workspace does not allow you to create boards';
       end if;
 
       insert into public.boards (name, workspace_id, owner_id)
@@ -994,7 +1161,7 @@ begin
       values (v_board_id, p_user_id, 'card.created', jsonb_build_object('title', p_arg->>'title'));
       insert into public.card_events (card_id, board_id, actor_id, kind, detail)
       values (v_new_id, v_board_id, p_user_id, 'created',
-              jsonb_build_object('title', p_arg->>'title',
+              jsonb_build_object('title', left(coalesce(p_arg->>'title', 'Untitled'), 200),
                                  'list', (select l.name from public.lists l where l.id = v_list_id)));
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('card_id', v_new_id));
 
@@ -1002,7 +1169,8 @@ begin
       v_card_id := (p_arg->>'card_id')::uuid;
       -- Capture the BEFORE state: timeline diffs read "from -> to"
       -- (same events the web app logs).
-      select c.board_id, c.title, coalesce(c.priority, '') into v_board_id, v_title, v_prio
+      select c.board_id, c.title, coalesce(c.priority, ''), c.description
+      into v_board_id, v_title, v_prio, v_desc
       from public.cards c where c.id = v_card_id;
       if v_board_id is null then raise exception 'card not found or no access'; end if;
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
@@ -1021,8 +1189,10 @@ begin
       if p_arg ? 'description' then
         update public.cards set description = left(p_arg->>'description', 8000) where id = v_card_id;
         if not found then raise exception 'card not found or no access'; end if;
-        insert into public.card_events (card_id, board_id, actor_id, kind, detail)
-        values (v_card_id, v_board_id, p_user_id, 'description', '{}'::jsonb);
+        if left(p_arg->>'description', 8000) is distinct from v_desc then
+          insert into public.card_events (card_id, board_id, actor_id, kind, detail)
+          values (v_card_id, v_board_id, p_user_id, 'description', '{}'::jsonb);
+        end if;
       end if;
       if p_arg ? 'priority' then
         if nullif(p_arg->>'priority', '') is not null
@@ -1045,7 +1215,14 @@ begin
         insert into public.card_tags (card_id, tag_id)
         select v_card_id, x::uuid
         from jsonb_array_elements_text(p_arg->'tag_ids') as x
-        where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+        where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          -- Tags are workspace vocabulary: only this card's workspace's
+          -- tags may be attached (round-3: cross-workspace injection).
+          and exists (
+            select 1 from public.tags t
+            where t.id = x::uuid
+              and t.workspace_id = (select b.workspace_id from public.boards b where b.id = v_board_id)
+          );
       end if;
       -- Assignees: replace-set semantics, exactly like the app's updateCard.
       if p_arg ? 'assignees' then
@@ -1149,7 +1326,7 @@ begin
       insert into public.notifications (user_id, kind, card_id, board_id, actor_id, body)
       select distinct on (x) x::uuid, 'mention', v_card_id, v_board_id, p_user_id,
              left(p_arg->>'body', 200)
-      from regexp_matches(p_arg->>'body', '\]\(user:([0-9a-f-]{36})\)', 'g') as m,
+      from regexp_matches(p_arg->>'body', '\]\(user:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)', 'g') as m,
            unnest(array[m[1]]) as x
       where x::uuid is distinct from p_user_id
         and (
@@ -1166,7 +1343,7 @@ begin
       insert into public.notifications (user_id, kind, card_id, board_id, actor_id, body)
       select distinct tm.user_id, 'mention', v_card_id, v_board_id, p_user_id,
              left(p_arg->>'body', 200)
-      from regexp_matches(p_arg->>'body', '\]\(team:([0-9a-f-]{36})\)', 'g') as m
+      from regexp_matches(p_arg->>'body', '\]\(team:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)', 'g') as m
       join public.team_members tm on tm.team_id = m[1]::uuid
       where tm.user_id is distinct from p_user_id
         and (
@@ -1216,7 +1393,7 @@ begin
       insert into public.notifications (user_id, kind, board_id, actor_id, body)
       select distinct on (x) x::uuid, 'mention', v_board_id, p_user_id,
              left(p_arg->>'body', 200)
-      from regexp_matches(p_arg->>'body', '\]\(user:([0-9a-f-]{36})\)', 'g') as m,
+      from regexp_matches(p_arg->>'body', '\]\(user:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)', 'g') as m,
            unnest(array[m[1]]) as x
       where x::uuid is distinct from p_user_id
         and (
@@ -1233,7 +1410,7 @@ begin
       insert into public.notifications (user_id, kind, board_id, actor_id, body)
       select distinct tm.user_id, 'mention', v_board_id, p_user_id,
              left(p_arg->>'body', 200)
-      from regexp_matches(p_arg->>'body', '\]\(team:([0-9a-f-]{36})\)', 'g') as m
+      from regexp_matches(p_arg->>'body', '\]\(team:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)', 'g') as m
       join public.team_members tm on tm.team_id = m[1]::uuid
       where tm.user_id is distinct from p_user_id
         and (
@@ -1318,6 +1495,9 @@ begin
       v_ws := (p_arg->>'workspace_id')::uuid;
       if not public.mcp_scope_ok(v_scope, v_ws) then
         raise exception 'this connection is not scoped to that workspace';
+      end if;
+      if public.user_workspace_role(v_ws) not in ('owner', 'admin') then
+        raise exception 'workspace owners/admins only';
       end if;
       insert into public.teams (workspace_id, name, description)
       values (v_ws, left(coalesce(p_arg->>'name', 'New team'), 60),
@@ -1425,6 +1605,9 @@ begin
         select t.id into v_new_id from public.tags t
         where t.workspace_id = v_ws and t.name = lower(left(btrim(p_arg->>'name'), 24));
       end if;
+      if v_new_id is null then
+        raise exception 'no access to create tags in this workspace';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('tag_id', v_new_id));
 
     when 'rename_tag' then
@@ -1448,9 +1631,18 @@ begin
       return jsonb_build_object('ok', true, 'data', null);
 
     when 'merge_tags' then
+      if not exists (select 1 from public.tags t where t.id = (p_arg->>'source_tag_id')::uuid)
+         or not exists (select 1 from public.tags t where t.id = (p_arg->>'target_tag_id')::uuid) then
+        raise exception 'tag not found or no access';
+      end if;
       if not public.mcp_scope_ok(v_scope, (select t.workspace_id from public.tags t where t.id = (p_arg->>'source_tag_id')::uuid))
          or not public.mcp_scope_ok(v_scope, (select t.workspace_id from public.tags t where t.id = (p_arg->>'target_tag_id')::uuid)) then
         raise exception 'this connection is not scoped to that workspace';
+      end if;
+      if (select t.workspace_id from public.tags t where t.id = (p_arg->>'source_tag_id')::uuid)
+         is distinct from
+         (select t.workspace_id from public.tags t where t.id = (p_arg->>'target_tag_id')::uuid) then
+        raise exception 'cannot merge tags from different workspaces';
       end if;
       -- Owners/admins: links move to the target (duplicates skipped),
       -- the source tag disappears.
@@ -1482,7 +1674,7 @@ begin
             'name', (select pr.display_name from public.profiles pr where pr.id = x::uuid)
           ) order by x)
           from jsonb_array_elements_text(coalesce(p_arg->'user_ids', '[]'::jsonb)) as x
-          where x ~* '^[0-9a-f-]{36}$'
+          where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             and not exists (select 1 from public.board_access ba
                             where ba.board_id = v_board_id and ba.user_id = x::uuid)
             and (select b.owner_id from public.boards b where b.id = v_board_id) is distinct from x::uuid
@@ -1501,7 +1693,7 @@ begin
             'name', (select t.name from public.teams t where t.id = x::uuid)
           ) order by x)
           from jsonb_array_elements_text(coalesce(p_arg->'team_ids', '[]'::jsonb)) as x
-          where x ~* '^[0-9a-f-]{36}$'
+          where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             and exists (select 1 from public.teams t where t.id = x::uuid and t.deactivated_at is null)
             and not exists (select 1 from public.board_team_access bta
                             where bta.board_id = v_board_id and bta.team_id = x::uuid)
@@ -1514,105 +1706,178 @@ begin
 
     when 'grant_board_access' then
       v_board_id := (p_arg->>'board_id')::uuid;
+      if not exists (select 1 from public.boards b where b.id = v_board_id) then
+        raise exception 'board not found or no access';
+      end if;
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
-      if not public.user_is_workspace_admin_of_board(v_board_id)
-         and not coalesce((select b.access_delegation from public.boards b where b.id = v_board_id), false) then
-        raise exception 'you cannot grant access on this board (needs the board''s access delegation setting or a workspace owner/admin)';
+      -- The gate mirrors the board_access INSERT policy exactly (the app
+      -- relies on it; the old op gate was looser, which let a viewer on a
+      -- delegation-enabled board pass the check, fail the insert
+      -- silently, and still send the 'granted' notifications — spoof).
+      if not (
+        public.user_is_workspace_admin_of_board(v_board_id)
+        or (coalesce((select b.access_delegation from public.boards b where b.id = v_board_id), false)
+            and public.user_board_access(v_board_id) = 'edit')
+        or public.user_is_team_admin_on_board(v_board_id)
+      ) then
+        raise exception 'you cannot grant access on this board (needs the board''s access delegation setting with edit access, or a workspace owner/admin)';
       end if;
-      -- Users: board access + the withheld mention delivered.
-      insert into public.board_access (board_id, user_id, access)
-      select v_board_id, x::uuid, 'edit'
+      -- Valid subjects only: strict uuids that exist. A bogus id must
+      -- never kill the op with a raw FK error.
+      create temp table if not exists mcp_grant_users (user_id uuid primary key) on commit preserve rows;
+      -- (session-scoped temp tables: recreate-per-call would break plpgsql plan caches)
+      create temp table if not exists mcp_grant_teams (team_id uuid primary key) on commit preserve rows;
+      -- (session-scoped temp tables: recreate-per-call would break plpgsql plan caches)
+      delete from mcp_grant_users;
+      insert into mcp_grant_users
+      select distinct x::uuid
       from jsonb_array_elements_text(coalesce(p_arg->'user_ids', '[]'::jsonb)) as x
-      where x ~* '^[0-9a-f-]{36}$'
-      on conflict (board_id, user_id) do nothing;
-      insert into public.notifications (user_id, kind, card_id, board_id, actor_id, subject_id, body)
-      select x::uuid, 'mention', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id,
-             null, left(coalesce(p_arg->>'body', ''), 200)
-      from jsonb_array_elements_text(coalesce(p_arg->'user_ids', '[]'::jsonb)) as x
-      where x ~* '^[0-9a-f-]{36}$';
-      insert into public.notifications (user_id, kind, board_id, actor_id, subject_id)
-      select x::uuid, 'access_granted', v_board_id, p_user_id, null
-      from jsonb_array_elements_text(coalesce(p_arg->'user_ids', '[]'::jsonb)) as x
-      where x ~* '^[0-9a-f-]{36}$';
-      insert into public.notifications (user_id, kind, card_id, board_id, actor_id, subject_id)
-      select p_user_id, 'access_provided', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id, x::uuid
-      from jsonb_array_elements_text(coalesce(p_arg->'user_ids', '[]'::jsonb)) as x
-      where x ~* '^[0-9a-f-]{36}$';
-      -- Teams: grant + notify every member.
-      insert into public.board_team_access (board_id, team_id, access)
-      select v_board_id, x::uuid, 'edit'
+      where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and exists (select 1 from public.profiles pr where pr.id = x::uuid);
+      delete from mcp_grant_teams;
+      insert into mcp_grant_teams
+      select distinct x::uuid
       from jsonb_array_elements_text(coalesce(p_arg->'team_ids', '[]'::jsonb)) as x
-      where x ~* '^[0-9a-f-]{36}$'
-        and exists (select 1 from public.teams t where t.id = x::uuid)
+      where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and exists (select 1 from public.teams t where t.id = x::uuid);
+      if (select count(*) from mcp_grant_users) + (select count(*) from mcp_grant_teams)
+         < jsonb_array_length(coalesce(p_arg->'user_ids', '[]'::jsonb))
+           + jsonb_array_length(coalesce(p_arg->'team_ids', '[]'::jsonb)) then
+        raise exception 'unknown user or team in the request';
+      end if;
+      -- The grants themselves (RLS-checked).
+      insert into public.board_access (board_id, user_id, access)
+      select v_board_id, u.user_id, 'edit' from mcp_grant_users u
+      on conflict (board_id, user_id) do nothing;
+      insert into public.board_team_access (board_id, team_id, access)
+      select v_board_id, t.team_id, 'edit' from mcp_grant_teams t
       on conflict (board_id, team_id) do nothing;
+      -- Notify ONLY what actually landed (an RLS-dropped insert must not
+      -- produce fake 'granted' notifications).
+      create temp table if not exists mcp_granted_ok (user_id uuid primary key) on commit preserve rows;
+      -- (session-scoped temp tables: recreate-per-call would break plpgsql plan caches)
+      delete from mcp_granted_ok;
+      insert into mcp_granted_ok
+      select ba.user_id from public.board_access ba
+      join mcp_grant_users u on u.user_id = ba.user_id
+      where ba.board_id = v_board_id;
+      if (select count(*) from mcp_grant_users) + (select count(*) from mcp_grant_teams) > 0
+         and (select count(*) from mcp_granted_ok) = 0
+         and (select count(*) from public.board_team_access
+              where board_id = v_board_id and team_id in (select team_id from mcp_grant_teams)) = 0 then
+        raise exception 'you cannot grant access on this board';
+      end if;
+      insert into public.notifications (user_id, kind, card_id, board_id, actor_id, subject_id, body)
+      select g.user_id, 'mention', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id,
+             null, left(coalesce(p_arg->>'body', ''), 200)
+      from mcp_granted_ok g;
+      insert into public.notifications (user_id, kind, board_id, actor_id, subject_id)
+      select g.user_id, 'access_granted', v_board_id, p_user_id, null
+      from mcp_granted_ok g;
+      insert into public.notifications (user_id, kind, card_id, board_id, actor_id, subject_id)
+      select p_user_id, 'access_provided', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id, g.user_id
+      from mcp_granted_ok g;
       insert into public.notifications (user_id, kind, card_id, board_id, actor_id, subject_team_id, body)
       select tm.user_id, 'mention', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id,
-             x::uuid, left(coalesce(p_arg->>'body', ''), 200)
-      from jsonb_array_elements_text(coalesce(p_arg->'team_ids', '[]'::jsonb)) as x
-      join public.team_members tm on tm.team_id = x::uuid
-      where x ~* '^[0-9a-f-]{36}$';
+             t.team_id, left(coalesce(p_arg->>'body', ''), 200)
+      from mcp_grant_teams t
+      join public.team_members tm on tm.team_id = t.team_id
+      where exists (select 1 from public.board_team_access bta
+                    where bta.board_id = v_board_id and bta.team_id = t.team_id);
       insert into public.notifications (user_id, kind, board_id, actor_id, subject_team_id)
-      select tm.user_id, 'access_granted', v_board_id, p_user_id, x::uuid
-      from jsonb_array_elements_text(coalesce(p_arg->'team_ids', '[]'::jsonb)) as x
-      join public.team_members tm on tm.team_id = x::uuid
-      where x ~* '^[0-9a-f-]{36}$';
+      select tm.user_id, 'access_granted', v_board_id, p_user_id, t.team_id
+      from mcp_grant_teams t
+      join public.team_members tm on tm.team_id = t.team_id
+      where exists (select 1 from public.board_team_access bta
+                    where bta.board_id = v_board_id and bta.team_id = t.team_id);
       insert into public.notifications (user_id, kind, card_id, board_id, actor_id, subject_team_id)
-      select p_user_id, 'access_provided', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id, x::uuid
-      from jsonb_array_elements_text(coalesce(p_arg->'team_ids', '[]'::jsonb)) as x
-      where x ~* '^[0-9a-f-]{36}$';
+      select p_user_id, 'access_provided', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id, t.team_id
+      from mcp_grant_teams t
+      where exists (select 1 from public.board_team_access bta
+                    where bta.board_id = v_board_id and bta.team_id = t.team_id);
       return jsonb_build_object('ok', true, 'data', null);
 
     when 'request_board_access' then
       v_board_id := (p_arg->>'board_id')::uuid;
+      if not exists (select 1 from public.boards b where b.id = v_board_id) then
+        raise exception 'board not found or no access';
+      end if;
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
       select b.workspace_id into v_ws from public.boards b where b.id = v_board_id;
       if v_ws is null then raise exception 'board not found'; end if;
-      -- Ask every workspace owner/admin except the caller, per subject.
+      -- Valid subjects only (strict uuids that exist as profiles/teams).
+      create temp table if not exists mcp_req_subjects (kind text, subject uuid, primary key (kind, subject)) on commit preserve rows;
+      delete from mcp_req_subjects;
+      insert into mcp_req_subjects
+      select 'user', x::uuid
+      from jsonb_array_elements_text(coalesce(p_arg->'user_ids', '[]'::jsonb)) as x
+      where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and exists (select 1 from public.profiles pr where pr.id = x::uuid);
+      insert into mcp_req_subjects
+      select 'team', x::uuid
+      from jsonb_array_elements_text(coalesce(p_arg->'team_ids', '[]'::jsonb)) as x
+      where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and exists (select 1 from public.teams t where t.id = x::uuid);
+      if (select count(*) from mcp_req_subjects)
+         < jsonb_array_length(coalesce(p_arg->'user_ids', '[]'::jsonb))
+           + jsonb_array_length(coalesce(p_arg->'team_ids', '[]'::jsonb)) then
+        raise exception 'unknown user or team in the request';
+      end if;
+      -- Ask every workspace owner/admin except the caller, per subject —
+      -- but only when a PENDING request for the same (board, subject)
+      -- doesn't already exist (repeat calls must not spam).
       insert into public.notifications (user_id, kind, card_id, board_id, actor_id, subject_id, subject_team_id, body)
       select wm.user_id, 'access_request', nullif(p_arg->>'card_id','')::uuid, v_board_id, p_user_id,
-             case when p_arg ? 'user_ids' then x::uuid else null end,
-             case when p_arg ? 'team_ids' then x::uuid else null end,
+             case when rs.kind = 'user' then rs.subject else null end,
+             case when rs.kind = 'team' then rs.subject else null end,
              left(coalesce(p_arg->>'body', ''), 200)
       from public.workspace_members wm
-      cross join jsonb_array_elements_text(
-        coalesce(p_arg->'user_ids', '[]'::jsonb) || coalesce(p_arg->'team_ids', '[]'::jsonb)) as x
+      cross join mcp_req_subjects rs
       where wm.workspace_id = v_ws
         and wm.role in ('owner', 'admin')
         and wm.user_id <> p_user_id
-        and x ~* '^[0-9a-f-]{36}$';
-      return jsonb_build_object('ok', true, 'data', jsonb_build_object(
-        'asked', (select count(distinct wm.user_id) from public.workspace_members wm
-                  where wm.workspace_id = v_ws and wm.role in ('owner','admin') and wm.user_id <> p_user_id)
-      ));
+        and not exists (
+          select 1 from public.notifications n
+          where n.kind = 'access_request'
+            and n.board_id = v_board_id
+            and n.seen_at is null
+            and ((rs.kind = 'user' and n.subject_id = rs.subject)
+              or (rs.kind = 'team' and n.subject_team_id = rs.subject))
+        );
+      -- 'asked' is what THIS call actually sent, not the admin count.
+      get diagnostics v_count = row_count;
+      return jsonb_build_object('ok', true, 'data', jsonb_build_object('asked', v_count));
 
     when 'resolve_access_request' then
       v_board_id := (p_arg->>'board_id')::uuid;
+      if not exists (select 1 from public.boards b where b.id = v_board_id) then
+        raise exception 'board not found or no access';
+      end if;
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
       if not public.user_is_workspace_admin_of_board(v_board_id) then
         raise exception 'only workspace owners and admins can resolve access requests';
       end if;
-      -- Dismissal needs the service role (same as the app: notification
-      -- writes are not RLS-gated); collect the askers first.
-      perform set_config('role', 'service_role', true);
-      select coalesce(array_agg(distinct n.actor_id) filter (where n.actor_id is not null), '{}'::uuid[]),
-             coalesce(array_agg(distinct n.card_id) filter (where n.card_id is not null), '{}'::uuid[])
-      into v_askers, v_cards
-      from public.notifications n
-      where n.kind = 'access_request' and n.board_id = v_board_id and n.seen_at is null
-        and ((p_arg ? 'user_id' and n.subject_id = (p_arg->>'user_id')::uuid)
-          or (p_arg ? 'team_id' and n.subject_team_id = (p_arg->>'team_id')::uuid));
-      delete from public.notifications n
-      where n.kind = 'access_request' and n.board_id = v_board_id and n.seen_at is null
-        and ((p_arg ? 'user_id' and n.subject_id = (p_arg->>'user_id')::uuid)
-          or (p_arg ? 'team_id' and n.subject_team_id = (p_arg->>'team_id')::uuid));
-      -- Back under the app's RLS for the rest.
-      perform set_config('role', 'authenticated', true);
+      -- Guarded SECURITY DEFINER helper dismisses the pending requests
+      -- (cross-user notification writes) and reports the askers.
+      v_dismissed := public.mcp_dismiss_access_requests(
+        v_board_id,
+        case when p_arg ? 'user_id' then (p_arg->>'user_id')::uuid else null end,
+        case when p_arg ? 'team_id' then (p_arg->>'team_id')::uuid else null end
+      );
+      v_askers := coalesce((
+        select array_agg(a::uuid)
+        from jsonb_array_elements_text(v_dismissed->'askers') as a
+      ), '{}'::uuid[]);
+      v_cards := coalesce((
+        select array_agg(c::uuid)
+        from jsonb_array_elements_text(v_dismissed->'cards') as c
+      ), '{}'::uuid[]);
       if p_arg->>'grant' = 'true' then
         if p_arg ? 'user_id' then
           insert into public.board_access (board_id, user_id, access)
@@ -1656,5 +1921,37 @@ begin
 end;
 $$;
 
+-- ── privileges: the default PUBLIC execute grant is the vulnerability ──
+-- Postgres grants EXECUTE on new functions to PUBLIC; the historical
+-- 'revoke from anon, authenticated' lines never lifted it, so any
+-- signed-in user could call mcp_exec with an arbitrary co-member's
+-- uuid (co-members are visible through profiles_select_peers) and run
+-- every op as that user — including owners/admins. Closed here:
+revoke execute on function public.mcp_exec(uuid, text, jsonb, uuid[]) from public;
 revoke execute on function public.mcp_exec(uuid, text, jsonb, uuid[]) from anon, authenticated;
 grant execute on function public.mcp_exec(uuid, text, jsonb, uuid[]) to service_role;
+
+-- Helpers mcp_exec invokes while executing as authenticated, plus the
+-- ones the WEB APP calls through the REST RPC surface (allocators +
+-- chat seq + board-admin check used by RLS policies):
+revoke execute on function public.mcp_cursor_key(text) from public;
+revoke execute on function public.mcp_cursor_id(text) from public;
+revoke execute on function public.mcp_cursor_tstz(text) from public;
+revoke execute on function public.mcp_cursor_num(text) from public;
+revoke execute on function public.mcp_cursor_int(text) from public;
+revoke execute on function public.mcp_scope_ok(uuid[], uuid) from public;
+revoke execute on function public.allocate_card_position(uuid) from public;
+revoke execute on function public.allocate_list_position(uuid) from public;
+revoke execute on function public.allocate_chat_seq(text, uuid) from public;
+revoke execute on function public.user_is_workspace_admin_of_board(uuid) from public;
+grant execute on function public.mcp_cursor_key(text) to authenticated, service_role;
+grant execute on function public.mcp_cursor_id(text) to authenticated, service_role;
+grant execute on function public.mcp_cursor_tstz(text) to authenticated, service_role;
+grant execute on function public.mcp_cursor_num(text) to authenticated, service_role;
+grant execute on function public.mcp_cursor_int(text) to authenticated, service_role;
+grant execute on function public.mcp_scope_ok(uuid[], uuid) to authenticated, service_role;
+grant execute on function public.allocate_card_position(uuid) to authenticated, service_role;
+grant execute on function public.allocate_list_position(uuid) to authenticated, service_role;
+grant execute on function public.allocate_chat_seq(text, uuid) to authenticated, service_role;
+grant execute on function public.user_is_workspace_admin_of_board(uuid) to authenticated, service_role;
+revoke execute on function public.check_card_list_board() from public;

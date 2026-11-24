@@ -13,6 +13,7 @@ import {
   TOOL_CATEGORIES,
   approveMcpClient,
   listMyWorkspaceChoices,
+  mcpAuthSignedIn,
 } from '../../lib/mcp-auth';
 
 export default function McpAuthorizePage() {
@@ -23,6 +24,20 @@ export default function McpAuthorizePage() {
   const [workspaces, setWorkspaces] = createSignal<{ id: string; name: string; role: string }[]>([]);
   const [selected, setSelected] = createSignal<string[]>([]);
   const [loaded, setLoaded] = createSignal(false);
+  const [signedIn, setSignedIn] = createSignal<boolean | null>(null);
+  const [hostConfirm, setHostConfirm] = createSignal('');
+  // Non-loopback callbacks are a phishing surface (an attacker can start
+  // a flow with their own redirect_uri); the user must TYPE the host to
+  // enable Allow. Loopback is exempt (local clients).
+  const loopback = () => {
+    try {
+      const host = new URL(redirectUri()).hostname;
+      return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+    } catch {
+      return false;
+    }
+  };
+  const hostConfirmed = () => loopback() || hostConfirm().trim() === redirectHost();
   // Tool permissions: the SAFE default (read + profile + inbox) is the
   // starting state; writing/administering categories are opt-in, and
   // "everything" is an explicit full-power grant.
@@ -31,10 +46,20 @@ export default function McpAuthorizePage() {
   );
   const [grantAll, setGrantAll] = createSignal(false);
 
-  // Offer the compartmentalization: scope the connection to specific
-  // workspaces, loaded once the request shape is valid.
+  // Signed-out gate: render the sign-in panel instead of a consent UI
+  // that only fails later on Allow.
   createEffect(
     () => valid(),
+    (ok) => {
+      if (!ok || signedIn() !== null) return;
+      void mcpAuthSignedIn().then(setSignedIn);
+    },
+  );
+
+  // Offer the compartmentalization: scope the connection to specific
+  // workspaces, loaded once the request shape is valid and signed in.
+  createEffect(
+    () => valid() && signedIn() === true,
     (ok) => {
       if (!ok || loaded()) return;
       setLoaded(true);
@@ -70,7 +95,7 @@ export default function McpAuthorizePage() {
     challengeMethod() === 'S256';
 
   const allow = async () => {
-    if (busy() || !valid()) return;
+    if (busy() || !valid() || !hostConfirmed()) return;
     setBusy(true);
     setError(null);
     try {
@@ -109,8 +134,26 @@ export default function McpAuthorizePage() {
         <span class="font-mono">{clientId() || 'Unknown client'}</span> wants access
       </h1>
 
+      <Show when={valid() && signedIn() === null}>
+        <div class="mt-6 rounded-2xl border border-neutral-200 p-6 text-center dark:border-neutral-800">
+          <p class="text-sm text-neutral-600 dark:text-neutral-300">Checking your session…</p>
+        </div>
+      </Show>
+      <Show when={valid() && signedIn() === false}>
+        <div class="mt-6 rounded-2xl border border-neutral-200 p-6 text-center dark:border-neutral-800">
+          <p class="text-sm text-neutral-600 dark:text-neutral-300">
+            You need to sign in to authorize an agent.
+          </p>
+          <a
+            href="/sign-in"
+            class="mt-3 inline-block rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+          >
+            Sign in
+          </a>
+        </div>
+      </Show>
       <Show
-        when={valid}
+        when={valid() && signedIn() === true}
         fallback={
           <p role="alert" class="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
             This authorization request is incomplete or invalid. Ask the client to restart the
@@ -219,13 +262,30 @@ export default function McpAuthorizePage() {
           </p>
         </Show>
 
+        <Show when={!loopback()}>
+          <div class="border-t border-neutral-200 pt-3 dark:border-neutral-800">
+            <p class="mb-2 text-sm font-medium">Confirm the callback host</p>
+            <p class="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+              This client is redirecting somewhere other than your machine. To make sure the
+              authorization code isn't shipped to a lookalike, type{' '}
+              <span class="font-mono font-semibold">{redirectHost()}</span> to enable Allow.
+            </p>
+            <input
+              value={hostConfirm()}
+              onInput={(event) => setHostConfirm(event.currentTarget.value)}
+              placeholder={redirectHost()}
+              class="font-mono"
+            />
+          </div>
+        </Show>
+
         <div class="mt-6 flex gap-3">
           <Show when={!denied()}>
             <button
               type="button"
               class="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
               onClick={allow}
-              disabled={busy()}
+              disabled={busy() || !hostConfirmed()}
             >
               {busy() ? 'Connecting…' : 'Allow access'}
             </button>

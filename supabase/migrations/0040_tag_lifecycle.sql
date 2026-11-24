@@ -29,6 +29,7 @@ alter table public.card_tags enable row level security;
 -- get_cards and get_board_full now include each card's tags
 -- (id + name), so an agent sees the full card state in one read.
 
+drop policy if exists tags_update_admin on public.tags;
 create policy tags_update_admin on public.tags
   for update using (
     public.user_workspace_role(workspace_id) in ('owner', 'admin')

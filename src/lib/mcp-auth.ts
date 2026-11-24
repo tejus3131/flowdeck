@@ -33,7 +33,14 @@ export const TOOL_CATEGORIES: { id: string; label: string; description: string; 
     id: 'read',
     label: 'Read',
     description: 'Boards, cards, chats, comments, tags, teams, members, notifications, search — read-only.',
-    ops: ['list_boards', 'get_board', 'get_board_full', 'get_cards', 'list_board_messages', 'list_comments', 'get_card_events', 'get_me', 'list_workspaces', 'list_workspace_members', 'get_user', 'list_teams', 'list_tags', 'list_notifications', 'search', 'check_mention_access'],
+    ops: ['list_boards', 'get_board', 'get_board_full', 'get_cards', 'list_board_messages', 'list_comments', 'get_card_events', 'get_me', 'list_workspaces', 'list_teams', 'list_tags', 'list_notifications', 'search', 'check_mention_access'],
+    defaultOn: true,
+  },
+  {
+    id: 'directory',
+    label: 'Directory',
+    description: 'Workspace member and invitee details — including their email addresses. Separate from Read so it can be withheld on its own.',
+    ops: ['list_workspace_members', 'get_user', 'list_pending_invites'],
     defaultOn: true,
   },
   {
@@ -106,6 +113,17 @@ export const DEFAULT_TOOL_OPS: string[] = TOOL_CATEGORIES
   .filter((category) => category.defaultOn)
   .flatMap((category) => category.ops);
 
+/** Signed-in check for the consent page's gate (round-3: the page used
+ * to render fully signed-out and only fail on Allow). */
+export async function mcpAuthSignedIn(): Promise<boolean> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return Boolean(user);
+}
+
 /** The workspaces the consent page offers (and the user belongs to). */
 export async function listMyWorkspaceChoices(): Promise<
   { id: string; name: string; role: string }[]
@@ -163,7 +181,10 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
   // read-only surface; ['*'] is an explicit full-power grant.
   const wantedCategories = [...new Set((input.toolCategories ?? []).map((id) => String(id)))];
   const allOps = TOOL_CATEGORIES.flatMap((category) => category.ops);
-  let allowedOps: string[] | null = null;
+  // NEVER null from the consent flow: null is the legacy account-wide
+  // marker. An empty selection means the user granted NOTHING (round-3
+  // inversion fix); undefined falls back to the safe default set.
+  let allowedOps: string[];
   if (wantedCategories.includes('*')) {
     allowedOps = allOps;
   } else if (wantedCategories.length > 0) {
@@ -174,6 +195,8 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
           .flatMap((category) => category.ops),
       ),
     ];
+  } else {
+    allowedOps = DEFAULT_TOOL_OPS;
   }
   if (wanted.length > 0) {
     const { data: mine } = await supabase
