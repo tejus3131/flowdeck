@@ -83,11 +83,13 @@ export async function renameConnection(tokenId: string, name: string): Promise<v
 
 /** Change what a connection may do. Memberships are validated like the
  *  consent flow; a legacy token converts to the per-workspace shape on
- *  its first edit. */
+ *  its first edit. Returns the workspace_ops as STORED — the server caps
+ *  the selection to what the user's own roles allow, and the caller
+ *  deserves to see exactly what landed (never a silent strip). */
 export async function updateConnectionPermissions(
   tokenId: string,
   permissions: PermissionSelection,
-): Promise<void> {
+): Promise<Record<string, string[]> | null> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const normalized = normalizeSelection(permissions);
@@ -141,15 +143,17 @@ export async function updateConnectionPermissions(
   // Converting a legacy token clears the old flat columns so one shape
   // is authoritative per token. The cap strips anything above the user's
   // own role or behind a gate they don't pass.
+  const workspaceOps = selectionToWorkspaceOps(capSelection(normalized, caps));
   const { error } = await supabase
     .from('api_tokens')
     .update({
-      workspace_ops: selectionToWorkspaceOps(capSelection(normalized, caps)),
+      workspace_ops: workspaceOps,
       workspace_scope: null,
       allowed_ops: null,
     })
     .eq('id', tokenId);
   if (error) throw new Error(error.message);
+  return workspaceOps;
 }
 
 /** Revoke: the token stops working immediately — the MCP client must

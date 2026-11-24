@@ -14,6 +14,7 @@ import {
   toggleActionInSelection,
   toggleEntityInSelection,
   toggleWorkspaceInSelection,
+  workspaceOps,
   workspaceOpsToSelection,
   type PermissionSelection,
 } from './mcp-permissions';
@@ -204,5 +205,41 @@ describe('taxonomy sanity', () => {
         expect(action.gate).toBeUndefined();
       }
     }
+  });
+});
+
+// ── the grant/request split ────────────────────────────────────────────────
+// 'Grant & request access' used to be one member-offered action — members
+// saw grant_board_access (an admin-tier power) next to their own. Now
+// request is member-level, grant is admin-tier, and the cap enforces it.
+
+describe('access entity: grant vs request', () => {
+  it('members keep request but lose grant', () => {
+    const capped = capSelection(
+      sel({ [WS]: { access: ['check', 'request', 'grant'] } }),
+      { [WS]: memberCap },
+    );
+    expect(capped.workspaces[WS].access).toEqual(['check', 'request']);
+  });
+
+  it('admins keep both', () => {
+    const capped = capSelection(
+      sel({ [WS]: { access: ['check', 'request', 'grant'] } }),
+      { [WS]: adminCap },
+    );
+    expect(capped.workspaces[WS].access).toEqual(['check', 'request', 'grant']);
+  });
+
+  it('the ops round-trip: request maps to request_board_access only', () => {
+    const ops = workspaceOps({ access: ['check', 'request'] });
+    expect(ops).toContain('request_board_access');
+    expect(ops).not.toContain('grant_board_access');
+    const back = workspaceOpsToSelection({ [WS]: ops }).workspaces[WS];
+    expect(back.access).toEqual(['check', 'request']);
+  });
+
+  it('grant_board_access is still grantable for admins (ALL_OPS intact)', () => {
+    expect(WORKSPACE_ENTITIES.flatMap((e) => e.actions).flatMap((a) => a.ops))
+      .toContain('grant_board_access');
   });
 });

@@ -172,6 +172,7 @@ export default function McpDocsPage() {
       <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-neutral-600 dark:text-neutral-300">
         <li>Every tool call runs <em>as you</em>, under the app's row-level security — an agent sees and touches only what you could.</li>
         <li>Workspace role rules apply: owners manage everything, admins manage members/teams/boards, members work where they have access.</li>
+        <li>Per-board access matters too: <code>get_board</code> and <code>list_boards</code> carry <code>your_access</code> (<code>edit</code> or <code>view</code>) — on a view board, writes fail with an explicit read-only error instead of an opaque failure.</li>
         <li>Team ops follow the team-admin model; the invite allowlist applies to <code>invite_member</code>.</li>
         <li>Destructive tools (<code>delete_board</code>, <code>delete_list</code>, <code>delete_card</code>) match the web app's own permission checks.</li>
       </ul>

@@ -92,7 +92,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'get_board',
     description:
-      'One board with its lists (no cards or messages). Use this to discover list ids, then get_cards(list_id) for cards and list_board_messages(board_id) for the board chat.',
+      'One board with its lists (no cards or messages). Use this to discover list ids, then get_cards(list_id) for cards and list_board_messages(board_id) for the board chat. The board carries your_access: \'edit\' or \'view\' — on a view board, writes fail with a read-only error.',
     inputSchema: {
       type: 'object',
       properties: { board_id: { type: 'string', format: 'uuid' } },
@@ -141,7 +141,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'rename_board',
-    description: 'Rename a board.',
+    description: 'Rename a board. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { board_id: { type: 'string', format: 'uuid' }, name: { type: 'string', maxLength: 80 } },
@@ -152,7 +152,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_board',
-    description: 'Delete a board and everything in it. Destructive.',
+    description: 'Delete a board and everything in it. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { board_id: { type: 'string', format: 'uuid' } },
@@ -164,7 +164,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'update_board',
     description:
-      'Update a board: name, description, and/or access_delegation (who may grant board access — workspace owners/admins only).',
+      'Update a board: name, description, and/or access_delegation (who may grant board access — workspace owners/admins only). Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -180,7 +180,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'create_list',
-    description: 'Add a list (column) to a board.',
+    description: 'Add a list (column) to a board. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { board_id: { type: 'string', format: 'uuid' }, name: { type: 'string', maxLength: 80 } },
@@ -191,7 +191,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'rename_list',
-    description: 'Rename a list.',
+    description: 'Rename a list. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { list_id: { type: 'string', format: 'uuid' }, name: { type: 'string', maxLength: 80 } },
@@ -202,7 +202,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'update_list',
-    description: 'Update a list: name and/or description.',
+    description: 'Update a list: name and/or description. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -217,7 +217,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_list',
-    description: 'Delete a list and its cards. Destructive.',
+    description: 'Delete a list and its cards. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { list_id: { type: 'string', format: 'uuid' } },
@@ -228,7 +228,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'create_card',
-    description: 'Create a card in a list (appended to the end).',
+    description: 'Create a card in a list (appended to the end). Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -249,7 +249,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'update_card',
     description:
-      'Update a card: title, description, priority, assignees, and/or tag_ids. Assignees and tag_ids are FULL replacement sets (like the web app). Newly assigned users get an assignment notification.',
+      'Update a card: title, description, priority, assignees, and/or tag_ids. Assignees and tag_ids are FULL replacement sets (like the web app). Newly assigned users get an assignment notification. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -345,7 +345,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'move_card',
     description:
-      'Move a card to a list. With position: an absolute number (use whole numbers, 1, 2, 3…). Without position: appends at the end of the list — atomic and safe for concurrent movers.',
+      'Move a card to a list. With position: an absolute number (use whole numbers, 1, 2, 3…). Without position: appends at the end of the list — atomic and safe for concurrent movers. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -360,7 +360,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_card',
-    description: 'Delete a card. Destructive.',
+    description: 'Delete a card. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { card_id: { type: 'string', format: 'uuid' } },
@@ -665,7 +665,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'post_board_message',
-    description: `Post a message to a board chat (max 4000 chars). ${MENTION_SYNTAX}`,
+    description: `Post a message to a board chat (max 4000 chars).${MENTION_SYNTAX} Board chat needs edit access — on view-only boards this fails with a read-only error (card comments are still allowed).`,
     inputSchema: {
       type: 'object',
       properties: { board_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 4000 } },

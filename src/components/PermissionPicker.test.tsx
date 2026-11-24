@@ -134,3 +134,57 @@ describe('PermissionPicker org rows', () => {
     expect(changes[0].workspaces.ws1.boards).toContain('read');
   });
 });
+
+// ── the member/admin split (role-gated actions never read as member-level) ──
+
+describe('PermissionPicker role-tier separation', () => {
+  const memberWs = { ...ws, id: 'wsm', name: 'MemberOrg', role: 'member' as const };
+
+  /** Render with a full read-only selection so the org expands. */
+  const tierHarness = (role: 'member' | 'admin') => {
+    const [selection, setSelection] = createSignal<PermissionSelection>({
+      workspaces: { [memberWs.id]: { boards: ['read'], people: ['read'], access: ['check'] } },
+      account: {},
+    });
+    const utils = render(() => (
+      <PermissionPicker
+        selection={selection()}
+        workspaces={[{ ...memberWs, role }]}
+        onChange={(next) => setSelection(next)}
+      />
+    ));
+    flush();
+    return utils;
+  };
+
+  /** Open one entity's action panel. */
+  const openEntity = (utils: ReturnType<typeof tierHarness>, label: string) => {
+    utils.getByText(label).closest('button')!.click();
+    flush();
+  };
+
+  it('never offers grant / invite / resolve to a member', () => {
+    const utils = tierHarness('member');
+    openEntity(utils, 'Board access & mentions');
+    openEntity(utils, 'People & invites');
+    const text = utils.container.textContent ?? '';
+    expect(text).not.toContain('Grant board access');
+    expect(text).not.toContain('Invite & manage people');
+    expect(text).not.toContain('Resolve access requests');
+    // What a member DOES see: the ask, and the reach check.
+    expect(text).toContain('Ask admins for access');
+    expect(text).toContain('Check mention reach');
+  });
+
+  it('groups admin-tier actions under their own heading for admins', () => {
+    const utils = tierHarness('admin');
+    openEntity(utils, 'Board access & mentions');
+    const text = utils.container.textContent ?? '';
+    expect(text).toContain('Grant board access');
+    expect(text).toContain('Admin / owner actions');
+    // The heading comes after the member-tier actions, never mixed in.
+    expect(text.indexOf('Ask admins for access')).toBeLessThan(
+      text.indexOf('Admin / owner actions'),
+    );
+  });
+});
