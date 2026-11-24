@@ -29,6 +29,35 @@ export default function McpAuthorizePage() {
   // Non-loopback callbacks are a phishing surface (an attacker can start
   // a flow with their own redirect_uri); the user must TYPE the host to
   // enable Allow. Loopback is exempt (local clients).
+  // ── Accessors ─────────────────────────────────────────────────────────────
+  // Declared BEFORE any createEffect that reads them: on the SERVER,
+  // createEffect runs during render (serverEffect), so a const declared
+  // below an effect that reads it is still in its temporal dead zone —
+  // "ReferenceError: Cannot access 'valid' before initialization", the
+  // production 500 on this page. On the client effects run after the
+  // body, which is why it only broke server-side.
+  const clientId = () => String(params.client_id ?? '').trim();
+  const redirectUri = () => String(params.redirect_uri ?? '').trim();
+  const codeChallenge = () => String(params.code_challenge ?? '').trim();
+  const challengeMethod = () => String(params.code_challenge_method ?? 'S256').trim();
+  const state = () => (params.state ? String(params.state) : null);
+
+  // The visible host of the callback — that is what a user can reason
+  // about ("is this really my local Cursor?").
+  const redirectHost = () => {
+    try {
+      return new URL(redirectUri()).host || redirectUri();
+    } catch {
+      return redirectUri();
+    }
+  };
+
+  const valid = () =>
+    clientId().length > 0 &&
+    redirectUri().length > 0 &&
+    codeChallenge().length > 0 &&
+    challengeMethod() === 'S256';
+
   const loopback = () => {
     try {
       const host = new URL(redirectUri()).hostname;
@@ -71,28 +100,6 @@ export default function McpAuthorizePage() {
       });
     },
   );
-
-  const clientId = () => String(params.client_id ?? '').trim();
-  const redirectUri = () => String(params.redirect_uri ?? '').trim();
-  const codeChallenge = () => String(params.code_challenge ?? '').trim();
-  const challengeMethod = () => String(params.code_challenge_method ?? 'S256').trim();
-  const state = () => (params.state ? String(params.state) : null);
-
-  // The visible host of the callback — that is what a user can reason
-  // about ("is this really my local Cursor?").
-  const redirectHost = () => {
-    try {
-      return new URL(redirectUri()).host || redirectUri();
-    } catch {
-      return redirectUri();
-    }
-  };
-
-  const valid = () =>
-    clientId().length > 0 &&
-    redirectUri().length > 0 &&
-    codeChallenge().length > 0 &&
-    challengeMethod() === 'S256';
 
   const allow = async () => {
     if (busy() || !valid() || !hostConfirmed()) return;
