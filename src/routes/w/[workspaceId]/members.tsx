@@ -42,6 +42,8 @@ import {
   setTeamMemberRole,
 } from '../../../lib/teams';
 import { errorMessage } from '../../../lib/error-message';
+import { cachedStream } from '../../../lib/cache';
+import { perfFirstValue } from '../../../lib/perf';
 
 const ROLE_STYLE: Record<WorkspaceRole, string> = {
   owner: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
@@ -73,7 +75,14 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
   // relay — the same double path the board page runs.
   const workspaceLive = liveQuery(workspaceStream, 'workspace');
   const engine = createEngine<WorkspaceDetail>({
-    streamSource: (key) => workspaceLive(key),
+    // Stale-while-revalidate like the board page's roster engine — the
+    // same cache key (ws-detail:<id>), so a board visit warms this page
+    // and vice versa. No more "?" avatars on reload.
+    streamSource: (key) =>
+      perfFirstValue(
+        cachedStream(`ws-detail:${key}`, () => workspaceLive(key), 'ws-detail-revalidate'),
+        'ws-detail-open',
+      ),
     key: () => props.params.workspaceId,
     empty: EMPTY_DETAIL,
     clone: (snapshot) => ({

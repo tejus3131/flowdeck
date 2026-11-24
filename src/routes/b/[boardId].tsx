@@ -290,7 +290,18 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // simply re-keys when it appears).
   const workspaceLive = liveQuery(workspaceStream, 'ws-detail');
   const wsEngine = createEngine<WorkspaceDetail>({
-    streamSource: (key) => workspaceLive(key),
+    // Stale-while-revalidate like the board itself (docs/performance.md,
+    // layer 1): the cached roster paints members — names, avatars — the
+    // instant the page opens; the live producer revalidates behind it.
+    // This is the fix for the reload flash on card #51: image BYTES were
+    // instant in the service worker, but the roster carrying avatar_url
+    // was a cold fetch, so every avatar showed the "?" fallback until it
+    // landed. An empty key (pre-snapshot) ends quietly — nothing caches.
+    streamSource: (key) =>
+      perfFirstValue(
+        cachedStream(`ws-detail:${key}`, () => workspaceLive(key), 'ws-detail-revalidate'),
+        'ws-detail-open',
+      ),
     key: () => view().board.workspace_id ?? '',
     empty: EMPTY_WORKSPACE,
     clone: (snapshot) => ({
