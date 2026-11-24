@@ -1161,7 +1161,17 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   // Cards still materializing can't be dragged yet (their
                   // real id hasn't been echoed) — the drop is a no-op.
                   if (cardId && canEdit() && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
-                }}                onHover={(index) => setDropHint({ listId: list.id, index })}
+                }}
+                onHover={(index) =>
+                  // Identical index → identical value: dragover fires per
+                  // mouse-move, and a fresh object per event re-renders and
+                  // re-runs the FLIP pass constantly (the glitch storm).
+                  setDropHint((prev) =>
+                    prev?.listId === list.id && prev.index === index
+                      ? prev
+                      : { listId: list.id, index },
+                  )
+                }
                 adding={addingIn() === list.id}
                 onAdd={() => setAddingIn(list.id)}
                 onCancelAdd={() => setAddingIn(null)}
@@ -1407,23 +1417,23 @@ function BoardColumn(props: {
   // The glide: when the ghost placeholder opens, moves or closes, the
   // cards around it shift — FLIP-animating them makes the space open
   // smoothly instead of snapping, and the dropped card rides the same
-  // animation from its old spot into the opened one. Measured in
-  // CONTENT space (top + scrollTop) so the drag's auto-scroll never
-  // masquerades as a layout change.
+  // animation from its old spot into the opened one. Measured with
+  // offsetTop — LAYOUT position, immune to CSS transforms — because
+  // getBoundingClientRect reflects an in-flight glide, and feeding that
+  // back in compounds garbage deltas (the vanish glitch). The dropHint
+  // setter dedupes identical indexes, so passes run only on real moves.
   const lastTops = new Map<string, number>();
   createEffect(
     () => (props.dropHint, props.cards),
     () => {
-      const container = document.querySelector<HTMLElement>(
-        `[data-column="${props.list.id}"] [data-cards-scroll]`,
+      const els = document.querySelectorAll<HTMLElement>(
+        `[data-column="${props.list.id}"] [data-card-id]`,
       );
-      if (!container) return;
-      const els = container.querySelectorAll<HTMLElement>('[data-card-id]');
       const seen = new Set<string>();
       for (const el of els) {
         const id = el.dataset.cardId!;
         seen.add(id);
-        const top = el.getBoundingClientRect().top + container.scrollTop;
+        const top = el.offsetTop;
         const prev = lastTops.get(id);
         lastTops.set(id, top);
         if (prev === undefined || prev === top) continue;
@@ -1450,14 +1460,29 @@ function BoardColumn(props: {
   );
 
   // Where in this column a pointer sits: the index the dropped card takes.
+  // Measured in LAYOUT space (offsetTop, immune to the FLIP's in-flight
+  // glide transforms) with the ghost's footprint subtracted from every
+  // card at or below its slot — the pointer's own placeholder can never
+  // move the goalposts it is measured against, and a mid-glide dragover
+  // reads the settled position, not the animating one.
   const indexAt = (clientY: number): number => {
-    const elements = document.querySelectorAll<HTMLDivElement>(
-      `[data-column="${props.list.id}"] [data-card]`,
+    const container = document.querySelector<HTMLElement>(
+      `[data-column="${props.list.id}"] [data-cards-scroll]`,
     );
-    let index = elements.length;
-    for (let i = 0; i < elements.length; i++) {
-      const rect = elements[i].getBoundingClientRect();
-      if (clientY < rect.top + rect.height / 2) {
+    if (!container) return 0;
+    const els = container.querySelectorAll<HTMLElement>('[data-card]');
+    // Viewport anchor of the container's content — transform-immune (the
+    // container itself never glides; only cards do).
+    const anchor =
+      container.getBoundingClientRect().top - container.scrollTop - container.offsetTop;
+    const ghost = container.querySelector<HTMLElement>('[data-drop-placeholder]');
+    const shift = ghost ? ghost.offsetHeight + 8 : 0; // + the flex gap-2
+    const ghostAt = props.dropHint ?? -1;
+    let index = els.length;
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i]!;
+      const mid = anchor + el.offsetTop + el.offsetHeight / 2;
+      if (clientY < (i >= ghostAt ? mid - shift : mid)) {
         index = i;
         break;
       }
