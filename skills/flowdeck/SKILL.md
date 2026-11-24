@@ -55,6 +55,13 @@ They work in board chat, card comments, and card descriptions.
 - An author edits their own rows; workspace owners/admins can edit or delete
   anyone's.
 
+## Mutation responses
+
+Every mutating tool returns the result of the change — the entity after the
+edit (ids, positions, names), counts (`cards_moved`, `askers_notified`), or
+flags (`edited`, `deleted`, `seen`). Trust the returned position: a `move_card`
+with no position appends atomically, and the response carries where it landed.
+
 ## Cards, lists, positions
 
 - `create_card` appends atomically — concurrent creates can never collide

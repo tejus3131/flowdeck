@@ -1146,7 +1146,7 @@ Deno.serve(async (request) => {
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER_INFO,
         instructions:
-          'Flowdeck boards, cards and chat. Start with get_me and list_workspaces; every list tool pages with next_cursor. Mentions use [Name](user:UUID) links — call check_mention_access first for people who may not see the board. This server is stateless: no sessions, no DELETE (the spec allows a stateless streamable-HTTP server); every call carries its own Bearer token.',
+          'Flowdeck boards, cards and chat. Start with get_me and list_workspaces; every list tool pages with next_cursor. Mentions use [Name](user:UUID) links — call check_mention_access first for people who may not see the board. This server is stateless: no sessions, no DELETE (the spec allows a stateless streamable-HTTP server); every call carries its own Bearer token. Every mutating tool returns the result of the change: the entity after the edit (ids, positions, names), counts (e.g. cards_moved, askers_notified), or flags (edited/deleted/seen) — never a silent null.',
       });
     }
     case 'notifications/initialized':

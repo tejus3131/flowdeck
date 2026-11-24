@@ -261,6 +261,9 @@ $$;
 revoke execute on function public.mcp_dismiss_access_requests(uuid, uuid, uuid) from public;
 grant execute on function public.mcp_dismiss_access_requests(uuid, uuid, uuid) to authenticated, service_role;
 
+-- NOTE: superseded by 0048_tool_responses.sql (every op now returns a
+-- meaningful response instead of data:null). 0048 carries the authority.
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,
