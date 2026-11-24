@@ -34,7 +34,7 @@ export function PermissionPicker(props: {
     on: boolean,
   ) => {
     const bucketSel = { ...props.selection[bucket] } as Record<string, WorkspaceSelection>;
-    const sel: WorkspaceSelection = { ...(bucketSel[bucketId] ?? {}) };
+    const sel: WorkspaceSelection = { ...bucketSel[bucketId] };
     const ids = new Set<string>(sel[entityId] ?? []);
     if (on) {
       ids.add(actionId);

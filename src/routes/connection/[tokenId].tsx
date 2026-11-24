@@ -3,7 +3,7 @@
 // revoke — with a warning that revoking means reconnecting the client.
 import { Title } from '@solidjs/meta';
 import { RouteProps, useNavigate } from '@solidjs/router';
-import { Show, createSignal } from 'solid-js';
+import { Show, createEffect, createSignal } from 'solid-js';
 
 import { PermissionPicker } from '../../components/PermissionPicker';
 import { listMyWorkspaceChoices } from '../../lib/mcp-auth';
@@ -32,8 +32,10 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
   const [busy, setBusy] = createSignal(false);
   const [confirmRevoke, setConfirmRevoke] = createSignal(false);
 
-  void (async () => {
-    const [detail, choices] = await Promise.all([getConnection(props.params.tokenId), listMyWorkspaceChoices()]);
+  createEffect(
+    () => props.params.tokenId,
+    (tokenId) => void (async () => {
+    const [detail, choices] = await Promise.all([getConnection(tokenId), listMyWorkspaceChoices()]);
     if (!detail) {
       navigate('/profile', { replace: true });
       return;
@@ -54,7 +56,8 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
           workspaceOpsToSelection(null, detail.legacy_allowed_ops ?? undefined, legacyScope)
         : workspaceOpsToSelection(detail.workspace_ops),
     );
-  })();
+    })(),
+  );
 
   const saveName = async () => {
     if (busy()) return;

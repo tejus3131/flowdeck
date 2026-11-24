@@ -5,7 +5,7 @@
 // before Allow hands back a single-use authorization code.
 import { Title } from '@solidjs/meta';
 import { useSearchParams } from '@solidjs/router';
-import { For, Show, createEffect, createSignal } from 'solid-js';
+import { Show, createEffect, createSignal } from 'solid-js';
 
 import { MembershipWatch } from '../../components/MembershipWatch';
 import { PermissionPicker } from '../../components/PermissionPicker';
