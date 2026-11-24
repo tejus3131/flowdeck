@@ -150,7 +150,9 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     description: 'The workspace\u2019s shared tag set.',
     actions: [
       read('read', 'Read tags', ['list_tags'], 'See the tag list'),
-      write('create', 'Create tags', ['create_tag'], { implies: 'read', role: 'admin' }),
+      // The app opens tag CREATION to every member (tags_insert_member);
+      // rename/delete/merge stay admin. The MCP taxonomy now matches.
+      write('create', 'Create tags', ['create_tag'], { implies: 'read' }),
       write('rename', 'Rename tags', ['rename_tag'], { implies: 'read', role: 'admin' }),
       write('delete', 'Delete & merge tags', ['delete_tag', 'merge_tags'], { implies: 'read', role: 'admin' }),
     ],

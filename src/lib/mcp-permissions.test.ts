@@ -84,9 +84,14 @@ describe('tri-state entity toggle', () => {
 
   it('a member is never offered admin actions', () => {
     let s = sel({ [WS]: {} });
+    // First toggle: the reads-only state.
     s = toggleEntityInSelection(s, 'workspaces', WS, 'tags', memberCap);
-    // member only gets read on tags
     expect(s.workspaces[WS].tags).toEqual(['read']);
+    // Second toggle: everything offered to a member — read + create on
+    // tags (the app opens creation to all members); rename/delete/merge
+    // stay admin.
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'tags', memberCap);
+    expect(s.workspaces[WS].tags?.sort()).toEqual(['create', 'read']);
     s = toggleEntityInSelection(s, 'workspaces', WS, 'tags', adminCap);
     // admin gets everything
     expect(s.workspaces[WS].tags?.sort()).toEqual(['create', 'delete', 'read', 'rename']);
@@ -156,7 +161,7 @@ describe('caps — a grant can never exceed the user\u2019s own reach', () => {
     );
     const capped = capSelection(crafted, { [WS]: memberCap });
     expect(capped.workspaces[WS].cards).toContain('delete'); // member can delete cards
-    expect(capped.workspaces[WS].tags).toEqual(['read']); // tag writes are admin
+    expect(capped.workspaces[WS].tags?.sort()).toEqual(['create', 'read']); // create is member-level; rename/delete stay admin
     expect(capped.workspaces[WS].teams).toEqual(['read']); // team manage is admin
     expect(capped.workspaces[WS].boards).not.toContain('delete');
     expect(capped.workspaces[WS].boards).not.toContain('create'); // gate blocks it
@@ -286,7 +291,7 @@ describe('capWorkspaceOps', () => {
     'create_card', 'update_card', 'move_card', 'delete_card',
     'rename_list', 'update_list', // member writes
     'delete_board', 'delete_list', // admin writes
-    'create_tag', 'rename_tag', 'merge_tags', // admin tag powers
+    'create_tag', 'rename_tag', 'delete_tag', 'merge_tags', // tag powers (create is member-level)
     'invite_member', 'resolve_access_request', // admin people powers
     'create_board', // the gated op
     'search',
@@ -297,9 +302,12 @@ describe('capWorkspaceOps', () => {
     for (const op of ['list_boards', 'create_card', 'update_card', 'search', 'get_me']) {
       expect(capped).toContain(op);
     }
-    for (const op of ['delete_board', 'delete_list', 'create_tag', 'invite_member', 'resolve_access_request', 'create_board']) {
+    for (const op of ['delete_board', 'delete_list', 'rename_tag', 'delete_tag', 'merge_tags', 'invite_member', 'resolve_access_request', 'create_board']) {
       expect(capped).not.toContain(op);
     }
+    // Tag CREATION is member-level in the app (tags_insert_member) —
+    // the taxonomy matches it.
+    expect(capped).toContain('create_tag');
   });
 
   it('an admin keeps everything except owner-tier (there is none) — and the gate', () => {
