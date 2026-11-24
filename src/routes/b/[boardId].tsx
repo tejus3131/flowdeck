@@ -456,6 +456,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
 
   const [dragging, setDragging] = createSignal<string | null>(null);
   const [dropHint, setDropHint] = createSignal<{ listId: string; index: number } | null>(null);
+  /** The dragged card's height — the ghost opens exactly that much space. */
+  const [dragHeight, setDragHeight] = createSignal<number | null>(null);
 
   // ── auto-scroll while dragging (board card #50) ─────────────────────────
   // Both axes: the horizontal board scroller and the hovered column's
@@ -1138,20 +1140,24 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 dragging={dragging()}
                 remoteDrag={presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()}
                 dropHint={dropHint()?.listId === list.id ? dropHint()!.index : null}
+                dragHeight={dragHeight()}
                 isTemp={engine.isTemp(list.id)}
                 canEdit={canEdit()}
-                onDragStart={(cardId) => {
+                onDragStart={(cardId, height) => {
                   setDragging(cardId);
+                  setDragHeight(height);
                   presence.broadcastDrag(cardId, me()?.display_name || 'Someone');
                 }}
                 onDragEnd={() => {
                   setDragging(null);
                   setDropHint(null);
+                  setDragHeight(null);
                   presence.broadcastDrag(null, '');
                 }}
                 onDrop={(index, cardId) => {
                   setDragging(null);
                   setDropHint(null);
+                  setDragHeight(null);
                   // Cards still materializing can't be dragged yet (their
                   // real id hasn't been echoed) — the drop is a no-op.
                   if (cardId && canEdit() && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
@@ -1373,10 +1379,12 @@ function BoardColumn(props: {
   dragging: string | null;
   remoteDrag: RemoteDrag | null;
   dropHint: number | null;
+  /** The dragged card's height — the ghost opens exactly that much space. */
+  dragHeight: number | null;
   isTemp: boolean;
   canEdit: boolean;
   adding: boolean;
-  onDragStart: (cardId: string) => void;
+  onDragStart: (cardId: string, height: number) => void;
   onDragEnd: () => void;
   onDrop: (index: number, cardId: string | null) => void;
   onHover: (index: number) => void;
@@ -1395,6 +1403,36 @@ function BoardColumn(props: {
   const [renaming, setRenaming] = createSignal(false);
   const [confirming, setConfirming] = createSignal(false);
   const [keepOpen, setKeepOpen] = createSignal(false);
+
+  // The glide: when the ghost placeholder opens, moves or closes, the
+  // cards around it shift — FLIP-animating them makes the space open
+  // smoothly instead of snapping, and the dropped card rides the same
+  // animation from its old spot into the opened one. Measured in
+  // CONTENT space (top + scrollTop) so the drag's auto-scroll never
+  // masquerades as a layout change.
+  const lastTops = new Map<string, number>();
+  createEffect(
+    () => (props.dropHint, props.cards),
+    () => {
+      const container = document.querySelector<HTMLElement>(
+        `[data-column="${props.list.id}"] [data-cards-scroll]`,
+      );
+      if (!container) return;
+      const els = container.querySelectorAll<HTMLElement>('[data-card-id]');
+      for (const el of els) {
+        const id = el.dataset.cardId!;
+        const top = el.getBoundingClientRect().top + container.scrollTop;
+        const prev = lastTops.get(id);
+        lastTops.set(id, top);
+        if (prev === undefined || prev === top) continue;
+        el.style.transition = 'none';
+        el.style.transform = `translateY(${prev - top}px)`;
+        void el.offsetHeight; // reflow — the inverted position commits
+        el.style.transition = 'transform 160ms ease-out';
+        el.style.transform = '';
+      }
+    },
+  );
 
   // Where in this column a pointer sits: the index the dropped card takes.
   const indexAt = (clientY: number): number => {
@@ -1511,7 +1549,13 @@ function BoardColumn(props: {
           {(card, index) => (
             <>
               <Show when={props.dropHint === index() && props.dragging !== card.id}>
-                <div class="h-1 rounded-full bg-indigo-500/60" />
+                {/* The ghost: card-sized space opens where the drop would
+                    land — the cards around it glide apart (FLIP below). */}
+                <div
+                  data-drop-placeholder
+                  class="rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                  style={{ height: `${props.dragHeight ?? 72}px` }}
+                />
               </Show>
               <article
                 data-card
@@ -1524,7 +1568,7 @@ function BoardColumn(props: {
                     transfer.effectAllowed = 'move';
                     transfer.setData('text/plain', card.id);
                   }
-                  props.onDragStart(card.id);
+                  props.onDragStart(card.id, event.currentTarget.getBoundingClientRect().height);
                 }}
                 onDragEnd={props.onDragEnd}
                 onClick={() => props.onOpenCard(card.id, card.client_op)}
@@ -1615,7 +1659,11 @@ function BoardColumn(props: {
           )}
         </For>
         <Show when={props.dropHint === props.cards.length && props.cards.length > 0}>
-          <div class="h-1 rounded-full bg-indigo-500/60" />
+          <div
+            data-drop-placeholder
+            class="rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+            style={{ height: `${props.dragHeight ?? 72}px` }}
+          />
         </Show>
 
         {/* Add-card (editors only): the input ALWAYS clears instantly on
