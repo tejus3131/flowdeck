@@ -131,6 +131,23 @@ const TOOLS: ToolDef[] = [
     op: 'delete_board',
   },
   {
+    name: 'update_board',
+    description:
+      'Update a board: name, description, and/or access_delegation (who may grant board access — workspace owners/admins only).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        board_id: { type: 'string', format: 'uuid' },
+        name: { type: 'string', maxLength: 80 },
+        description: { type: 'string', maxLength: 4000 },
+        access_delegation: { type: 'boolean' },
+      },
+      required: ['board_id'],
+      additionalProperties: false,
+    },
+    op: 'update_board',
+  },
+  {
     name: 'create_list',
     description: 'Add a list (column) to a board.',
     inputSchema: {
@@ -153,6 +170,21 @@ const TOOLS: ToolDef[] = [
     op: 'rename_list',
   },
   {
+    name: 'update_list',
+    description: 'Update a list: name and/or description.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        list_id: { type: 'string', format: 'uuid' },
+        name: { type: 'string', maxLength: 80 },
+        description: { type: 'string', maxLength: 2000 },
+      },
+      required: ['list_id'],
+      additionalProperties: false,
+    },
+    op: 'update_list',
+  },
+  {
     name: 'delete_list',
     description: 'Delete a list and its cards. Destructive.',
     inputSchema: {
@@ -170,8 +202,13 @@ const TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         list_id: { type: 'string', format: 'uuid' },
-        title: { type: 'string', maxLength: 500 },
-        description: { type: 'string' },
+        title: { type: 'string', maxLength: 200 },
+        description: { type: 'string', maxLength: 8000 },
+        priority: {
+          type: 'string',
+          enum: ['low', 'medium', 'high', 'urgent'],
+          description: "Optional priority; omit for none.",
+        },
       },
       required: ['list_id', 'title'],
       additionalProperties: false,
@@ -180,13 +217,24 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'update_card',
-    description: 'Update a card title and/or description.',
+    description:
+      'Update a card: title, description, priority, and/or assignees. Assignees is the FULL replacement set of user ids (like the web app).',
     inputSchema: {
       type: 'object',
       properties: {
         card_id: { type: 'string', format: 'uuid' },
-        title: { type: 'string', maxLength: 500 },
-        description: { type: 'string' },
+        title: { type: 'string', maxLength: 200 },
+        description: { type: 'string', maxLength: 8000 },
+        priority: {
+          type: 'string',
+          enum: ['', 'low', 'medium', 'high', 'urgent'],
+          description: "Pass an empty string to clear.",
+        },
+        assignees: {
+          type: 'array',
+          items: { type: 'string', format: 'uuid' },
+          description: 'Full replacement set of assignee user ids; newly added users get an assignment notification.',
+        },
       },
       required: ['card_id'],
       additionalProperties: false,
@@ -250,6 +298,17 @@ const TOOLS: ToolDef[] = [
     op: 'get_me',
   },
   {
+    name: 'update_me',
+    description: 'Update your own display name (max 80 chars).',
+    inputSchema: {
+      type: 'object',
+      properties: { display_name: { type: 'string', maxLength: 80 } },
+      required: ['display_name'],
+      additionalProperties: false,
+    },
+    op: 'update_me',
+  },
+  {
     name: 'list_workspaces',
     description:
       'Every workspace you belong to, with your role in each. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
@@ -298,6 +357,21 @@ const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     op: 'create_team',
+  },
+  {
+    name: 'update_team',
+    description: 'Update a team: name and/or description.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        team_id: { type: 'string', format: 'uuid' },
+        name: { type: 'string', maxLength: 60 },
+        description: { type: 'string', maxLength: 500 },
+      },
+      required: ['team_id'],
+      additionalProperties: false,
+    },
+    op: 'update_team',
   },
   {
     name: 'add_team_member',
