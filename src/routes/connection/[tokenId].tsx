@@ -24,7 +24,9 @@ type Connection = NonNullable<Awaited<ReturnType<typeof getConnection>>>;
 export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>) {
   const navigate = useNavigate();
   const [connection, setConnection] = createSignal<Connection | null>(null);
-  const [workspaces, setWorkspaces] = createSignal<{ id: string; name: string; role: string }[]>([]);
+  const [workspaces, setWorkspaces] = createSignal<
+    { id: string; name: string; role: 'member' | 'admin' | 'owner'; board_creation: string; is_team_admin: boolean }[]
+  >([]);
   const [selection, setSelection] = createSignal<PermissionSelection>({ workspaces: {}, account: {} });
   const [name, setName] = createSignal('');
   const [status, setStatus] = createSignal<string | null>(null);
@@ -59,34 +61,69 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
     })(),
   );
 
-  const saveName = async () => {
-    if (busy()) return;
-    setBusy(true);
+  // ── autosave ─────────────────────────────────────────────────────────
+  // No save buttons: every change saves itself. Single-flight per field —
+  // a save in flight never stacks; the latest change wins when it lands.
+  // The server is authoritative: on failure the inline error offers a
+  // retry (the local state stays so nothing is silently lost).
+  let nameTimer: ReturnType<typeof setTimeout> | undefined;
+  let permsTimer: ReturnType<typeof setTimeout> | undefined;
+  let nameInFlight = false;
+  let permsInFlight = false;
+
+  const doSaveName = async () => {
+    if (nameInFlight) {
+      nameTimer = setTimeout(() => void doSaveName(), 400);
+      return;
+    }
+    nameInFlight = true;
     setError(null);
-    setStatus(null);
+    setStatus('Saving…');
     try {
       await renameConnection(props.params.tokenId, name());
-      setStatus('Name saved.');
-      setBusy(false);
+      setStatus('Saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-      setBusy(false);
+      setError(err instanceof Error ? err.message : 'Could not save the name');
+    } finally {
+      nameInFlight = false;
     }
   };
 
-  const savePermissions = async () => {
-    if (busy()) return;
-    setBusy(true);
+  const doSavePermissions = async () => {
+    if (permsInFlight) {
+      permsTimer = setTimeout(() => void doSavePermissions(), 400);
+      return;
+    }
+    permsInFlight = true;
     setError(null);
-    setStatus(null);
+    setStatus('Saving…');
     try {
       await updateConnectionPermissions(props.params.tokenId, selection());
-      setStatus('Permissions saved. New calls pick it up immediately.');
-      setBusy(false);
+      setStatus('Saved — new calls pick it up immediately');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-      setBusy(false);
+      setError(err instanceof Error ? err.message : 'Could not save the permissions');
+    } finally {
+      permsInFlight = false;
     }
+  };
+
+  /** Debounced name save (typing settles → save). */
+  const onNameInput = (value: string) => {
+    setName(value);
+    clearTimeout(nameTimer);
+    nameTimer = setTimeout(() => void doSaveName(), 800);
+  };
+
+  /** The picker's changes save themselves (debounced, single-flight). */
+  const onPermissionsChange = (next: PermissionSelection) => {
+    setSelection(next);
+    clearTimeout(permsTimer);
+    permsTimer = setTimeout(() => void doSavePermissions(), 500);
+  };
+
+  const retrySave = () => {
+    setError(null);
+    void doSavePermissions();
   };
 
   const revoke = async () => {
@@ -127,17 +164,10 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
               type="text"
               value={name()}
               maxlength="80"
-              onInput={(event) => setName(event.currentTarget.value)}
+              onInput={(event) => onNameInput(event.currentTarget.value)}
               class="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             />
-            <button
-              type="button"
-              disabled={busy()}
-              onClick={() => void saveName()}
-              class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-            >
-              Save
-            </button>
+            <span class="shrink-0 self-center text-xs text-neutral-400">{status()}</span>
           </div>
         </label>
 
@@ -146,16 +176,8 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
           <PermissionPicker
             selection={selection()}
             workspaces={workspaces()}
-            onChange={setSelection}
+            onChange={onPermissionsChange}
           />
-          <button
-            type="button"
-            disabled={busy()}
-            onClick={() => void savePermissions()}
-            class="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-          >
-            Save permissions
-          </button>
         </div>
 
         <Show when={status()}>
@@ -164,8 +186,15 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
           </p>
         </Show>
         <Show when={error()}>
-          <p role="alert" class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-            {error()}
+          <p role="alert" class="mt-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+            <span>{error()}</span>
+            <button
+              type="button"
+              onClick={retrySave}
+              class="shrink-0 rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold dark:border-red-800"
+            >
+              Retry
+            </button>
           </p>
         </Show>
 

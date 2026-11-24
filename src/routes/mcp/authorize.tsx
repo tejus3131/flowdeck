@@ -14,6 +14,7 @@ import {
   ACCOUNT_ENTITIES,
   WORKSPACE_ENTITIES,
   defaultWorkspaceSelection,
+  normalizeSelection,
   type PermissionSelection,
 } from '../../lib/mcp-permissions';
 
@@ -22,7 +23,9 @@ export default function McpAuthorizePage() {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [denied, setDenied] = createSignal(false);
-  const [workspaces, setWorkspaces] = createSignal<{ id: string; name: string; role: string }[]>([]);
+  const [workspaces, setWorkspaces] = createSignal<
+    { id: string; name: string; role: 'member' | 'admin' | 'owner'; board_creation: string; is_team_admin: boolean }[]
+  >([]);
   const [loaded, setLoaded] = createSignal(false);
   const [signedIn, setSignedIn] = createSignal<boolean | null>(null);
   const [hostConfirm, setHostConfirm] = createSignal('');
@@ -111,11 +114,25 @@ export default function McpAuthorizePage() {
         setWorkspaces(list);
         // Every workspace starts ON with the read-only default; the user
         // narrows orgs and opts writes in per entity.
-        setPermissions((current) => ({
-          ...current,
+        // Defaults: every entity's read actions on — normalized so the
+        // requirements (boards.read for card/chat reads) are visible in
+        // the picker, not just pulled in silently at mint time.
+        const defaults = normalizeSelection({
           workspaces: Object.fromEntries(
-            list.map((ws) => [ws.id, current.workspaces[ws.id] ?? defaultWorkspaceSelection()]),
+            list.map((ws) => [ws.id, defaultWorkspaceSelection()]),
           ),
+          account: Object.fromEntries(
+            ACCOUNT_ENTITIES.map((entity) => [
+              entity.id,
+              entity.actions.filter((a) => a.id === 'read').map((a) => a.id),
+            ]),
+          ),
+        });
+        setPermissions((current) => ({
+          workspaces: Object.fromEntries(
+            list.map((ws) => [ws.id, current.workspaces[ws.id] ?? defaults.workspaces[ws.id]]),
+          ),
+          account: current.account[Object.keys(defaults.account)[0] ?? ''] ? current.account : defaults.account,
         }));
       });
     },

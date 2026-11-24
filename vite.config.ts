@@ -90,7 +90,7 @@ export default defineConfig({
           // environment:'node' projects get the server posture from the
           // plugin automatically (server conditions, framework inlined).
           environment: 'node',
-          include: ['src/server/**/*.test.ts'],
+          include: ['src/server/**/*.test.ts', 'src/lib/mcp-permissions.test.ts'],
           alias: [
             // Tests run outside the turnkey server: the plugin's env module
             // is stubbed with the same contract (live process.env reads).
