@@ -1463,10 +1463,12 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   );
 }
 
-/** A card's face — title plus the meta row (priority, tags, assignees).
- *  Shared by the real card article and the drag previews, so a preview
- *  IS the card it stands for, never a generic placeholder. */
-function CardFace(props: { card: CardView; members: Member[] }) {
+/** A card's full rendered content — everything a non-hovered card shows
+ *  (title, meta row, description indicator, unseen badge). Shared by the
+ *  real card article and the drag previews, so a preview IS the card it
+ *  stands for: same content, same height, just inert — previews pass no
+ *  onOpenDetails and sit inside pointer-events-none. */
+function CardFace(props: { card: CardView; members: Member[]; onOpenDetails?: () => void }) {
   return (
     <>
       <p class="pr-5">{props.card.title}</p>
@@ -1507,6 +1509,26 @@ function CardFace(props: { card: CardView; members: Member[] }) {
           </Show>
         </span>
       </div>
+      <Show when={props.card.description}>
+        <button
+          type="button"
+          class="mt-1 text-[11px] font-medium text-neutral-400 hover:text-indigo-500 dark:hover:text-indigo-400"
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onOpenDetails?.();
+          }}
+        >
+          ☰ Details
+        </button>
+      </Show>
+      <Show when={unseenCount(props.card) > 0}>
+        <span
+          title="New comments — open the card to clear"
+          class="mt-1.5 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300"
+        >
+          💬 {unseenCount(props.card)} new
+        </span>
+      </Show>
     </>
   );
 }
@@ -1772,7 +1794,7 @@ function BoardColumn(props: {
                   {(card) => (
                     <div
                       data-drop-placeholder
-                      class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-60 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
+                      class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-70 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
                       style={{ height: `${props.dragHeight ?? 72}px` }}
                     >
                       <CardFace card={card()} members={props.members} />
@@ -1862,27 +1884,11 @@ function BoardColumn(props: {
                     {props.remoteDrag!.name} moving…
                   </span>
                 </Show>
-                <CardFace card={card} members={props.members} />
-                <Show when={card.description}>
-                  <button
-                    type="button"
-                    class="mt-1 text-[11px] font-medium text-neutral-400 hover:text-indigo-500 dark:hover:text-indigo-400"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      props.onOpenCard(card.id, card.client_op);
-                    }}
-                  >
-                    ☰ Details
-                  </button>
-                </Show>
-                <Show when={unseenCount(card) > 0}>
-                  <span
-                    title="New comments — open the card to clear"
-                    class="mt-1.5 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300"
-                  >
-                    💬 {unseenCount(card)} new
-                  </span>
-                </Show>
+                <CardFace
+                  card={card}
+                  members={props.members}
+                  onOpenDetails={() => props.onOpenCard(card.id, card.client_op)}
+                />
                 <Show when={props.canEdit}>
                   <button
                     type="button"
@@ -1914,7 +1920,7 @@ function BoardColumn(props: {
             {(card) => (
               <div
                 data-drop-placeholder
-                class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-60 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
+                class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-70 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
                 style={{ height: `${props.dragHeight ?? 72}px` }}
               >
                 <CardFace card={card()} members={props.members} />
