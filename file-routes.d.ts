@@ -78,6 +78,12 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
+      path: "/mcp/authorize";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/mcp/authorize"), Extract<"default", keyof typeof import("./src/routes/mcp/authorize")>>>;
+      $$route?: undefined;
+    },
+    {
       path: "/profile";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/profile"), Extract<"default", keyof typeof import("./src/routes/profile")>>>;
@@ -195,6 +201,14 @@ declare module "virtual:file-routes" {
       id: "/invite/:token";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/invite/[token]"), Extract<"default", keyof typeof import("./src/routes/invite/[token]")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/mcp/authorize";
+      id: "/mcp/authorize";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/mcp/authorize"), Extract<"default", keyof typeof import("./src/routes/mcp/authorize")>>>;
       $$route?: undefined;
       children?: undefined;
     },

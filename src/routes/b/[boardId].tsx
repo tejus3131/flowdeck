@@ -67,6 +67,7 @@ import {
   getCardComments,
   getCardEvents,
   type CardEventRow,
+  chatSeq,
   moveCard as moveCardServer,
   postBoardMessage,
   type BoardMessageRow,
@@ -3071,7 +3072,7 @@ function CardDrawer(props: {
   };
   const loadEarlier = async () => {
     const list = comments();
-    const oldest = list[0]?.created_at;
+    const oldest = list[0]?.seq;
     if (!oldest) {
       setNoMoreEarlier(true);
       return;
@@ -3252,7 +3253,7 @@ function CardDrawer(props: {
             return old && JSON.stringify(old) === JSON.stringify(row) ? old : { ...row };
           }),
         ...kept,
-      ].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+      ].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
       if (draft.list.length !== merged.length || draft.list.some((row, i) => row !== merged[i])) {
         draft.list = merged;
       }
@@ -3300,9 +3301,7 @@ function CardDrawer(props: {
                 created_at: payload.createdAt,
                 client_op: payload.clientOp,
               });
-              draft.list = [...draft.list].sort(
-                (a, b) => +new Date(a.created_at) - +new Date(b.created_at),
-              );
+              draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
             }
           },
           echo: (durable) => durable.list.some((row) => row.client_op === payload.clientOp),
@@ -3520,9 +3519,7 @@ function CardDrawer(props: {
           created_at: payload.createdAt,
           client_op: payload.clientOp,
         });
-        draft.list = [...draft.list].sort(
-          (a, b) => +new Date(a.created_at) - +new Date(b.created_at),
-        );
+        draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
       },
       send: () =>
         addComment(cardIdNow(), body, payload.clientOp, props.clientOp ?? null).catch((error) => {
@@ -4335,7 +4332,7 @@ function BoardChat(props: {
             return old && JSON.stringify(old) === JSON.stringify(row) ? old : { ...row };
           }),
         ...kept,
-      ].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+      ].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
       if (draft.list.length !== merged.length || draft.list.some((row, i) => row !== merged[i])) {
         draft.list = merged;
       }
@@ -4485,9 +4482,7 @@ function BoardChat(props: {
           created_at: payload.createdAt,
           client_op: payload.clientOp,
         });
-        current.list = [...current.list].sort(
-          (a, b) => +new Date(a.created_at) - +new Date(b.created_at),
-        );
+        current.list = [...current.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
       },
       send: () => postBoardMessage(props.boardId, body, clientOp),
       echo: (durable) => durable.list.some((row) => row.client_op === clientOp),

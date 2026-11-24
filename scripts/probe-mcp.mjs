@@ -69,9 +69,8 @@ console.log('new tools present:', [
 ]
   .filter((name) => names.includes(name))
   .join(', '));
-const missing = ['get_me', 'list_workspaces', 'post_board_message', 'set_status'].filter((n) => !names.includes(n));
+const missing = ['get_me', 'list_workspaces', 'post_board_message', 'set_status', 'get_board_full', 'get_cards', 'list_board_messages'].filter((n) => !names.includes(n));
 if (missing.length) console.log('MISSING:', missing.join(', '));
-
 // 4. Exercise the new ops as the probe user.
 const me = await call('tools/call', { name: 'get_me', arguments: {} });
 console.log('get_me:', me.ok ? (me.result?.content?.[0]?.text ?? '').slice(0, 80) : 'FAIL — ' + me.error);
@@ -90,6 +89,47 @@ if (wsId) {
 
   const invite = await call('tools/call', { name: 'invite_member', arguments: { workspace_id: wsId, email: 'friend@gmail.com', role: 'member' } });
   console.log('invite_member:', invite.ok ? (invite.result?.content?.[0]?.text ?? '').slice(0, 90) : 'FAIL — ' + invite.error);
+
+  // 4b. Pagination surface: board reads are now split + cursor-paged.
+  const board = await call('tools/call', { name: 'create_board', arguments: { name: 'Probe Board', workspace_id: wsId } });
+  const boardText = board.result?.content?.[0]?.text ?? '';
+  const boardId = boardText.match(/"board_id":\s*"([0-9a-f-]{36})"/)?.[1];
+  console.log('create_board:', board.ok ? 'OK' : 'FAIL — ' + board.error);
+
+  if (boardId) {
+    const got = await call('tools/call', { name: 'get_board', arguments: { board_id: boardId } });
+    const gotText = got.result?.content?.[0]?.text ?? '';
+    const splitOk = got.ok && !gotText.includes('"cards"') && !gotText.includes('"messages"') && gotText.includes('"lists"');
+    console.log('get_board (board + lists ONLY):', splitOk ? 'OK' : 'FAIL — ' + (got.ok ? gotText.slice(0, 120) : got.error));
+
+    const firstList = gotText.match(/"id":\s*"([0-9a-f-]{36})"[^}]*"board_id":\s*"([0-9a-f-]{36})"/)?.[1];
+    if (firstList) {
+      await call('tools/call', { name: 'create_card', arguments: { list_id: firstList, title: 'Probe card one' } });
+      await call('tools/call', { name: 'create_card', arguments: { list_id: firstList, title: 'Probe card two' } });
+
+      const page1 = await call('tools/call', { name: 'get_cards', arguments: { list_id: firstList, limit: 1 } });
+      const p1 = page1.result?.content?.[0]?.text ?? '';
+      const cursor1 = p1.match(/"next_cursor":\s*"([^"]+)"/)?.[1];
+      console.log('get_cards page 1 (limit 1):', page1.ok && cursor1 ? 'OK, next_cursor present' : 'FAIL — ' + (page1.ok ? p1.slice(0, 120) : page1.error));
+
+      if (cursor1) {
+        const page2 = await call('tools/call', { name: 'get_cards', arguments: { list_id: firstList, limit: 1, cursor: cursor1 } });
+        const p2 = page2.result?.content?.[0]?.text ?? '';
+        const done = page2.ok && p2.includes('Probe card two') && !p2.includes('"next_cursor"');
+        console.log('get_cards page 2 (cursor):', done ? 'OK, last page has no next_cursor' : 'FAIL — ' + (page2.ok ? p2.slice(0, 160) : page2.error));
+      }
+    }
+
+    await call('tools/call', { name: 'post_board_message', arguments: { board_id: boardId, body: 'probe page one' } });
+    await call('tools/call', { name: 'post_board_message', arguments: { board_id: boardId, body: 'probe page two' } });
+    const msgPage = await call('tools/call', { name: 'list_board_messages', arguments: { board_id: boardId, limit: 1 } });
+    const mp = msgPage.result?.content?.[0]?.text ?? '';
+    const msgOk = msgPage.ok && mp.includes('probe page one') && mp.includes('"next_cursor"') && !mp.includes('probe page two');
+    console.log('list_board_messages (limit 1):', msgOk ? 'OK' : 'FAIL — ' + (msgPage.ok ? mp.slice(0, 160) : msgPage.error));
+
+    const full = await call('tools/call', { name: 'get_board_full', arguments: { board_id: boardId } });
+    console.log('get_board_full (legacy shape):', full.ok ? 'OK' : 'FAIL — ' + full.error);
+  }
 }
 
 const status = await call('tools/call', { name: 'set_status', arguments: { emoji: '🧪', label: 'probing', dnd: true } });

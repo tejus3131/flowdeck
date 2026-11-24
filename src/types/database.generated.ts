@@ -89,6 +89,8 @@ export type Database = {
           name: string
           token_hash: string
           user_id: string
+          workspace_scope: string[] | null
+          allowed_ops: string[] | null
         }
         Insert: {
           created_at?: string
@@ -97,6 +99,8 @@ export type Database = {
           name?: string
           token_hash: string
           user_id: string
+          workspace_scope?: string[] | null
+          allowed_ops?: string[] | null
         }
         Update: {
           created_at?: string
@@ -181,7 +185,10 @@ export type Database = {
           body: string
           client_op: string | null
           created_at: string
+          deleted_at: string | null
+          edited_at: string | null
           id: string
+          seq: number
           user_id: string
         }
         Insert: {
@@ -189,7 +196,10 @@ export type Database = {
           body: string
           client_op?: string | null
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
+          seq: number
           user_id: string
         }
         Update: {
@@ -414,7 +424,10 @@ export type Database = {
           card_id: string
           client_op: string | null
           created_at: string
+          deleted_at: string | null
+          edited_at: string | null
           id: string
+          seq: number
           user_id: string
         }
         Insert: {
@@ -422,7 +435,10 @@ export type Database = {
           card_id: string
           client_op?: string | null
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
+          seq: number
           user_id: string
         }
         Update: {
@@ -668,6 +684,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      mcp_auth_codes: {
+        Row: {
+          challenge_method: string
+          client_id: string
+          code_challenge: string
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          redirect_uri: string
+          used_at: string | null
+          user_id: string
+          workspace_scope: string[] | null
+          allowed_ops: string[] | null
+        }
+        Insert: {
+          challenge_method?: string
+          client_id: string
+          code_challenge: string
+          code_hash: string
+          expires_at?: string
+          id?: string
+          redirect_uri: string
+          used_at?: string | null
+          user_id: string
+          workspace_scope?: string[] | null
+          allowed_ops?: string[] | null
+        }
+        Update: {
+          [_ in never]: never
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -1126,6 +1175,9 @@ export type Database = {
     }
     Functions: {
       accept_workspace_invite: { Args: { p_token: string }; Returns: string }
+      allocate_card_position: { Args: { p_list_id: string }; Returns: number }
+      allocate_chat_seq: { Args: { p_kind: string; p_scope: string }; Returns: number }
+      allocate_list_position: { Args: { p_board_id: string }; Returns: number }
       auth_check_email: { Args: { p_email: string }; Returns: Json }
       board_card_comment_stats: {
         Args: { p_board_id: string }
