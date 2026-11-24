@@ -144,6 +144,17 @@ export default function McpDocsPage() {
         </table>
       </div>
 
+      <h2 class="mt-8 text-lg font-semibold tracking-tight">Mentions</h2>
+      <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+        Chat surfaces and card descriptions mention people, teams, and cards with link syntax:{' '}
+        <code>[Name](user:UUID)</code>, <code>[Team](team:UUID)</code>, and{' '}
+        <code>[Card title](card:UUID)</code> (cross-board cards render as “Board › Card”). Find user
+        ids with <code>list_workspace_members</code> / <code>get_user</code> and team ids with{' '}
+        <code>list_teams</code>. A mention the target cannot see (no board access) is not delivered —
+        the agent should call <code>check_mention_access</code> first, then grant or request access
+        based on <code>can_grant</code> / <code>can_request</code>.
+      </p>
+
       <h2 class="mt-8 text-lg font-semibold tracking-tight">Permissions, exactly</h2>
       <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-neutral-600 dark:text-neutral-300">
         <li>Every tool call runs <em>as you</em>, under the app's row-level security — an agent sees and touches only what you could.</li>

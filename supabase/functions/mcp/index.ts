@@ -46,6 +46,11 @@ const PAGE_PARAMS = {
   },
 };
 
+// Mention syntax, shared by every chat-surface description — the ONE
+// context an agent is guaranteed to see (skills must be installed
+// explicitly, tool descriptions ride along for free).
+const MENTION_SYNTAX = `Mentions: [Name](user:<uuid>) for people, [Team](team:<uuid>) for teams, [Card title](card:<uuid>) for cards (works in board chat, card comments, and card descriptions). Find user ids via list_workspace_members/get_user and team ids via list_teams. A mention the target cannot see (no board access) is silently not delivered — call check_mention_access first and grant or request access as its can_grant/can_request direct.`;
+
 const TOOLS: ToolDef[] = [
   {
     name: 'list_boards',
@@ -85,7 +90,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'get_cards',
     description:
-      'Cards in one list, in board order. Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
+      'Cards in one list, in board order, each with its tags (id + name). Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
     inputSchema: {
       type: 'object',
       properties: { list_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
@@ -340,7 +345,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'add_comment',
-    description: 'Comment on a card.',
+    description: `Comment on a card (max 2000 chars). ${MENTION_SYNTAX}`,
     inputSchema: {
       type: 'object',
       properties: { card_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 2000 } },
@@ -634,7 +639,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'post_board_message',
-    description: 'Post a message to a board chat.',
+    description: `Post a message to a board chat (max 4000 chars). ${MENTION_SYNTAX}`,
     inputSchema: {
       type: 'object',
       properties: { board_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 4000 } },
