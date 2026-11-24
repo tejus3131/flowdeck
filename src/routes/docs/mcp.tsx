@@ -36,6 +36,7 @@ const TOOLS: { name: string; args: string; returns: string; note?: string }[] = 
   { name: 'delete_comment', args: 'comment_id', returns: '—', note: 'soft delete; own or (workspace owners/admins) any' },
   { name: 'list_comments', args: 'card_id, cursor?, limit?', returns: '{ items, next_cursor } — the card\'s comments, oldest first' },
   { name: 'get_card_events', args: 'card_id, cursor?, limit?', returns: '{ items, next_cursor } — the card\'s timeline (created, renamed, priority, description, moved, assignees) with actor display names' },
+  { name: 'search', args: 'query?/type?/author_id?/team_id?/board_id?/tag_id?/priority?/from?/to?, cursor?, limit?', returns: '{ items, next_cursor } — boards, cards, comments, board messages (type-discriminated, with board name + card number/title)', note: "e.g. type=comment + team_id + from/to → \"all comments by Team 2 last week mentioning deploy\"" },
   { name: 'post_board_message', args: 'board_id, body', returns: 'message_id', note: 'posts to the board chat' },
   { name: 'edit_board_message', args: 'message_id, body', returns: '—', note: 'own messages; workspace owners/admins can edit any' },
   { name: 'delete_board_message', args: 'message_id', returns: '—', note: 'soft delete; own or (workspace owners/admins) any' },

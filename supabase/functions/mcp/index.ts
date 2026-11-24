@@ -398,6 +398,28 @@ const TOOLS: ToolDef[] = [
     op: 'get_card_events',
   },
   {
+    name: 'search',
+    description:
+      "Search across boards, cards, card comments, and board messages. Filters: query (case-insensitive substring), type ('card' | 'comment' | 'message' | 'board' | 'all'), author_id, team_id (author's team), board_id, tag_id (cards), priority (cards), from/to (ISO 8601, bounds created_at). Results carry a type discriminator plus board name and card number/title for context. Returns { items, next_cursor } — pass next_cursor as cursor to page through.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Case-insensitive substring match.' },
+        type: { type: 'string', enum: ['card', 'comment', 'message', 'board', 'all'] },
+        author_id: { type: 'string', format: 'uuid' },
+        team_id: { type: 'string', format: 'uuid', description: "Only results whose author is on this team." },
+        board_id: { type: 'string', format: 'uuid' },
+        tag_id: { type: 'string', format: 'uuid', description: 'Cards carrying this tag.' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
+        from: { type: 'string', description: 'ISO 8601; bounds created_at below.' },
+        to: { type: 'string', description: 'ISO 8601; bounds created_at above.' },
+        ...PAGE_PARAMS,
+      },
+      additionalProperties: false,
+    },
+    op: 'search',
+  },
+  {
     name: 'get_me',
     description: 'Your own profile (display name, email, avatar) and current status.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
