@@ -62,10 +62,12 @@ export function PermissionPicker(props: {
   workspaces: WsChoice[];
   onChange: (next: PermissionSelection) => void;
 }) {
-  const [openOrgs, setOpenOrgs] = createSignal<Set<string>>(new Set());
+  // The first org starts expanded — via the signal's lazy initializer,
+  // never a write during render.
+  const [openOrgs, setOpenOrgs] = createSignal<Set<string>>(
+    () => new Set(props.workspaces.slice(0, 1).map((ws) => ws.id)),
+  );
   const [openEntities, setOpenEntities] = createSignal<Set<string>>(new Set());
-  // Expand the first org by default; everything else starts collapsed.
-  let seeded = false;
 
   const capOf = (ws: WsChoice) => ({
     role: ws.role,
@@ -120,10 +122,6 @@ export function PermissionPicker(props: {
   const orgRow = (ws: WsChoice) => {
     const cap = capOf(ws);
     const key = ws.id;
-    if (!seeded) {
-      seeded = true;
-      setOpenOrgs(new Set([key]));
-    }
     const expanded = () => openOrgs().has(key);
     return (
       <div class="rounded-xl border border-neutral-200 dark:border-neutral-800">

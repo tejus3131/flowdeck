@@ -132,7 +132,7 @@ export default function McpAuthorizePage() {
           workspaces: Object.fromEntries(
             list.map((ws) => [ws.id, current.workspaces[ws.id] ?? defaults.workspaces[ws.id]]),
           ),
-          account: current.account[Object.keys(defaults.account)[0] ?? ''] ? current.account : defaults.account,
+          account: Object.keys(current.account).length > 0 ? current.account : defaults.account,
         }));
       });
     },

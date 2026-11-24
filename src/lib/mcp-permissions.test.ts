@@ -100,6 +100,31 @@ describe('tri-state entity toggle', () => {
   });
 });
 
+describe('entity off cascades dependents (review fix 1)', () => {
+  it('cycling the Boards entity to off empties fully-granted Cards', () => {
+    let s = sel({ [WS]: {} });
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'cards', memberCap); // reads
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'cards', memberCap); // everything
+    expect(s.workspaces[WS].cards).toContain('update');
+    // Boards cycle: [read] → everything → off.
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', memberCap);
+    expect(s.workspaces[WS].boards).toContain('edit'); // everything
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', memberCap); // off
+    expect(s.workspaces[WS].boards).toBeUndefined();
+    expect(s.workspaces[WS].cards).toBeUndefined(); // cascaded, not re-added
+  });
+
+  it('Boards off then reads leaves Cards empty (no silent re-grant)', () => {
+    let s = sel({ [WS]: {} });
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'cards', memberCap);
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'cards', memberCap);
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', memberCap); // everything
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', memberCap); // off
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', memberCap); // reads
+    expect(s.workspaces[WS].cards).toBeUndefined();
+  });
+});
+
 describe('tri-state workspace toggle', () => {
   it('off → every entity\u2019s reads, then everything, then off', () => {
     let s = emptySelection();

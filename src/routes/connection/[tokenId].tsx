@@ -3,7 +3,7 @@
 // revoke — with a warning that revoking means reconnecting the client.
 import { Title } from '@solidjs/meta';
 import { RouteProps, useNavigate } from '@solidjs/router';
-import { Show, createEffect, createSignal } from 'solid-js';
+import { Show, createEffect, createSignal, onCleanup } from 'solid-js';
 
 import { PermissionPicker } from '../../components/PermissionPicker';
 import { listMyWorkspaceChoices } from '../../lib/mcp-auth';
@@ -70,6 +70,13 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
   let permsTimer: ReturnType<typeof setTimeout> | undefined;
   let nameInFlight = false;
   let permsInFlight = false;
+  /** Which field the last failure came from — Retry re-saves THAT one. */
+  let lastFailed: 'name' | 'perms' | null = null;
+  // A debounced save must never fire after the page is gone.
+  onCleanup(() => {
+    clearTimeout(nameTimer);
+    clearTimeout(permsTimer);
+  });
 
   const doSaveName = async () => {
     if (nameInFlight) {
@@ -82,7 +89,9 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
     try {
       await renameConnection(props.params.tokenId, name());
       setStatus('Saved');
+      if (lastFailed === 'name') lastFailed = null;
     } catch (err) {
+      lastFailed = 'name';
       setError(err instanceof Error ? err.message : 'Could not save the name');
     } finally {
       nameInFlight = false;
@@ -100,7 +109,9 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
     try {
       await updateConnectionPermissions(props.params.tokenId, selection());
       setStatus('Saved — new calls pick it up immediately');
+      if (lastFailed === 'perms') lastFailed = null;
     } catch (err) {
+      lastFailed = 'perms';
       setError(err instanceof Error ? err.message : 'Could not save the permissions');
     } finally {
       permsInFlight = false;
@@ -123,7 +134,8 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
 
   const retrySave = () => {
     setError(null);
-    void doSavePermissions();
+    if (lastFailed === 'name') void doSaveName();
+    else void doSavePermissions();
   };
 
   const revoke = async () => {

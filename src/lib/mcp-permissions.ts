@@ -435,14 +435,30 @@ export function toggleEntityInSelection(
         ? []
         : offered;
   // Set the target directly — a remove-then-add rebuild would fire
-  // cascades that wipe OTHER entities' selections mid-flight. The
-  // bucket-level requirement pass below pulls dependencies in.
+  // cascades that wipe OTHER entities' selections mid-flight.
   const sel: WorkspaceSelection =
     bucket === 'workspaces'
       ? { ...selection.workspaces[bucketId ?? ''] }
       : { ...selection.account };
   if (target.length === 0) delete sel[entityId];
   else sel[entityId] = target;
+  // Actions this toggle REMOVED cascade their dependents off — the same
+  // rule the action-level toggle applies. Turning the Boards entity off
+  // with Cards fully granted empties Cards too (their reads require
+  // boards.read), instead of silently re-adding boards.read.
+  const removed = current.filter((id) => !target.includes(id));
+  for (const id of removed) {
+    for (const dep of dependentsOf(`${entityId}.${id}`)) {
+      const [depEntity, depAction] = dep.split('.');
+      if (!entities.some((e) => e.id === depEntity)) continue;
+      const ids = sel[depEntity];
+      if (!ids) continue;
+      const nextIds = ids.filter((x) => x !== depAction);
+      if (nextIds.length === 0) delete sel[depEntity];
+      else sel[depEntity] = nextIds;
+    }
+  }
+  // Everything still selected gets its requirements pulled in.
   enforceRequirements(sel, entities);
   if (bucket === 'workspaces') {
     return {

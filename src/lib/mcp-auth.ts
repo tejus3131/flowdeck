@@ -152,12 +152,7 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
           .select('teams(workspace_id)')
           .eq('user_id', me.id)
           .eq('role', 'admin')
-          .in(
-            'teams.workspace_id',
-            wantedWorkspaceIds.length > 0
-              ? wantedWorkspaceIds
-              : ['00000000-0000-0000-0000-000000000000'],
-          )
+          .in('teams.workspace_id', wantedWorkspaceIds)
       : { data: null };
     const teamAdminOf = new Set(
       ((adminSeats ?? []) as { teams: { workspace_id: string | null } | null }[])
