@@ -1419,8 +1419,10 @@ function BoardColumn(props: {
       );
       if (!container) return;
       const els = container.querySelectorAll<HTMLElement>('[data-card-id]');
+      const seen = new Set<string>();
       for (const el of els) {
         const id = el.dataset.cardId!;
+        seen.add(id);
         const top = el.getBoundingClientRect().top + container.scrollTop;
         const prev = lastTops.get(id);
         lastTops.set(id, top);
@@ -1430,7 +1432,20 @@ function BoardColumn(props: {
         void el.offsetHeight; // reflow — the inverted position commits
         el.style.transition = 'transform 160ms ease-out';
         el.style.transform = '';
+        // Clear the inline transition once the glide lands: an inline
+        // style beats the Tailwind transition class, and a lingering one
+        // makes this card's hover border/shadow animate instantly.
+        el.addEventListener(
+          'transitionend',
+          () => {
+            el.style.transition = '';
+          },
+          { once: true },
+        );
       }
+      // Prune cards gone from the column (deleted, moved away) — the map
+      // stays column-sized over a long session.
+      for (const id of lastTops.keys()) if (!seen.has(id)) lastTops.delete(id);
     },
   );
 
