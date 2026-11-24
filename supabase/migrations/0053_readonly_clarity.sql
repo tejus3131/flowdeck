@@ -19,6 +19,12 @@
 --    before the first failed write.
 -- 3. RLS remains the enforcement layer — these are messages, not gates.
 --    Nothing here relaxes a policy.
+-- 4. Also fixed here (found in review, reproduced on a scratch DB):
+--    resolve_access_request's 'askers_notified' used `??` — the
+--    PL/pgSQL escape for the jsonb ? operator — so `integer ??
+--    integer` had no operator and EVERY call of that op failed at
+--    runtime (0051 shipped this; CREATE FUNCTION only syntax-
+--    checks the body, so migrations applied clean). Coalesce now.
 
 -- The access-aware write error. SECURITY: takes the caller's
 -- user_board_access() (security definer, auth.uid-based) — never trusts
@@ -922,7 +928,12 @@ begin
            or not public.mcp_op_ok(p_ws_ops, p_op, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
         raise exception 'this connection does not have that permission in this workspace';
       end if;
-      -- View-only members get a precise error instead of an RLS crash.
+      -- A board the caller cannot see used to die with an opaque RLS
+      -- crash at the insert; view-only members got the same. Both get a
+      -- precise error before the insert now.
+      if public.user_board_access(v_board_id) is null then
+        raise exception 'board not found or no access';
+      end if;
       if public.user_board_access(v_board_id) = 'view' then
         raise exception '%', public.mcp_write_error(v_board_id, 'List');
       end if;
@@ -1238,6 +1249,9 @@ begin
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.boards b where b.id = v_board_id))
            or not public.mcp_op_ok(p_ws_ops, p_op, (select b.workspace_id from public.boards b where b.id = v_board_id)) then
         raise exception 'this connection does not have that permission in this workspace';
+      end if;
+      if public.user_board_access(v_board_id) is null then
+        raise exception 'board not found or no access';
       end if;
       -- Board chat needs edit access (card comments are open to viewers).
       if public.user_board_access(v_board_id) = 'view' then
@@ -1784,7 +1798,7 @@ begin
              case when p_arg ? 'user_id' then (p_arg->>'user_id')::uuid else null end,
              case when p_arg ? 'team_id' then (p_arg->>'team_id')::uuid else null end
       from unnest(v_askers) as a;
-      return jsonb_build_object('ok', true, 'data', jsonb_build_object('board_id', v_board_id, 'granted', (p_arg->>'grant')::boolean, 'user_id', nullif(p_arg->>'user_id','')::uuid, 'team_id', nullif(p_arg->>'team_id','')::uuid, 'askers_notified', array_length(v_askers, 1) ?? 0));
+      return jsonb_build_object('ok', true, 'data', jsonb_build_object('board_id', v_board_id, 'granted', (p_arg->>'grant')::boolean, 'user_id', nullif(p_arg->>'user_id','')::uuid, 'team_id', nullif(p_arg->>'team_id','')::uuid, 'askers_notified', coalesce(array_length(v_askers, 1), 0)));
 
     -- ── status ───────────────────────────────────────────────────────────
     when 'set_status' then

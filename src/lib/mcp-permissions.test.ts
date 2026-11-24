@@ -243,3 +243,34 @@ describe('access entity: grant vs request', () => {
       .toContain('grant_board_access');
   });
 });
+
+// ── null stored ops (review round 2) ───────────────────────────────────────
+// updateConnectionPermissions returns null when a cap strips EVERYTHING;
+// workspaceOpsToSelection must tolerate it — the empty selection, never a
+// crash (same path legacy tokens with null workspace_ops take).
+
+describe('workspaceOpsToSelection null tolerance', () => {
+  it('returns the empty selection for null stored ops', () => {
+    expect(workspaceOpsToSelection(null)).toEqual({ workspaces: {}, account: {} });
+    expect(workspaceOpsToSelection(undefined)).toEqual({ workspaces: {}, account: {} });
+  });
+
+  it('a cap that strips a workspace grant round-trips to no workspace access', () => {
+    // A demoted member's leftover admin grant, capped away server-side:
+    // the workspace key disappears; only the account baseline (the
+    // identity pair every connection carries) remains.
+    const stored = selectionToWorkspaceOps(capSelection(
+      sel({ [WS]: { boards: ['delete'] } }),
+      { [WS]: memberCap },
+    ));
+    expect(stored).not.toBeNull();
+    // Only the baseline identity pair remains (it rides along per bucket
+    // by design); every workspace grant is gone.
+    expect(stored![WS]).toEqual(['get_me', 'list_workspaces']);
+    const round = workspaceOpsToSelection(stored);
+    // No workspace entity actions survive the strip; the account bucket
+    // is exactly the baseline reads (profile + workspace list).
+    expect(Object.values(round.workspaces).every((entities) => Object.keys(entities).length === 0)).toBe(true);
+    expect(round.account).toEqual({ profile: ['read'], workspaces: ['read'] });
+  });
+});
