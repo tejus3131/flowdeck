@@ -166,6 +166,16 @@ export default function McpAuthorizePage() {
     // request. (OAuth spec allows error=access_denied on the callback,
     // but only when we can trust the redirect target — an explicit code
     // mint is safer than honoring arbitrary redirect_uri's with errors.)
+    // The tab then goes back to the app — to the page the user came from
+    // when this tab has app history (VS Code opens a fresh one, so
+    // usually the dashboard).
+    setTimeout(() => {
+      if (window.history.length > 1 && document.referrer.startsWith(window.location.origin)) {
+        window.history.back();
+      } else {
+        window.location.href = '/';
+      }
+    }, 1200);
   };
 
   return (
@@ -266,7 +276,7 @@ export default function McpAuthorizePage() {
 
         <Show when={denied()}>
           <p class="mt-4 rounded-xl bg-neutral-100 p-4 text-sm text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-            Request denied. You can close this tab — the client will time out on its own.
+            Request denied — nothing was shared. Taking you back to Flowdeck…
           </p>
         </Show>
 
