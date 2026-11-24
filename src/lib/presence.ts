@@ -18,6 +18,11 @@ export interface PresenceUser {
 export interface RemoteDrag {
   cardId: string;
   name: string;
+  /** The dragged card's height — peers' ghosts open exactly that much space. */
+  height?: number | null;
+  /** The hover slot the mover currently points at (the peer ghost). */
+  listId?: string | null;
+  index?: number | null;
 }
 
 export function createBoardPresence(
@@ -30,6 +35,8 @@ export function createBoardPresence(
 
   let channel: RealtimeChannel | null = null;
   let client: ReturnType<typeof browserClient> = null;
+  /** The renewable drag-ghost expiry — re-armed by every drag broadcast. */
+  let dragExpiry: ReturnType<typeof setTimeout> | null = null;
   // Subscribe once the signed-in profile resolves (the async model holds
   // the effect until then; signed-out boards never subscribe).
   createEffect(
@@ -58,14 +65,19 @@ export function createBoardPresence(
         })
         .on('broadcast', { event: 'drag' }, ({ payload }) => {
           const data = payload as RemoteDrag | null;
+          // One RENEWABLE timer per drag, not one per broadcast: every
+          // message (hover, heartbeat) re-arms the same window, so a live
+          // drag never expires mid-flight — the ghost dies only when the
+          // drag goes silent (lost dragend, closed tab).
+          if (dragExpiry) {
+            clearTimeout(dragExpiry);
+            dragExpiry = null;
+          }
           if (!data || data.cardId === '') {
             setRemoteDrag(null);
           } else if (data.cardId) {
             setRemoteDrag(data);
-            setTimeout(() => {
-              // Ghosts expire if the drag-end is lost.
-              if (remoteDrag()?.cardId === data.cardId) setRemoteDrag(null);
-            }, 4000);
+            dragExpiry = setTimeout(() => setRemoteDrag(null), 4000);
           }
         })
         // Provisional ops: another viewer changed something — apply it as a
@@ -91,11 +103,33 @@ export function createBoardPresence(
   );
 
   /** Broadcast a drag-in-progress ghost (null cardId ends it). */
-  const broadcastDrag = (cardId: string | null, name: string) => {
+  const broadcastDrag = (cardId: string | null, name: string, height?: number | null) => {
     void channel?.send({
       type: 'broadcast',
       event: 'drag',
-      payload: { cardId: cardId ?? '', name },
+      payload: { cardId: cardId ?? '', name, height: height ?? null },
+    });
+  };
+
+  /** Broadcast the mover's hover slot — peers see the ghost move live. */
+  const broadcastDragHover = (
+    cardId: string | null,
+    name: string,
+    height: number | null,
+    listId: string | null,
+    index: number | null,
+  ) => {
+    if (!cardId) return;
+    void channel?.send({
+      type: 'broadcast',
+      event: 'drag',
+      payload: {
+        cardId,
+        name,
+        height: height ?? null,
+        listId: listId ?? '',
+        index: index ?? -1,
+      },
     });
   };
 
@@ -111,10 +145,11 @@ export function createBoardPresence(
   };
 
   onCleanup(() => {
+    if (dragExpiry) clearTimeout(dragExpiry);
     if (client && channel) void client.removeChannel(channel);
   });
 
-  return { others, remoteDrag, broadcastDrag, broadcastOp, broadcastOpFail };
+  return { others, remoteDrag, broadcastDrag, broadcastDragHover, broadcastOp, broadcastOpFail };
 }
 
 /** An avatar: the image when present, otherwise initials on a color. */
