@@ -5,16 +5,17 @@
 // before Allow hands back a single-use authorization code.
 import { Title } from '@solidjs/meta';
 import { useSearchParams } from '@solidjs/router';
-import { For, Show, createEffect, createSignal } from 'solid-js';
+import { Show, createEffect, createSignal } from 'solid-js';
 
 import { MembershipWatch } from '../../components/MembershipWatch';
+import { PermissionPicker } from '../../components/PermissionPicker';
+import { approveMcpClient, listMyWorkspaceChoices, mcpAuthSignedIn } from '../../lib/mcp-auth';
 import {
-  DEFAULT_TOOL_OPS,
-  TOOL_CATEGORIES,
-  approveMcpClient,
-  listMyWorkspaceChoices,
-  mcpAuthSignedIn,
-} from '../../lib/mcp-auth';
+  ACCOUNT_ENTITIES,
+  WORKSPACE_ENTITIES,
+  defaultWorkspaceSelection,
+  type PermissionSelection,
+} from '../../lib/mcp-permissions';
 
 export default function McpAuthorizePage() {
   const [params] = useSearchParams();
@@ -22,7 +23,6 @@ export default function McpAuthorizePage() {
   const [error, setError] = createSignal<string | null>(null);
   const [denied, setDenied] = createSignal(false);
   const [workspaces, setWorkspaces] = createSignal<{ id: string; name: string; role: string }[]>([]);
-  const [selected, setSelected] = createSignal<string[]>([]);
   const [loaded, setLoaded] = createSignal(false);
   const [signedIn, setSignedIn] = createSignal<boolean | null>(null);
   const [hostConfirm, setHostConfirm] = createSignal('');
@@ -52,6 +52,18 @@ export default function McpAuthorizePage() {
     }
   };
 
+  // The connection's name: pre-filled with a guess from the callback host
+  // (VS Code redirects via vscode.dev), editable before Allow.
+  const suggestName = () => {
+    const host = redirectHost().toLowerCase();
+    if (host.includes('vscode.dev')) return 'VS Code';
+    if (host.includes('cursor')) return 'Cursor';
+    if (host.includes('claude')) return 'Claude';
+    if (loopback()) return 'MCP client';
+    return host || 'MCP connection';
+  };
+  const [name, setName] = createSignal('');
+
   const valid = () =>
     clientId().length > 0 &&
     redirectUri().length > 0 &&
@@ -70,9 +82,12 @@ export default function McpAuthorizePage() {
   // Tool permissions: the SAFE default (read + profile + inbox) is the
   // starting state; writing/administering categories are opt-in, and
   // "everything" is an explicit full-power grant.
-  const [grantedCategories, setGrantedCategories] = createSignal<string[]>(
-    TOOL_CATEGORIES.filter((category) => category.defaultOn).map((category) => category.id),
-  );
+  // The org → entity → action selection. Each workspace starts with the
+  // read-only default set; the account bucket mirrors it.
+  const [permissions, setPermissions] = createSignal<PermissionSelection>({
+    workspaces: {},
+    account: {},
+  });
   const [grantAll, setGrantAll] = createSignal(false);
 
   // Signed-out gate: render the sign-in panel instead of a consent UI
@@ -94,12 +109,33 @@ export default function McpAuthorizePage() {
       setLoaded(true);
       void listMyWorkspaceChoices().then((list) => {
         setWorkspaces(list);
-        // One workspace = preselect it. More = start with none (the user
-        // picks, or explicitly grants the whole account).
-        if (list.length === 1) setSelected([list[0]!.id]);
+        // Every workspace starts ON with the read-only default; the user
+        // narrows orgs and opts writes in per entity.
+        setPermissions((current) => ({
+          ...current,
+          workspaces: Object.fromEntries(
+            list.map((ws) => [ws.id, current.workspaces[ws.id] ?? defaultWorkspaceSelection()]),
+          ),
+        }));
       });
     },
   );
+
+  /** 'Everything': every action of every entity in every workspace + the
+   *  account bucket (the explicit full-power shortcut). */
+  const allEverything = (wsIds: string[]): PermissionSelection => ({
+    workspaces: Object.fromEntries(
+      wsIds.map((id) => [
+        id,
+        Object.fromEntries(
+          WORKSPACE_ENTITIES.map((entity) => [entity.id, entity.actions.map((a) => a.id)]),
+        ),
+      ]),
+    ),
+    account: Object.fromEntries(
+      ACCOUNT_ENTITIES.map((entity) => [entity.id, entity.actions.map((a) => a.id)]),
+    ),
+  });
 
   const allow = async () => {
     if (busy() || !valid() || !hostConfirmed()) return;
@@ -107,13 +143,15 @@ export default function McpAuthorizePage() {
     setError(null);
     try {
       const { redirectTo } = await approveMcpClient({
+        connectionName: name().trim() || suggestName(),
         clientId: clientId(),
         redirectUri: redirectUri(),
         codeChallenge: codeChallenge(),
         challengeMethod: challengeMethod(),
         state: state(),
-        workspaceIds: selected(),
-        toolCategories: grantAll() ? ['*'] : grantedCategories(),
+        permissions: grantAll()
+          ? allEverything(Object.keys(permissions().workspaces))
+          : permissions(),
       });
       window.location.href = redirectTo;
     } catch (err) {
@@ -128,6 +166,16 @@ export default function McpAuthorizePage() {
     // request. (OAuth spec allows error=access_denied on the callback,
     // but only when we can trust the redirect target — an explicit code
     // mint is safer than honoring arbitrary redirect_uri's with errors.)
+    // The tab then goes back to the app — to the page the user came from
+    // when this tab has app history (VS Code opens a fresh one, so
+    // usually the dashboard).
+    setTimeout(() => {
+      if (window.history.length > 1 && document.referrer.startsWith(window.location.origin)) {
+        window.history.back();
+      } else {
+        window.location.href = '/';
+      }
+    }, 1200);
   };
 
   return (
@@ -174,16 +222,30 @@ export default function McpAuthorizePage() {
             boards, cards, comments and chats, manage your teams and notifications — everything you
             can do, under the same permissions. You can revoke it any time on your{' '}
             <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-              Profile → API tokens
+              Profile → MCP connections
             </a>{' '}
             page.
           </p>
           <p class="text-neutral-500 dark:text-neutral-400">
             Callback host: <span class="font-mono">{redirectHost()}</span>
           </p>
+          <label class="block">
+            <span class="mb-1 block font-medium">Name this connection</span>
+            <input
+              type="text"
+              value={name() || suggestName()}
+              maxlength="80"
+              onInput={(event) => setName(event.currentTarget.value)}
+              placeholder="e.g. VS Code"
+              class="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            />
+            <span class="mt-1 block text-xs text-neutral-400">
+              Shows on your Profile page — you'll revoke and manage it by this name.
+            </span>
+          </label>
           <div class="border-t border-neutral-200 pt-3 dark:border-neutral-800">
             <p class="mb-2 font-medium">What the agent can do</p>
-            <label class="mb-2 flex items-center gap-2 text-sm font-medium">
+            <label class="mb-3 flex items-center gap-2 text-sm font-medium">
               <input
                 type="checkbox"
                 checked={grantAll()}
@@ -192,64 +254,13 @@ export default function McpAuthorizePage() {
               Everything (full power — not recommended)
             </label>
             <Show when={!grantAll()}>
-              <div class="flex flex-col gap-1.5">
-                <For each={TOOL_CATEGORIES}>
-                  {(category) => (
-                    <label class="flex items-start gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        class="mt-1"
-                        checked={grantedCategories().includes(category.id)}
-                        onChange={(event) =>
-                          setGrantedCategories((current) =>
-                            event.currentTarget.checked
-                              ? [...current, category.id]
-                              : current.filter((id) => id !== category.id),
-                          )
-                        }
-                      />
-                      <span>
-                        {category.label}{' '}
-                        <span class="block text-xs text-neutral-400">{category.description}</span>
-                      </span>
-                    </label>
-                  )}
-                </For>
-              </div>
+              <PermissionPicker
+                selection={permissions()}
+                workspaces={workspaces()}
+                onChange={setPermissions}
+              />
             </Show>
-            <p class="mt-2 text-xs text-neutral-400">
-              {grantAll() ? 'The agent gets every tool.' : `${DEFAULT_TOOL_OPS.length > 0 ? 'Granted: ' : ''}${grantedCategories().join(', ')}`}
-            </p>
           </div>
-          <Show when={workspaces().length > 0}>
-            <div class="border-t border-neutral-200 pt-3 dark:border-neutral-800">
-              <p class="mb-2 font-medium">Workspace access</p>
-              <p class="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
-                Limit this connection to specific workspaces — recommended when the agent serves
-                one project. Nothing selected means your whole account.
-              </p>
-              <div class="flex flex-col gap-1.5">
-                <For each={workspaces()}>
-                  {(ws) => (
-                    <label class="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={selected().includes(ws.id)}
-                        onChange={(event) =>
-                          setSelected((current) =>
-                            event.currentTarget.checked
-                              ? [...current, ws.id]
-                              : current.filter((id) => id !== ws.id),
-                          )
-                        }
-                      />
-                      {ws.name} <span class="text-xs text-neutral-400">({ws.role})</span>
-                    </label>
-                  )}
-                </For>
-              </div>
-            </div>
-          </Show>
         </div>
 
         <Show when={error()}>
@@ -265,7 +276,7 @@ export default function McpAuthorizePage() {
 
         <Show when={denied()}>
           <p class="mt-4 rounded-xl bg-neutral-100 p-4 text-sm text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-            Request denied. You can close this tab — the client will time out on its own.
+            Request denied — nothing was shared. Taking you back to Flowdeck…
           </p>
         </Show>
 

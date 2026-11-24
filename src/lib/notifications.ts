@@ -34,6 +34,8 @@ export type NotificationRow = {
   created_at: string;
   seen_at: string | null;
   actor_name: string | null;
+  /** True when the notification came from an MCP connection (an agent). */
+  agent?: boolean;
   /** The subject's CURRENT display name (access request rows). */
   subject_name: string | null;
   /** The TEAM a row is about, when it's a team request. */
@@ -55,7 +57,7 @@ export async function getMyInbox(): Promise<NotificationRow[]> {
   const { data, error } = await supabase
     .from('notifications')
     .select(
-      'id, kind, card_id, board_id, actor_id, subject_id, subject_team_id, body, created_at, seen_at, href, actor_profile:profiles!notifications_actor_id_fkey(display_name), subject_profile:profiles!notifications_subject_id_fkey(display_name), subject_team:teams!notifications_subject_team_id_fkey(name), cards!card_id(number, title), boards!board_id(name)',
+      'id, kind, card_id, board_id, actor_id, subject_id, subject_team_id, body, created_at, seen_at, agent, href, actor_profile:profiles!notifications_actor_id_fkey(display_name), subject_profile:profiles!notifications_subject_id_fkey(display_name), subject_team:teams!notifications_subject_team_id_fkey(name), cards!card_id(number, title), boards!board_id(name)',
     )
     .eq('user_id', auth.user.id)
     .order('created_at', { ascending: false })
@@ -75,6 +77,7 @@ export async function getMyInbox(): Promise<NotificationRow[]> {
     body: row.body,
     created_at: row.created_at,
     seen_at: row.seen_at,
+    agent: row.agent ?? false,
     actor_name:
       (row.actor_profile as unknown as { display_name: string | null } | null)?.display_name ?? null,
     subject_name:
@@ -130,7 +133,7 @@ export const notificationsStream = live(async function* (): AsyncGenerator<Notif
     const { data, error } = await supabase
       .from('notifications')
       .select(
-        'id, kind, card_id, board_id, actor_id, subject_id, subject_team_id, body, created_at, seen_at, href, actor_profile:profiles!notifications_actor_id_fkey(display_name), subject_profile:profiles!notifications_subject_id_fkey(display_name), subject_team:teams!notifications_subject_team_id_fkey(name), cards!card_id(number, title), boards!board_id(name)',
+        'id, kind, card_id, board_id, actor_id, subject_id, subject_team_id, body, created_at, seen_at, agent, href, actor_profile:profiles!notifications_actor_id_fkey(display_name), subject_profile:profiles!notifications_subject_id_fkey(display_name), subject_team:teams!notifications_subject_team_id_fkey(name), cards!card_id(number, title), boards!board_id(name)',
       )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })

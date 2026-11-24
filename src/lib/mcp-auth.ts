@@ -11,108 +11,23 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { createSupabaseRequestClient } from '../server/supabase';
 
+import {
+  normalizeSelection,
+  selectionToWorkspaceOps,
+  type PermissionSelection,
+} from './mcp-permissions';
+
 export type McpAuthorizeInput = {
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
   challengeMethod: string;
   state?: string | null;
-  /** Workspaces to scope the connection to. Empty = the whole account. */
-  workspaceIds?: string[];
-  /** Tool category ids to grant. `['*']` = every tool (explicit full grant). */
-  toolCategories?: string[];
+  /** The org → entity → action permission selection. */
+  permissions?: PermissionSelection;
+  /** What the user named this connection — lands on the token. */
+  connectionName?: string;
 };
-
-/** Tool categories the consent page offers. The SAFE default is the
- * read-only surface (plus the agent's own profile/status/inbox);
- * everything that writes or administers is opt-in. The map lives here —
- * the token stores the flat op list, the edge function only ever sees
- * that flat list. */
-export const TOOL_CATEGORIES: { id: string; label: string; description: string; ops: string[]; defaultOn: boolean }[] = [
-  {
-    id: 'read',
-    label: 'Read',
-    description: 'Boards, cards, chats, comments, tags, teams, members, notifications, search — read-only.',
-    ops: ['list_boards', 'get_board', 'get_board_full', 'get_cards', 'list_board_messages', 'list_comments', 'get_card_events', 'get_me', 'list_workspaces', 'list_teams', 'list_tags', 'list_notifications', 'search', 'check_mention_access'],
-    defaultOn: true,
-  },
-  {
-    id: 'directory',
-    label: 'Directory',
-    description: 'Workspace member and invitee details — including their email addresses. Separate from Read so it can be withheld on its own.',
-    ops: ['list_workspace_members', 'get_user', 'list_pending_invites'],
-    defaultOn: true,
-  },
-  {
-    id: 'profile',
-    label: 'Profile & status',
-    description: 'Set your display name and status.',
-    ops: ['update_me', 'set_status'],
-    defaultOn: true,
-  },
-  {
-    id: 'notifications',
-    label: 'Notification inbox',
-    description: 'Mark your notifications read/unread.',
-    ops: ['mark_notification_read', 'mark_notification_unread', 'mark_all_notifications_read'],
-    defaultOn: true,
-  },
-  {
-    id: 'cards',
-    label: 'Cards',
-    description: 'Create, update, move, delete cards and assign people.',
-    ops: ['create_card', 'update_card', 'move_card', 'delete_card'],
-    defaultOn: false,
-  },
-  {
-    id: 'chat',
-    label: 'Chat',
-    description: 'Post, edit and delete board messages and card comments.',
-    ops: ['post_board_message', 'edit_board_message', 'delete_board_message', 'add_comment', 'edit_comment', 'delete_comment'],
-    defaultOn: false,
-  },
-  {
-    id: 'tags',
-    label: 'Tags',
-    description: 'Create, rename, delete and merge the workspace tags.',
-    ops: ['create_tag', 'rename_tag', 'delete_tag', 'merge_tags'],
-    defaultOn: false,
-  },
-  {
-    id: 'boards',
-    label: 'Boards & lists',
-    description: 'Create, update and delete boards and lists (destructive).',
-    ops: ['create_board', 'rename_board', 'update_board', 'delete_board', 'create_list', 'rename_list', 'update_list', 'delete_list'],
-    defaultOn: false,
-  },
-  {
-    id: 'teams',
-    label: 'Teams',
-    description: 'Create and edit teams and their members.',
-    ops: ['create_team', 'update_team', 'add_team_member', 'remove_team_member'],
-    defaultOn: false,
-  },
-  {
-    id: 'workspace',
-    label: 'Workspace',
-    description: 'Create workspaces and invite members. Sensitive.',
-    ops: ['create_workspace', 'invite_member', 'list_pending_invites'],
-    defaultOn: false,
-  },
-  {
-    id: 'access',
-    label: 'Board access requests',
-    description: 'Grant, request and resolve board access for mentions.',
-    ops: ['grant_board_access', 'request_board_access', 'resolve_access_request'],
-    defaultOn: false,
-  },
-];
-
-/** The default (safe) op set: every category marked defaultOn. */
-export const DEFAULT_TOOL_OPS: string[] = TOOL_CATEGORIES
-  .filter((category) => category.defaultOn)
-  .flatMap((category) => category.ops);
-
 /** Signed-in check for the consent page's gate (round-3: the page used
  * to render fully signed-out and only fail on Allow). */
 export async function mcpAuthSignedIn(): Promise<boolean> {
@@ -172,43 +87,22 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
   const state = input.state ? String(input.state).slice(0, 2000) : null;
   // The compartmentalization: only workspaces the user actually belongs
   // to can be granted, and an empty selection means account-wide.
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const wanted = [...new Set((input.workspaceIds ?? []).map((id) => String(id)))].filter((id) =>
-    UUID_RE.test(id),
-  );
-  let workspaceScope: string[] | null = null;
-  // Tool permissions: categories -> flat op list. The default is the safe
-  // read-only surface; ['*'] is an explicit full-power grant.
-  const wantedCategories = [...new Set((input.toolCategories ?? []).map((id) => String(id)))];
-  const allOps = TOOL_CATEGORIES.flatMap((category) => category.ops);
-  // NEVER null from the consent flow: null is the legacy account-wide
-  // marker. An empty selection means the user granted NOTHING (round-3
-  // inversion fix); undefined falls back to the safe default set.
-  let allowedOps: string[];
-  if (wantedCategories.includes('*')) {
-    allowedOps = allOps;
-  } else if (wantedCategories.length > 0) {
-    allowedOps = [
-      ...new Set(
-        TOOL_CATEGORIES
-          .filter((category) => wantedCategories.includes(category.id))
-          .flatMap((category) => category.ops),
-      ),
-    ];
-  } else {
-    allowedOps = DEFAULT_TOOL_OPS;
-  }
-  if (wanted.length > 0) {
+  // The permission selection: org → entity → action, normalized (writes
+  // imply reads) and validated against real memberships before storing.
+  const normalized = normalizeSelection(input.permissions ?? { workspaces: {}, account: {} });
+  const grantedWorkspaceIds = Object.keys(normalized.workspaces);
+  if (grantedWorkspaceIds.length > 0) {
     const { data: mine } = await supabase
       .from('workspace_members')
       .select('workspace_id')
-      .in('workspace_id', wanted);
+      .in('workspace_id', grantedWorkspaceIds);
     const granted = new Set((mine ?? []).map((row) => row.workspace_id as string));
-    workspaceScope = wanted.filter((id) => granted.has(id));
-    if (workspaceScope.length === 0) {
+    const unknown = grantedWorkspaceIds.filter((id) => !granted.has(id));
+    if (unknown.length > 0) {
       throw new Error('You are not a member of the selected workspace(s).');
     }
   }
+  const workspaceOps = selectionToWorkspaceOps(normalized);
 
   if (!clientId || !redirectUri || !codeChallenge) {
     throw new Error('This authorization request is incomplete — ask the client to retry.');
@@ -220,8 +114,11 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     throw new Error('This authorization request must use PKCE (S256) — ask the client to retry.');
   }
 
-  const code = `mcp_${randomBytes(24).toString('hex')}`;
-  const codeHash = createHash('sha256').update(code).digest('hex');
+  // The connection's name: user-chosen on the consent page, bounded and
+  // trimmed; the edge mints it onto the token (falling back to a default).
+  const connectionName = String(input.connectionName ?? '').trim().slice(0, 80) || null;
+
+  const code = `mcp_${randomBytes(24).toString('hex')}`;  const codeHash = createHash('sha256').update(code).digest('hex');
   const { error } = await supabase.from('mcp_auth_codes').insert({
     code_hash: codeHash,
     user_id: user.id,
@@ -229,8 +126,8 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     redirect_uri: redirectUri,
     code_challenge: codeChallenge,
     challenge_method: 'S256',
-    workspace_scope: workspaceScope,
-    allowed_ops: allowedOps,
+    connection_name: connectionName,
+    workspace_ops: workspaceOps,
   });
   if (error) throw new Error(error.message);
 

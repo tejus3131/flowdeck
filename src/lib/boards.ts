@@ -1185,6 +1185,8 @@ export type CardEventRow = {
   detail: Record<string, unknown>;
   actor_id: string | null;
   created_at: string;
+  /** True when the change was made through an MCP connection (an agent). */
+  agent?: boolean;
 };
 
 /** The card's timeline — newest last (a trail reads chronologically). */
@@ -1201,7 +1203,7 @@ async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
   const supabase = createSupabaseRequestClient();
   const { data, error } = await supabase
     .from('card_events')
-    .select('id, kind, detail, actor_id, created_at')
+    .select('id, kind, detail, actor_id, created_at, agent')
     .eq('card_id', assertId(cardId, 'card id'))
     .order('created_at', { ascending: true })
     .limit(100);
@@ -1213,6 +1215,7 @@ async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
     detail: (row.detail ?? {}) as Record<string, unknown>,
     actor_id: row.actor_id,
     created_at: row.created_at,
+    agent: row.agent ?? false,
   }));
 }
 
@@ -1329,6 +1332,8 @@ export type CommentRow = {
   body: string;
   author: string;
   created_at: string;
+  /** True when posted through an MCP connection (an agent). */
+  agent?: boolean;
   /** Server-assigned send order (chat_seq). Absent while a provisional
    * row has not been echoed by the database yet. */
   seq?: number | null;
@@ -1354,7 +1359,7 @@ export async function getCardComments(
   const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
   let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('card_id', resolved)
     .is('deleted_at', null)
     .order('seq', { ascending: false })
@@ -1371,6 +1376,7 @@ export async function getCardComments(
       body: row.body,
       created_at: row.created_at,
       seq: row.seq,
+      agent: row.agent ?? false,
       client_op: row.client_op,
       author_id: row.user_id ?? null,
       avatar_url:
@@ -1424,7 +1430,7 @@ export const cardCommentsStream = live(async function* (
     const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
-      .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
+      .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
       .eq('card_id', id)
       .is('deleted_at', null)
       .order('seq', { ascending: false })
@@ -1440,6 +1446,7 @@ export const cardCommentsStream = live(async function* (
         created_at: row.created_at,
         seq: row.seq,
         client_op: row.client_op,
+        agent: row.agent ?? false,
         author_id: row.user_id ?? null,
         avatar_url:
           (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
@@ -1586,6 +1593,8 @@ export type BoardMessageRow = {
   /** Server-assigned send order (chat_seq); absent while provisional. */
   seq?: number | null;
   client_op: string | null;
+  /** True when posted through an MCP connection (an agent). */
+  agent?: boolean;
 };
 
 /**
@@ -1604,7 +1613,7 @@ async function boardChatSnapshot(
   const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
-    .select('id, body, created_at, seq, client_op, user_id, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('board_id', boardId)
     .is('deleted_at', null)
     .order('seq', { ascending: false })
@@ -1619,6 +1628,7 @@ async function boardChatSnapshot(
       body: row.body,
       created_at: row.created_at,
       seq: row.seq,
+      agent: row.agent ?? false,
       client_op: row.client_op,
       author_id: row.user_id ?? null,
       avatar_url:

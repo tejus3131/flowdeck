@@ -91,8 +91,10 @@ export type Database = {
           user_id: string
           workspace_scope: string[] | null
           allowed_ops: string[] | null
+          workspace_ops: Record<string, string[]> | null
         }
         Insert: {
+          workspace_ops?: Record<string, string[]> | null
           created_at?: string
           id?: string
           last_used_at?: string | null
@@ -103,6 +105,9 @@ export type Database = {
           allowed_ops?: string[] | null
         }
         Update: {
+          workspace_ops?: Record<string, string[]> | null
+          workspace_scope?: string[] | null
+          allowed_ops?: string[] | null
           created_at?: string
           id?: string
           last_used_at?: string | null
@@ -181,6 +186,7 @@ export type Database = {
       }
       board_messages: {
         Row: {
+          agent: boolean
           board_id: string
           body: string
           client_op: string | null
@@ -192,6 +198,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agent?: boolean
           board_id: string
           body: string
           client_op?: string | null
@@ -420,6 +427,7 @@ export type Database = {
       }
       card_comments: {
         Row: {
+          agent: boolean
           body: string
           card_id: string
           client_op: string | null
@@ -431,6 +439,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agent?: boolean
           body: string
           card_id: string
           client_op?: string | null
@@ -468,6 +477,7 @@ export type Database = {
       }
       card_events: {
         Row: {
+          agent: boolean
           actor_id: string | null
           board_id: string
           card_id: string
@@ -477,6 +487,7 @@ export type Database = {
           kind: string
         }
         Insert: {
+          agent?: boolean
           actor_id?: string | null
           board_id: string
           card_id: string
@@ -697,10 +708,14 @@ export type Database = {
           redirect_uri: string
           used_at: string | null
           user_id: string
+          connection_name: string | null
           workspace_scope: string[] | null
           allowed_ops: string[] | null
+          workspace_ops: Record<string, string[]> | null
         }
         Insert: {
+          connection_name?: string | null
+          workspace_ops?: Record<string, string[]> | null
           challenge_method?: string
           client_id: string
           code_challenge: string
@@ -720,6 +735,7 @@ export type Database = {
       }
       notifications: {
         Row: {
+          agent: boolean
           actor_id: string | null
           board_id: string | null
           body: string | null
@@ -734,6 +750,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agent?: boolean
           actor_id?: string | null
           board_id?: string | null
           body?: string | null

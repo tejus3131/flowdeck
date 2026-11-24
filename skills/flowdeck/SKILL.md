@@ -14,9 +14,10 @@ timelines and notifications like it does for a human.
 ## First steps on a new connection
 
 1. `get_me` — who you are (and whose permissions you carry).
-2. `list_workspaces` — the connection may be **workspace-scoped**: you will
-   only ever see what was granted. If you can't find something, ask your
-   human whether this connection is scoped to the right workspace.
+2. `list_workspaces` — the connection is **permission-scoped**: your human
+   picked which workspaces and, per entity, which actions (read, create,
+   update, delete). If you can't find something or a write is denied, ask
+   your human to widen the connection's access on the connections page.
 3. `list_boards` → `get_board` (board + its lists) → `get_cards(list_id)`.
 
 ## Pagination — read this once
@@ -54,6 +55,13 @@ They work in board chat, card comments, and card descriptions.
   `delete_board_message` rather than posting corrections.
 - An author edits their own rows; workspace owners/admins can edit or delete
   anyone's.
+
+## Mutation responses
+
+Every mutating tool returns the result of the change — the entity after the
+edit (ids, positions, names), counts (`cards_moved`, `askers_notified`), or
+flags (`edited`, `deleted`, `seen`). Trust the returned position: a `move_card`
+with no position appends atomically, and the response carries where it landed.
 
 ## Cards, lists, positions
 
@@ -94,11 +102,14 @@ messages with filters: `type`, `author_id`, `team_id` (the author's team),
 
 ## Errors and etiquette
 
-- `this connection is not scoped to that workspace` — the credential's
-  boundary, not your human's permissions. Tell them; don't retry elsewhere.
-- `this connection is not permitted to run <tool>` — the owner granted only
-  some tool categories. Say what's missing; **never try to widen your own
-  permissions** — there is no tool that can, by design.
+- `this connection does not have that permission in this workspace` — the
+  credential's per-workspace grant boundary, not your human's permissions.
+  Tell them; don't retry elsewhere.
+- `this connection does not have that permission` — an account-level action
+  (profile, notifications, workspace creation) the connection wasn't granted.
+- `not permitted to run <tool>` / permission errors — say what's missing;
+  **never try to widen your own permissions** — there is no tool that can,
+  by design. The human edits the grant on the connections page.
 - `workspace owners/admins only` — role-gated action; surface it to your
   human instead of retrying.
 - Destructive tools (`delete_board`, `delete_list`, `delete_card`) remove

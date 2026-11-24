@@ -85,21 +85,22 @@ export default function McpDocsPage() {
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
         OAuth-supporting clients (Claude Desktop, Cursor, …) connect with no
         setup: they open Flowdeck's consent page in your browser, you pick the
-        workspaces and tool categories to grant, and the client receives its
+        which workspaces it may act in and, per entity, exactly which actions (read, create, update, delete) it may take, and the client receives its
         token. If your client wants a manual token instead, mint one on your{' '}
         <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-          Profile → API tokens
+          Profile → MCP connections
         </a>{' '}
         page. Either way, revocation lives on that same profile page.
       </p>
-      <h3 class="mt-6 text-sm font-semibold">Manual token</h3>
-      <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
-        On your{' '}
+      <p class="mt-3 text-sm text-neutral-600 dark:text-neutral-300">
+        Every connection is named, and you choose exactly what it may do per workspace —
+        entities (boards, cards, chat, tags…) and actions within them. Manage, re-permission,
+        or revoke a connection any time on{' '}
         <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-          Profile → API tokens
-        </a>{' '}
-        page, create a personal access token. It starts with <code>fd_…</code> and is shown once — copy it
-        immediately. Revoke it any time; a revoked token stops working instantly.
+          Profile → MCP connections
+        </a>
+        . Revoking signs the agent out immediately; reconnecting means running the sign-in flow
+        again.
       </p>
 
       <h2 class="mt-8 text-lg font-semibold tracking-tight">2. Point your client at Flowdeck</h2>
@@ -115,13 +116,6 @@ export default function McpDocsPage() {
     }
   }
 }`}</code></pre>
-      <p class="mt-3 text-xs font-medium text-neutral-400">
-        Prefer the CLI (stdio)? See the{' '}
-        <a href="/docs/cli" class="text-indigo-600 hover:underline dark:text-indigo-400">
-          CLI setup docs
-        </a>
-        .
-      </p>
 
       <h2 class="mt-8 text-lg font-semibold tracking-tight">3. What your agent can do</h2>
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
@@ -181,9 +175,6 @@ export default function McpDocsPage() {
         <li>Team ops follow the team-admin model; the invite allowlist applies to <code>invite_member</code>.</li>
         <li>Destructive tools (<code>delete_board</code>, <code>delete_list</code>, <code>delete_card</code>) match the web app's own permission checks.</li>
       </ul>
-      <p class="mt-8 text-xs text-neutral-400">
-        Using the stdio CLI instead? <a href="/docs/cli" class="text-indigo-600 hover:underline dark:text-indigo-400">CLI setup docs</a>
-      </p>
     </main>
   );
 }

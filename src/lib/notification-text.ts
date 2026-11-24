@@ -23,6 +23,18 @@ export function notificationLine(
   row: NotificationRow,
   meId: string | null,
 ): { text: string; detail: string } {
+  const line = humanLine(row, meId);
+  // Agent provenance in the bell/toasts: "Tejus assigned you to #42 using Agent".
+  if (row.agent && !line.text.endsWith('using Agent')) {
+    return { ...line, text: `${line.text} using Agent` };
+  }
+  return line;
+}
+
+function humanLine(
+  row: NotificationRow,
+  meId: string | null,
+): { text: string; detail: string } {
   const actor = row.actor_name ?? 'Someone';
   const subject = row.subject_name ?? 'someone';
   const team = row.subject_team_name ?? row.subject_team_id ?? 'a team';
