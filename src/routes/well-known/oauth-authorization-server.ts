@@ -31,13 +31,15 @@ export const GET: APIHandler = async (event: APIEvent) => {
     issuer: origin,
     authorization_endpoint: `${origin}/mcp/authorize`,
     token_endpoint: `${origin}/api/mcp/token`,
+    // RFC 7591 dynamic client registration (stateless — PKCE is the
+    // client's authentication); the endpoint is proxied at /api/mcp/register.
+    registration_endpoint: `${origin}/api/mcp/register`,
     response_types: ['code'],
     grant_types: ['authorization_code'],
     code_challenge_methods: ['S256'],
-    // No registration_endpoint: dynamic client registration isn't
-    // offered — local clients register themselves by redirecting to
-    // loopback — and RFC 8414 URL fields must be strings when present,
-    // so the key is omitted rather than nulled.
+    // No other directory information: local clients register themselves
+    // by redirecting to loopback — RFC 8414 URL fields must be strings
+    // when present, so nothing is nulled.
   };
   return new Response(JSON.stringify(body), {
     headers: {

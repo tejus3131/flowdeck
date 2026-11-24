@@ -808,6 +808,73 @@ async function pkceChallenge(verifier: string): Promise<string> {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+/** https, or http only on a loopback host — the redirect-URI rule the
+ * consent flow enforces (mcp-auth.ts), mirrored here so registration
+ * and authorization agree on what a safe redirect is. */
+function safeRedirectUri(uri: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (u.protocol === 'https:') return true;
+  if (u.protocol === 'http:') {
+    return u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '[::1]';
+  }
+  return false;
+}
+
+/** POST /register — RFC 7591 dynamic client registration, stateless.
+ *
+ * VS Code (and other MCP harnesses) auto-register before the browser
+ * flow: they POST their redirect URIs and expect a client_id back.
+ * Flowdeck treats the client_id as a presentation-consistency label,
+ * not a credential — the authorize and /token steps only require that
+ * the SAME client_id and redirect_uri come back, and PKCE (S256) is
+ * the real client authentication. So there is nothing to persist: the
+ * endpoint validates the redirect URIs against the same rule the
+ * consent page enforces and mints an opaque id. Per-client records
+ * (display names, revocation) can move here later without changing
+ * the protocol shape. */
+async function oauthRegister(request: Request): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return oauthError(400, 'invalid_client_metadata', 'Body must be a JSON object.');
+  }
+  const uris = body['redirect_uris'];
+  if (!Array.isArray(uris) || uris.length === 0 || uris.length > 10) {
+    return oauthError(400, 'invalid_redirect_uri', 'redirect_uris must list 1-10 URIs.');
+  }
+  for (const uri of uris) {
+    if (typeof uri !== 'string' || uri.length > 512 || !safeRedirectUri(uri)) {
+      return oauthError(
+        400,
+        'invalid_redirect_uri',
+        'Unsupported redirect URI — https required (http only for loopback).',
+      );
+    }
+  }
+  const clientId = `fdmcp_${crypto.randomUUID().replace(/-/g, '')}`;
+  const name = typeof body['client_name'] === 'string' ? body['client_name'].slice(0, 100) : undefined;
+  return json(
+    {
+      client_id: clientId,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      ...(name !== undefined ? { client_name: name } : {}),
+      redirect_uris: uris,
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+      // No client secret: public clients authenticate with PKCE.
+      token_endpoint_auth_method: 'none',
+    },
+    201,
+    { 'Cache-Control': 'no-store' },
+  );
+}
+
 // Best-effort rate limiting: Supabase Edge Functions may run several
 // isolates, so a per-isolate bucket throttles rather than hard-caps —
 // still enough to make hammering the unauthenticated endpoints costly.
@@ -863,6 +930,9 @@ function oauthDiscovery(pathname: string): Response | null {
         issuer: APP_ORIGIN,
         authorization_endpoint: `${APP_ORIGIN}/mcp/authorize`,
         token_endpoint: `${MCP_PUBLIC_URL}/token`,
+        // RFC 7591: harnesses (VS Code) auto-register before the browser
+        // flow; the endpoint is stateless (PKCE is the authentication).
+        registration_endpoint: `${MCP_PUBLIC_URL}/register`,
         response_types: ['code'],
         grant_types: ['authorization_code'],
         code_challenge_methods: ['S256'],
@@ -966,6 +1036,14 @@ Deno.serve(async (request) => {
         405,
       )
     );
+  }
+  // RFC 7591 dynamic client registration (POST /register) — unauthenticated
+  // by design: it MINTS the client_id; PKCE is the client's authentication.
+  if (request.method === 'POST' && requestUrl.pathname.endsWith('/register')) {
+    if (!rateAllow(`register:${clientIp(request)}`, 10, 0.5)) {
+      return oauthError(429, 'slow_down', 'too many registration requests; retry shortly');
+    }
+    return oauthRegister(request);
   }
   // The OAuth token exchange (POST /token) — before PAT auth: this is
   // how PATs are minted, there is no token to present yet.
