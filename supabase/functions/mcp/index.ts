@@ -218,7 +218,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'update_card',
     description:
-      'Update a card: title, description, priority, and/or assignees. Assignees is the FULL replacement set of user ids (like the web app).',
+      'Update a card: title, description, priority, assignees, and/or tag_ids. Assignees and tag_ids are FULL replacement sets (like the web app). Newly assigned users get an assignment notification.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -235,11 +235,81 @@ const TOOLS: ToolDef[] = [
           items: { type: 'string', format: 'uuid' },
           description: 'Full replacement set of assignee user ids; newly added users get an assignment notification.',
         },
+        tag_ids: {
+          type: 'array',
+          items: { type: 'string', format: 'uuid' },
+          description: 'Full replacement set of tag ids (see list_tags); like the web app.',
+        },
       },
       required: ['card_id'],
       additionalProperties: false,
     },
     op: 'update_card',
+  },
+  {
+    name: 'list_tags',
+    description:
+      'The workspace\'s shared tags (id, name, description). Returns { items, next_cursor } — pass next_cursor as cursor to page through.',
+    inputSchema: {
+      type: 'object',
+      properties: { workspace_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
+      required: ['workspace_id'],
+      additionalProperties: false,
+    },
+    op: 'list_tags',
+  },
+  {
+    name: 'create_tag',
+    description:
+      'Create a tag in a workspace, or return the existing one with the same name (find-or-create). Names are lowercased, max 24 chars.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_id: { type: 'string', format: 'uuid' },
+        name: { type: 'string', maxLength: 24 },
+        description: { type: 'string', maxLength: 500 },
+      },
+      required: ['workspace_id', 'name'],
+      additionalProperties: false,
+    },
+    op: 'create_tag',
+  },
+  {
+    name: 'rename_tag',
+    description: 'Rename a tag. Workspace owners/admins only.',
+    inputSchema: {
+      type: 'object',
+      properties: { tag_id: { type: 'string', format: 'uuid' }, name: { type: 'string', maxLength: 24 } },
+      required: ['tag_id', 'name'],
+      additionalProperties: false,
+    },
+    op: 'rename_tag',
+  },
+  {
+    name: 'delete_tag',
+    description: 'Delete a tag; cards linked to it simply lose it. Workspace owners/admins only.',
+    inputSchema: {
+      type: 'object',
+      properties: { tag_id: { type: 'string', format: 'uuid' } },
+      required: ['tag_id'],
+      additionalProperties: false,
+    },
+    op: 'delete_tag',
+  },
+  {
+    name: 'merge_tags',
+    description:
+      'Merge one tag into another: every card linked to source_tag_id becomes linked to target_tag_id instead, then the source tag is deleted. Workspace owners/admins only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source_tag_id: { type: 'string', format: 'uuid' },
+        target_tag_id: { type: 'string', format: 'uuid' },
+      },
+      required: ['source_tag_id', 'target_tag_id'],
+      additionalProperties: false,
+    },
+    op: 'merge_tags',
   },
   {
     name: 'move_card',
