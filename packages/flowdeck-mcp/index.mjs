@@ -13,7 +13,7 @@
 //       "command": "npx",
 //       "args": ["flowdeck-mcp"],
 //       "env": {
-//         "FLOWDECK_URL": "https://<project>.supabase.co/functions/v1/mcp",
+//         "FLOWDECK_URL": "https://flowdeck.tejusgupta.dev/api/mcp",
 //         "FLOWDECK_TOKEN": "fd_…your token from the Flowdeck profile page…"
 //       } } } }
 //
@@ -23,7 +23,7 @@
 
 import { createInterface } from 'node:readline';
 
-const URL_DEFAULT = 'https://ylarhvcbpppujpjnpxkq.supabase.co/functions/v1/mcp';
+const URL_DEFAULT = 'https://flowdeck.tejusgupta.dev/api/mcp';
 const endpoint = process.env.FLOWDECK_URL || URL_DEFAULT;
 const token = process.env.FLOWDECK_TOKEN || '';
 

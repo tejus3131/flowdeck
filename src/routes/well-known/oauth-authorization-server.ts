@@ -20,16 +20,16 @@
 // database for mcp_auth_codes and api_tokens either way).
 import type { APIHandler, APIEvent } from 'filesystem-routing/api';
 
-// The MCP resource + token endpoint, shared with the edge function's
-// own discovery documents.
-const SUPABASE_MCP = 'https://ylarhvcbpppujpjnpxkq.supabase.co/functions/v1/mcp';
-
+// The token exchange is proxied through the app too (`/api/mcp/token`
+// forwards to the edge function), so no Supabase URL ever appears in
+// the flow — users discover, authorize and exchange against this
+// origin alone.
 export const GET: APIHandler = async (event: APIEvent) => {
   const origin = new URL(event.request.url).origin;
   const body = {
     issuer: origin,
     authorization_endpoint: `${origin}/mcp/authorize`,
-    token_endpoint: `${SUPABASE_MCP}/token`,
+    token_endpoint: `${origin}/api/mcp/token`,
     response_types: ['code'],
     grant_types: ['authorization_code'],
     code_challenge_methods: ['S256'],
