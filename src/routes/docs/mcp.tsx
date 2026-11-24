@@ -81,7 +81,18 @@ export default function McpDocsPage() {
         every operation runs as you, under the same row-level security the app uses.
       </p>
 
-      <h2 class="mt-8 text-lg font-semibold tracking-tight">1. Create a token</h2>
+      <h2 class="mt-8 text-lg font-semibold tracking-tight">1. Connect</h2>
+      <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+        OAuth-supporting clients (Claude Desktop, Cursor, …) connect with no
+        setup: they open Flowdeck's consent page in your browser, you pick the
+        workspaces and tool categories to grant, and the client receives its
+        token. If your client wants a manual token instead, mint one on your{' '}
+        <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+          Profile → API tokens
+        </a>{' '}
+        page. Either way, revocation lives on that same profile page.
+      </p>
+      <h3 class="mt-6 text-sm font-semibold">Manual token</h3>
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
         On your{' '}
         <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
@@ -153,6 +164,14 @@ export default function McpDocsPage() {
         <code>list_teams</code>. A mention the target cannot see (no board access) is not delivered —
         the agent should call <code>check_mention_access</code> first, then grant or request access
         based on <code>can_grant</code> / <code>can_request</code>.
+      </p>
+
+      <h2 class="mt-8 text-lg font-semibold tracking-tight">A skill for deep context</h2>
+      <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+        Tool descriptions carry the essentials, but the{' '}
+        <code>skills/flowdeck/SKILL.md</code> file in the repository is the full
+        operating manual for agents — workflows, mention etiquette, pagination,
+        error meanings, and limits. Install it alongside the connection.
       </p>
 
       <h2 class="mt-8 text-lg font-semibold tracking-tight">Permissions, exactly</h2>
