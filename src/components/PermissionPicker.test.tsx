@@ -138,7 +138,7 @@ describe('PermissionPicker org rows', () => {
 // ── the member/admin split (role-gated actions never read as member-level) ──
 
 describe('PermissionPicker role-tier separation', () => {
-  const memberWs = { ...ws, id: 'wsm', name: 'MemberOrg', role: 'member' as const };
+  const memberWs = { ...ws, id: 'wsm', name: 'Second Org', role: 'member' as const };
 
   /** Render with a full read-only selection so the org expands. */
   const tierHarness = (role: 'member' | 'admin') => {
@@ -176,15 +176,15 @@ describe('PermissionPicker role-tier separation', () => {
     expect(text).toContain('Check mention reach');
   });
 
-  it('groups admin-tier actions under their own heading for admins', () => {
+  it('an admin sees admin-tier actions plainly — no tier labels anywhere', () => {
     const utils = tierHarness('admin');
     openEntity(utils, 'Board access & mentions');
     const text = utils.container.textContent ?? '';
+    // Gated by what the user can grant, labeled by nothing: no
+    // tier section headings, no 'you are <role>' labels. (Action
+    // labels may legitimately mention admins, e.g. 'Ask admins'.)
     expect(text).toContain('Grant board access');
-    expect(text).toContain('Admin / owner actions');
-    // The heading comes after the member-tier actions, never mixed in.
-    expect(text.indexOf('Ask admins for access')).toBeLessThan(
-      text.indexOf('Admin / owner actions'),
-    );
+    expect(text).not.toContain('Admin / owner actions');
+    expect(text).not.toMatch(/you are (an? )?(owner|admin|member)/i);
   });
 });

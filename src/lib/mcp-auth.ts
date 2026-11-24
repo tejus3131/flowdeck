@@ -60,9 +60,18 @@ export const listMyWorkspaceChoices = query(async (): Promise<
 > => {
   'use server';
   const supabase = createSupabaseRequestClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  // ONLY MY OWN membership rows. RLS deliberately exposes every peer's
+  // membership row (the roster needs it) — without this filter the
+  // picker rendered one dropdown per MEMBER (a 3-member workspace showed
+  // 3 dropdowns), and the cap could take another member's role.
   const { data } = await supabase
     .from('workspace_members')
     .select('workspace_id, role, workspaces(name, board_creation)')
+    .eq('user_id', user.id)
     .order('created_at');
   const rows = (data ?? []) as {
     workspace_id: string;
@@ -71,9 +80,6 @@ export const listMyWorkspaceChoices = query(async (): Promise<
   }[];
   // Team-admin per workspace: my admin seats on teams of those workspaces
   // (workspace_members has no relation to team_members — a second query).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
   const { data: adminSeats } = user
     ? await supabase
         .from('team_members')
@@ -138,6 +144,7 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     const { data: mine } = await supabase
       .from('workspace_members')
       .select('workspace_id, role, workspaces(board_creation)')
+      .eq('user_id', user.id)
       .in('workspace_id', wantedWorkspaceIds);
     const memberRows = (mine ?? []) as {
       workspace_id: string;

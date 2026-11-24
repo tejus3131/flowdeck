@@ -98,18 +98,20 @@ export async function updateConnectionPermissions(
   const wsIds = Object.keys(normalized.workspaces);
   const caps: Record<string, WorkspaceCap> = {};
   if (wsIds.length > 0) {
+    const {
+      data: { user: me },
+    } = await supabase.auth.getUser();
+    if (!me) throw new Error('You need to sign in first');
     const { data: mine } = await supabase
       .from('workspace_members')
       .select('workspace_id, role, workspaces(board_creation)')
+      .eq('user_id', me.id)
       .in('workspace_id', wsIds);
     const memberRows = (mine ?? []) as {
       workspace_id: string;
       role: string;
       workspaces: { board_creation: string | null } | null;
     }[];
-    const {
-      data: { user: me },
-    } = await supabase.auth.getUser();
     const { data: adminSeats } = me
       ? await supabase
           .from('team_members')
