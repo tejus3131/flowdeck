@@ -11,16 +11,20 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { createSupabaseRequestClient } from '../server/supabase';
 
+import {
+  normalizeSelection,
+  selectionToWorkspaceOps,
+  type PermissionSelection,
+} from './mcp-permissions';
+
 export type McpAuthorizeInput = {
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
   challengeMethod: string;
   state?: string | null;
-  /** Workspaces to scope the connection to. Empty = the whole account. */
-  workspaceIds?: string[];
-  /** Tool category ids to grant. `['*']` = every tool (explicit full grant). */
-  toolCategories?: string[];
+  /** The org → entity → action permission selection. */
+  permissions?: PermissionSelection;
   /** What the user named this connection — lands on the token. */
   connectionName?: string;
 };
@@ -173,43 +177,22 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
   const state = input.state ? String(input.state).slice(0, 2000) : null;
   // The compartmentalization: only workspaces the user actually belongs
   // to can be granted, and an empty selection means account-wide.
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const wanted = [...new Set((input.workspaceIds ?? []).map((id) => String(id)))].filter((id) =>
-    UUID_RE.test(id),
-  );
-  let workspaceScope: string[] | null = null;
-  // Tool permissions: categories -> flat op list. The default is the safe
-  // read-only surface; ['*'] is an explicit full-power grant.
-  const wantedCategories = [...new Set((input.toolCategories ?? []).map((id) => String(id)))];
-  const allOps = TOOL_CATEGORIES.flatMap((category) => category.ops);
-  // NEVER null from the consent flow: null is the legacy account-wide
-  // marker. An empty selection means the user granted NOTHING (round-3
-  // inversion fix); undefined falls back to the safe default set.
-  let allowedOps: string[];
-  if (wantedCategories.includes('*')) {
-    allowedOps = allOps;
-  } else if (wantedCategories.length > 0) {
-    allowedOps = [
-      ...new Set(
-        TOOL_CATEGORIES
-          .filter((category) => wantedCategories.includes(category.id))
-          .flatMap((category) => category.ops),
-      ),
-    ];
-  } else {
-    allowedOps = DEFAULT_TOOL_OPS;
-  }
-  if (wanted.length > 0) {
+  // The permission selection: org → entity → action, normalized (writes
+  // imply reads) and validated against real memberships before storing.
+  const normalized = normalizeSelection(input.permissions ?? { workspaces: {}, account: {} });
+  const grantedWorkspaceIds = Object.keys(normalized.workspaces);
+  if (grantedWorkspaceIds.length > 0) {
     const { data: mine } = await supabase
       .from('workspace_members')
       .select('workspace_id')
-      .in('workspace_id', wanted);
+      .in('workspace_id', grantedWorkspaceIds);
     const granted = new Set((mine ?? []).map((row) => row.workspace_id as string));
-    workspaceScope = wanted.filter((id) => granted.has(id));
-    if (workspaceScope.length === 0) {
+    const unknown = grantedWorkspaceIds.filter((id) => !granted.has(id));
+    if (unknown.length > 0) {
       throw new Error('You are not a member of the selected workspace(s).');
     }
   }
+  const workspaceOps = selectionToWorkspaceOps(normalized);
 
   if (!clientId || !redirectUri || !codeChallenge) {
     throw new Error('This authorization request is incomplete — ask the client to retry.');
@@ -234,8 +217,7 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     code_challenge: codeChallenge,
     challenge_method: 'S256',
     connection_name: connectionName,
-    workspace_scope: workspaceScope,
-    allowed_ops: allowedOps,
+    workspace_ops: workspaceOps,
   });
   if (error) throw new Error(error.message);
 

@@ -46,12 +46,30 @@ const PAGE_PARAMS = {
   },
 };
 
-/** Per-connection tool permissions: allowed_ops is a flat list of op
- * names; NULL/empty keeps the account-wide behavior (every tool). */
-function opAllowed(allowedOps: string[] | null | undefined, op: string): boolean {
-  // null/undefined = a legacy account-wide token; [] = nothing granted.
+/** Per-connection tool permissions. Two token shapes:
+ * - workspace_ops jsonb (new consent flow): { "<ws>": [ops], "*": [ops] };
+ *   a tool is visible when ANY bucket grants its op.
+ * - allowed_ops flat list (legacy): null/undefined keeps the account-wide
+ *   behavior (every tool); [] grants nothing. */
+function opAllowed(
+  workspaceOps: Record<string, string[]> | null | undefined,
+  allowedOps: string[] | null | undefined,
+  op: string,
+): boolean {
+  if (workspaceOps !== null && workspaceOps !== undefined) {
+    return Object.values(workspaceOps).some((ops) => ops.includes(op));
+  }
   if (allowedOps === null || allowedOps === undefined) return true;
   return allowedOps.includes(op);
+}
+
+/** The workspace ids a per-workspace token may act in (the jsonb keys,
+ * excluding the account bucket). Legacy scope flows through unchanged. */
+function scopeOf(workspaceOps: Record<string, string[]> | null | undefined, workspaceScope: string[] | null): string[] {
+  if (workspaceOps !== null && workspaceOps !== undefined) {
+    return Object.keys(workspaceOps).filter((key) => key !== '*');
+  }
+  return workspaceScope ?? [];
 }
 
 // Mention syntax, shared by every chat-surface description — the ONE
@@ -976,7 +994,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
 
   const { data: stored } = await service
     .from('mcp_auth_codes')
-    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops, connection_name')
+    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops, workspace_ops, connection_name')
     .eq('code_hash', await sha256Hex(code))
     .maybeSingle();
   if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
@@ -1012,6 +1030,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     token_hash: await sha256Hex(token),
     workspace_scope: stored.workspace_scope ?? null,
     allowed_ops: stored.allowed_ops ?? null,
+    workspace_ops: stored.workspace_ops ?? null,
   });
   if (insertError) {
     return oauthError(500, 'server_error', 'could not mint the token');
@@ -1096,7 +1115,7 @@ Deno.serve(async (request) => {
   );
   const { data: tokenRow, error: tokenError } = await service
     .from('api_tokens')
-    .select('id, user_id, workspace_scope, allowed_ops')
+    .select('id, user_id, workspace_scope, allowed_ops, workspace_ops')
     .eq('token_hash', tokenHash)
     .maybeSingle();
   if (tokenError || !tokenRow) {
@@ -1160,7 +1179,7 @@ Deno.serve(async (request) => {
       // Per-connection permissions (card #14): only the tools this
       // token may run are DELIVERED — the agent never sees the rest.
       const allowed = TOOLS.filter(
-        (tool) => opAllowed(tokenRow.allowed_ops, tool.op),
+        (tool) => opAllowed(tokenRow.workspace_ops, tokenRow.allowed_ops, tool.op),
       );
       return reply({
         tools: allowed.map((tool) => ({
@@ -1180,7 +1199,7 @@ Deno.serve(async (request) => {
         );
       }
       const args = message.params?.arguments ?? {};
-      if (!opAllowed(tokenRow.allowed_ops, tool.op)) {
+      if (!opAllowed(tokenRow.workspace_ops, tokenRow.allowed_ops, tool.op)) {
         return reply({
           content: [
             {
@@ -1196,7 +1215,8 @@ Deno.serve(async (request) => {
         p_op: tool.op,
         p_arg: args,
         // The connection's workspace boundary (null = account-wide).
-        p_workspace_ids: tokenRow.workspace_scope ?? [],
+        p_workspace_ids: scopeOf(tokenRow.workspace_ops, tokenRow.workspace_scope),
+        p_ws_ops: tokenRow.workspace_ops ?? null,
       });
       const result = (data ?? {}) as { ok?: boolean; data?: unknown };
       if (error || result.ok !== true) {

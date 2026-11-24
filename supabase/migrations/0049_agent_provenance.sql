@@ -55,6 +55,8 @@ create trigger notifications_agent
   before insert on public.notifications
   for each row execute function public.flowdeck_mark_agent_origin();
 
+-- NOTE: superseded by 0051_workspace_permissions.sql (per-workspace ops).
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,

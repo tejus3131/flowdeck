@@ -91,8 +91,10 @@ export type Database = {
           user_id: string
           workspace_scope: string[] | null
           allowed_ops: string[] | null
+          workspace_ops: Record<string, string[]> | null
         }
         Insert: {
+          workspace_ops?: Record<string, string[]> | null
           created_at?: string
           id?: string
           last_used_at?: string | null
@@ -706,9 +708,11 @@ export type Database = {
           connection_name: string | null
           workspace_scope: string[] | null
           allowed_ops: string[] | null
+          workspace_ops: Record<string, string[]> | null
         }
         Insert: {
           connection_name?: string | null
+          workspace_ops?: Record<string, string[]> | null
           challenge_method?: string
           client_id: string
           code_challenge: string
