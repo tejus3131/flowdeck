@@ -1460,24 +1460,29 @@ function BoardColumn(props: {
   );
 
   // Where in this column a pointer sits: the index the dropped card takes.
+  // Measured in LAYOUT space (offsetTop, immune to the FLIP's in-flight
+  // glide transforms) with the ghost's footprint subtracted from every
+  // card at or below its slot — the pointer's own placeholder can never
+  // move the goalposts it is measured against, and a mid-glide dragover
+  // reads the settled position, not the animating one.
   const indexAt = (clientY: number): number => {
-    const elements = document.querySelectorAll<HTMLDivElement>(
-      `[data-column="${props.list.id}"] [data-card]`,
+    const container = document.querySelector<HTMLElement>(
+      `[data-column="${props.list.id}"] [data-cards-scroll]`,
     );
-    // The ghost (when present) has shifted every card at or below its
-    // slot down by its own height — remove that shift from the
-    // comparison, or the pointer's own placeholder flips the drop index
-    // back and forth: the open/close glitch loop.
-    const ghost = document.querySelector<HTMLElement>(
-      `[data-column="${props.list.id}"] [data-drop-placeholder]`,
-    );
+    if (!container) return 0;
+    const els = container.querySelectorAll<HTMLElement>('[data-card]');
+    // Viewport anchor of the container's content — transform-immune (the
+    // container itself never glides; only cards do).
+    const anchor =
+      container.getBoundingClientRect().top - container.scrollTop - container.offsetTop;
+    const ghost = container.querySelector<HTMLElement>('[data-drop-placeholder]');
     const shift = ghost ? ghost.offsetHeight + 8 : 0; // + the flex gap-2
     const ghostAt = props.dropHint ?? -1;
-    let index = elements.length;
-    for (let i = 0; i < elements.length; i++) {
-      const rect = elements[i].getBoundingClientRect();
-      const mid = i >= ghostAt ? rect.top + rect.height / 2 - shift : rect.top + rect.height / 2;
-      if (clientY < mid) {
+    let index = els.length;
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i]!;
+      const mid = anchor + el.offsetTop + el.offsetHeight / 2;
+      if (clientY < (i >= ghostAt ? mid - shift : mid)) {
         index = i;
         break;
       }
