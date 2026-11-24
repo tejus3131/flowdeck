@@ -1904,14 +1904,8 @@ function BoardColumn(props: {
                     hidden:
                       props.dragging === card.id || props.remoteDrag?.cardId === card.id,
                   },
-                  { 'ring-2 ring-amber-400': props.remoteDrag?.cardId === card.id },
                 ]}
               >
-                <Show when={props.remoteDrag?.cardId === card.id}>
-                  <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
-                    {props.remoteDrag!.name} moving…
-                  </span>
-                </Show>
                 <CardFace
                   card={card}
                   members={props.members}
