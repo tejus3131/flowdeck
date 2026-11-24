@@ -17,7 +17,26 @@ export type McpAuthorizeInput = {
   codeChallenge: string;
   challengeMethod: string;
   state?: string | null;
+  /** Workspaces to scope the connection to. Empty = the whole account. */
+  workspaceIds?: string[];
 };
+
+/** The workspaces the consent page offers (and the user belongs to). */
+export async function listMyWorkspaceChoices(): Promise<
+  { id: string; name: string; role: string }[]
+> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('workspace_id, role, workspaces(name)')
+    .order('created_at');
+  return (data ?? []).map((row) => ({
+    id: row.workspace_id as string,
+    name: ((row.workspaces as { name: string } | null)?.name ?? 'Workspace') as string,
+    role: row.role as string,
+  }));
+}
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -48,6 +67,24 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
   const codeChallenge = String(input.codeChallenge ?? '').trim();
   const challengeMethod = String(input.challengeMethod ?? 'S256').trim();
   const state = input.state ? String(input.state).slice(0, 2000) : null;
+  // The compartmentalization: only workspaces the user actually belongs
+  // to can be granted, and an empty selection means account-wide.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const wanted = [...new Set((input.workspaceIds ?? []).map((id) => String(id)))].filter((id) =>
+    UUID_RE.test(id),
+  );
+  let workspaceScope: string[] | null = null;
+  if (wanted.length > 0) {
+    const { data: mine } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .in('workspace_id', wanted);
+    const granted = new Set((mine ?? []).map((row) => row.workspace_id as string));
+    workspaceScope = wanted.filter((id) => granted.has(id));
+    if (workspaceScope.length === 0) {
+      throw new Error('You are not a member of the selected workspace(s).');
+    }
+  }
 
   if (!clientId || !redirectUri || !codeChallenge) {
     throw new Error('This authorization request is incomplete — ask the client to retry.');
@@ -68,6 +105,7 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     redirect_uri: redirectUri,
     code_challenge: codeChallenge,
     challenge_method: 'S256',
+    workspace_scope: workspaceScope,
   });
   if (error) throw new Error(error.message);
 

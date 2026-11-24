@@ -5,16 +5,35 @@
 // before Allow hands back a single-use authorization code.
 import { Title } from '@solidjs/meta';
 import { useSearchParams } from '@solidjs/router';
-import { Show, createSignal } from 'solid-js';
+import { For, Show, createEffect, createSignal } from 'solid-js';
 
 import { MembershipWatch } from '../../components/MembershipWatch';
-import { approveMcpClient } from '../../lib/mcp-auth';
+import { approveMcpClient, listMyWorkspaceChoices } from '../../lib/mcp-auth';
 
 export default function McpAuthorizePage() {
   const [params] = useSearchParams();
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [denied, setDenied] = createSignal(false);
+  const [workspaces, setWorkspaces] = createSignal<{ id: string; name: string; role: string }[]>([]);
+  const [selected, setSelected] = createSignal<string[]>([]);
+  const [loaded, setLoaded] = createSignal(false);
+
+  // Offer the compartmentalization: scope the connection to specific
+  // workspaces, loaded once the request shape is valid.
+  createEffect(
+    () => valid(),
+    (ok) => {
+      if (!ok || loaded()) return;
+      setLoaded(true);
+      void listMyWorkspaceChoices().then((list) => {
+        setWorkspaces(list);
+        // One workspace = preselect it. More = start with none (the user
+        // picks, or explicitly grants the whole account).
+        if (list.length === 1) setSelected([list[0]!.id]);
+      });
+    },
+  );
 
   const clientId = () => String(params.client_id ?? '').trim();
   const redirectUri = () => String(params.redirect_uri ?? '').trim();
@@ -50,6 +69,7 @@ export default function McpAuthorizePage() {
         codeChallenge: codeChallenge(),
         challengeMethod: challengeMethod(),
         state: state(),
+        workspaceIds: selected(),
       });
       window.location.href = redirectTo;
     } catch (err) {
@@ -99,6 +119,35 @@ export default function McpAuthorizePage() {
           <p class="text-neutral-500 dark:text-neutral-400">
             Callback host: <span class="font-mono">{redirectHost()}</span>
           </p>
+          <Show when={workspaces().length > 0}>
+            <div class="border-t border-neutral-200 pt-3 dark:border-neutral-800">
+              <p class="mb-2 font-medium">Workspace access</p>
+              <p class="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+                Limit this connection to specific workspaces — recommended when the agent serves
+                one project. Nothing selected means your whole account.
+              </p>
+              <div class="flex flex-col gap-1.5">
+                <For each={workspaces()}>
+                  {(ws) => (
+                    <label class="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selected().includes(ws.id)}
+                        onChange={(event) =>
+                          setSelected((current) =>
+                            event.currentTarget.checked
+                              ? [...current, ws.id]
+                              : current.filter((id) => id !== ws.id),
+                          )
+                        }
+                      />
+                      {ws.name} <span class="text-xs text-neutral-400">({ws.role})</span>
+                    </label>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
         </div>
 
         <Show when={error()}>

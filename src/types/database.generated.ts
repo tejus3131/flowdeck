@@ -81,7 +81,6 @@ export type Database = {
           },
         ]
       }
-      api_tokens: {
         Row: {
           created_at: string
           id: string
@@ -89,6 +88,7 @@ export type Database = {
           name: string
           token_hash: string
           user_id: string
+          workspace_scope: string[] | null
         }
         Insert: {
           created_at?: string
@@ -97,6 +97,7 @@ export type Database = {
           name?: string
           token_hash: string
           user_id: string
+          workspace_scope?: string[] | null
         }
         Update: {
           created_at?: string
@@ -693,6 +694,7 @@ export type Database = {
           redirect_uri: string
           used_at: string | null
           user_id: string
+          workspace_scope: string[] | null
         }
         Insert: {
           challenge_method?: string
@@ -704,6 +706,7 @@ export type Database = {
           redirect_uri: string
           used_at?: string | null
           user_id: string
+          workspace_scope: string[] | null
         }
         Update: {
           [_ in never]: never

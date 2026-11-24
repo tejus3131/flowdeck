@@ -861,7 +861,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
 
   const { data: stored } = await service
     .from('mcp_auth_codes')
-    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at')
+    .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope')
     .eq('code_hash', await sha256Hex(code))
     .maybeSingle();
   if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
@@ -893,6 +893,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     user_id: stored.user_id,
     name: `MCP: ${clientId}`.slice(0, 60),
     token_hash: await sha256Hex(token),
+    workspace_scope: stored.workspace_scope ?? null,
   });
   if (insertError) {
     return oauthError(500, 'server_error', 'could not mint the token');
@@ -956,7 +957,7 @@ Deno.serve(async (request) => {
   );
   const { data: tokenRow, error: tokenError } = await service
     .from('api_tokens')
-    .select('id, user_id')
+    .select('id, user_id, workspace_scope')
     .eq('token_hash', tokenHash)
     .maybeSingle();
   if (tokenError || !tokenRow) {
@@ -1029,6 +1030,8 @@ Deno.serve(async (request) => {
         p_user_id: tokenRow.user_id,
         p_op: tool.op,
         p_arg: args,
+        // The connection's workspace boundary (null = account-wide).
+        p_workspace_ids: tokenRow.workspace_scope ?? [],
       });
       const result = (data ?? {}) as { ok?: boolean; data?: unknown };
       if (error || result.ok !== true) {
