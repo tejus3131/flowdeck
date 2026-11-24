@@ -344,6 +344,42 @@ const TOOLS: ToolDef[] = [
     op: 'list_workspaces',
   },
   {
+    name: 'list_workspace_members',
+    description:
+      'Members of a workspace with display names, emails, and their workspace role. Use this to find user ids for mentions and assignments. Returns { items, next_cursor }.',
+    inputSchema: {
+      type: 'object',
+      properties: { workspace_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
+      required: ['workspace_id'],
+      additionalProperties: false,
+    },
+    op: 'list_workspace_members',
+  },
+  {
+    name: 'get_user',
+    description:
+      'Profile summary for one user (display name, username, email, avatar). Only users you share a workspace with resolve; anyone else is "user not found or not visible".',
+    inputSchema: {
+      type: 'object',
+      properties: { user_id: { type: 'string', format: 'uuid' } },
+      required: ['user_id'],
+      additionalProperties: false,
+    },
+    op: 'get_user',
+  },
+  {
+    name: 'list_pending_invites',
+    description:
+      'Pending workspace invites: who was invited, when, by whom (display name), and status. Workspace owners/admins only.',
+    inputSchema: {
+      type: 'object',
+      properties: { workspace_id: { type: 'string', format: 'uuid' }, ...PAGE_PARAMS },
+      required: ['workspace_id'],
+      additionalProperties: false,
+    },
+    op: 'list_pending_invites',
+  },
+  {
     name: 'create_workspace',
     description: 'Create a workspace (you become its owner).',
     inputSchema: {
