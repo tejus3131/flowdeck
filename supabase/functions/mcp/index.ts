@@ -420,6 +420,75 @@ const TOOLS: ToolDef[] = [
     op: 'search',
   },
   {
+    name: 'check_mention_access',
+    description:
+      'Before mentioning people/teams in a board they may not see: returns blocked_users and blocked_teams (with display names) plus can_grant and can_request, so you can STOP and let your human decide. Mentions that reach nobody otherwise fail silently.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        board_id: { type: 'string', format: 'uuid' },
+        user_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+        team_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+      },
+      required: ['board_id'],
+      additionalProperties: false,
+    },
+    op: 'check_mention_access',
+  },
+  {
+    name: 'grant_board_access',
+    description:
+      'Grant board access to users/teams and deliver the withheld mention. Only when the board\'s access delegation is on, or you are a workspace owner/admin (check_mention_access reports can_grant).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        board_id: { type: 'string', format: 'uuid' },
+        user_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+        team_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+        card_id: { type: 'string', format: 'uuid', description: 'Where the mention happened, if on a card.' },
+        body: { type: 'string', description: 'Excerpt of the mentioning text (max 200 chars).' },
+      },
+      required: ['board_id'],
+      additionalProperties: false,
+    },
+    op: 'grant_board_access',
+  },
+  {
+    name: 'request_board_access',
+    description:
+      'Ask the workspace owners/admins to grant access for users/teams you mentioned (every one of them gets an access_request notification). Use when can_grant is false. Returns how many admins were asked.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        board_id: { type: 'string', format: 'uuid' },
+        user_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+        team_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+        card_id: { type: 'string', format: 'uuid' },
+        body: { type: 'string', maxLength: 200 },
+      },
+      required: ['board_id'],
+      additionalProperties: false,
+    },
+    op: 'request_board_access',
+  },
+  {
+    name: 'resolve_access_request',
+    description:
+      'Workspace owners/admins: grant (true) or deny (false) a pending access request. Clears the request for EVERY admin, tells the asker, and on grant delivers the mention + access to the subject.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        board_id: { type: 'string', format: 'uuid' },
+        user_id: { type: 'string', format: 'uuid', description: 'The subject person (for user requests).' },
+        team_id: { type: 'string', format: 'uuid', description: 'The subject team (for team requests).' },
+        grant: { type: 'boolean' },
+      },
+      required: ['board_id', 'grant'],
+      additionalProperties: false,
+    },
+    op: 'resolve_access_request',
+  },
+  {
     name: 'get_me',
     description: 'Your own profile (display name, email, avatar) and current status.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
