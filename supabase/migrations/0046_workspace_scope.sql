@@ -38,6 +38,94 @@ drop function if exists public.mcp_exec(uuid, text, jsonb);
 -- mcp_exec: chat reads hide deleted rows and expose the edited marker;
 -- four new ops cover edit/delete, all role-scoped through the
 -- policies above.
+-- A card's list must belong to the card's board. Neither the app nor
+-- the MCP set board_id on moves (it never changes), so a list from
+-- another board would orphan the card between boards. Enforced once,
+-- in the database, for every writer.
+create or replace function public.check_card_list_board()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_board uuid;
+begin
+  if new.list_id is not null then
+    select l.board_id into v_board from public.lists l where l.id = new.list_id;
+    if v_board is distinct from new.board_id then
+      raise exception 'card list does not belong to card board';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger cards_list_board_check
+  before insert or update of list_id, board_id on public.cards
+  for each row execute function public.check_card_list_board();
+
+-- Typed cursor parsers: the key half of a cursor is validated by the
+-- consumer's cast today, so a well-formed-uuid/garbage-key cursor
+-- surfaces a raw 'invalid input syntax' error. These parse safely.
+create or replace function public.mcp_cursor_tstz(p_cursor text)
+returns timestamptz
+language plpgsql
+immutable
+as $$
+declare v_key text; v_val timestamptz;
+begin
+  v_key := nullif(split_part(coalesce(p_cursor, ''), '|', 1), '');
+  if v_key is null then return null; end if;
+  begin
+    v_val := v_key::timestamptz;
+  exception when others then
+    return null;
+  end;
+  return v_val;
+end;
+$$;
+
+create or replace function public.mcp_cursor_num(p_cursor text)
+returns double precision
+language plpgsql
+immutable
+as $$
+declare v_key text; v_val double precision;
+begin
+  v_key := nullif(split_part(coalesce(p_cursor, ''), '|', 1), '');
+  if v_key is null then return null; end if;
+  begin
+    v_val := v_key::double precision;
+  exception when others then
+    return null;
+  end;
+  return v_val;
+end;
+$$;
+
+create or replace function public.mcp_cursor_int(p_cursor text)
+returns bigint
+language plpgsql
+immutable
+as $$
+declare v_key text; v_val bigint;
+begin
+  v_key := nullif(split_part(coalesce(p_cursor, ''), '|', 1), '');
+  if v_key is null then return null; end if;
+  begin
+    v_val := v_key::bigint;
+  exception when others then
+    return null;
+  end;
+  return v_val;
+end;
+$$;
+
+revoke execute on function public.mcp_cursor_tstz(text) from anon;
+revoke execute on function public.mcp_cursor_num(text) from anon;
+revoke execute on function public.mcp_cursor_int(text) from anon;
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,
@@ -105,6 +193,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(
@@ -197,6 +288,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_num(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(to_jsonb(p) || jsonb_build_object(
@@ -237,6 +331,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_int(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(jsonb_build_object(
@@ -277,6 +374,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(jsonb_build_object(
@@ -314,6 +414,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_int(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(jsonb_build_object(
@@ -374,6 +477,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(
@@ -421,6 +527,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(
@@ -466,6 +575,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(
@@ -506,6 +618,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(jsonb_build_object(
@@ -545,6 +660,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(jsonb_build_object(
@@ -631,6 +749,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       select coalesce(jsonb_agg(to_jsonb(p) order by p.created_at desc, p.id desc), '[]'::jsonb) into v_page
       from (
         select * from (
@@ -976,6 +1097,9 @@ begin
       if not public.mcp_scope_ok(v_scope, (select b.workspace_id from public.lists l join public.boards b on b.id = l.board_id where l.id = (p_arg->>'list_id')::uuid)) then
         raise exception 'this connection is not scoped to that workspace';
       end if;
+      if (select l.board_id from public.lists l where l.id = (p_arg->>'list_id')::uuid) is distinct from v_board_id then
+        raise exception 'the target list belongs to a different board';
+      end if;
 
       if p_arg ? 'position' then
         v_pos := (p_arg->>'position')::double precision;
@@ -1260,6 +1384,9 @@ begin
         raise exception 'malformed cursor';
       end if;
       v_cur_key := public.mcp_cursor_key(v_cur);
+      if v_cur is not null and public.mcp_cursor_tstz(v_cur) is null then
+        raise exception 'malformed cursor';
+      end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object(
         'items', coalesce((
           select jsonb_agg(jsonb_build_object(

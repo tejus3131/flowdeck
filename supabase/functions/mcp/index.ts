@@ -803,6 +803,28 @@ async function pkceChallenge(verifier: string): Promise<string> {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+// Best-effort rate limiting: Supabase Edge Functions may run several
+// isolates, so a per-isolate bucket throttles rather than hard-caps —
+// still enough to make hammering the unauthenticated endpoints costly.
+const rateBuckets = new Map<string, { tokens: number; last: number }>();
+function rateAllow(key: string, capacity: number, refillPerSecond: number): boolean {
+  if (rateBuckets.size > 5000) rateBuckets.clear();
+  const now = Date.now();
+  const bucket = rateBuckets.get(key) ?? { tokens: capacity, last: now };
+  bucket.tokens = Math.min(capacity, bucket.tokens + ((now - bucket.last) / 1000) * refillPerSecond);
+  bucket.last = now;
+  if (bucket.tokens < 1) {
+    rateBuckets.set(key, bucket);
+    return false;
+  }
+  bucket.tokens -= 1;
+  rateBuckets.set(key, bucket);
+  return true;
+}
+function clientIp(request: Request): string {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+}
+
 function oauthError(status: number, code: string, description: string): Response {
   return json({ error: code, error_description: description }, status, {
     'Cache-Control': 'no-store',
@@ -930,6 +952,9 @@ Deno.serve(async (request) => {
   // The OAuth token exchange (POST /token) — before PAT auth: this is
   // how PATs are minted, there is no token to present yet.
   if (request.method === 'POST' && requestUrl.pathname.endsWith('/token')) {
+    if (!rateAllow(`token:${clientIp(request)}`, 10, 0.5)) {
+      return oauthError(429, 'slow_down', 'too many token requests; retry shortly');
+    }
     const service = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -946,12 +971,22 @@ Deno.serve(async (request) => {
   }
 
   // ── PAT auth ────────────────────────────────────────────────────────────
+  if (!rateAllow(`mcp:${clientIp(request)}`, 100, 20)) {
+    return json(
+      { jsonrpc: '2.0', error: { code: -32000, message: 'Too many requests; slow down.' } },
+      429,
+      { 'Retry-After': '2' },
+    );
+  }
   const auth = request.headers.get('authorization') ?? '';
   const presented = auth.replace(/^Bearer\s+/i, '').trim();
   if (!presented.startsWith('fd_')) {
     return json(
       { jsonrpc: '2.0', error: { code: -32001, message: 'Missing or malformed token. Pass "Authorization: Bearer fd_…"' } },
       401,
+      // RFC 9728 challenge: OAuth-capable clients start the browser flow
+      // from this header alone.
+      { 'WWW-Authenticate': `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"` },
     );
   }
   const tokenHash = await sha256Hex(presented);
@@ -967,7 +1002,11 @@ Deno.serve(async (request) => {
     .eq('token_hash', tokenHash)
     .maybeSingle();
   if (tokenError || !tokenRow) {
-    return json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unknown token.' } }, 401);
+    return json(
+      { jsonrpc: '2.0', error: { code: -32001, message: 'Unknown token.' } },
+      401,
+      { 'WWW-Authenticate': `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"` },
+    );
   }
   // Fire-and-forget last-used stamp.
   void service.from('api_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', tokenRow.id);

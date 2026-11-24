@@ -30,6 +30,11 @@ as $$ select nullif(split_part(coalesce(p_cursor, ''), '|', 2), '')::uuid $$;
 revoke execute on function public.mcp_cursor_key(text) from anon, authenticated;
 revoke execute on function public.mcp_cursor_id(text) from anon, authenticated;
 
+-- NOTE: the mcp_exec definition below is an INTERMEDIATE step in the
+-- overhaul; it is superseded by 0046_workspace_scope.sql, which holds
+-- the final, authoritative version. Kept verbatim so the chain stays
+-- reviewable step by step.
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,

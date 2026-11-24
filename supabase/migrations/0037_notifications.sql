@@ -11,6 +11,11 @@
 -- New ops: mark_notification_read(id), mark_notification_unread(id) —
 -- read state is the same seen_at the web app uses — and
 -- mark_all_notifications_read() which returns how many rows it marked.
+-- NOTE: the mcp_exec definition below is an INTERMEDIATE step in the
+-- overhaul; it is superseded by 0046_workspace_scope.sql, which holds
+-- the final, authoritative version. Kept verbatim so the chain stays
+-- reviewable step by step.
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,

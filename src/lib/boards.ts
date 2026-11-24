@@ -1276,6 +1276,11 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
       .maybeSingle(),
   ]);
   if (!target) throw new Error('List not found');
+  // A card's list must stay on the card's board — a cross-board list_id
+  // would orphan the card between boards (the DB trigger double-checks).
+  if (cardBefore && target.board_id !== cardBefore.board_id) {
+    throw new Error('That list belongs to a different board');
+  }
   const fromName =
     ((cardBefore?.lists as { name: string | null } | null | undefined)?.name as string | undefined) ?? null;
   const { error } = await supabase

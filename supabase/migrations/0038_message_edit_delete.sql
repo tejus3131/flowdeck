@@ -57,6 +57,10 @@ create policy comments_update on public.card_comments
     )
   );
 
+-- NOTE: this mcp_exec definition is an INTERMEDIATE step in the
+-- overhaul; it is superseded by 0046_workspace_scope.sql, which holds
+-- the final, authoritative version. Kept verbatim so the chain stays
+-- reviewable step by step.
 -- mcp_exec: chat reads hide deleted rows and expose the edited marker;
 -- four new ops cover edit/delete, all role-scoped through the
 -- policies above.

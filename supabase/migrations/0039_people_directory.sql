@@ -16,6 +16,10 @@
 --     -> who was invited, when, by whom (display name), status —
 --        owners/admins only, per the invites RLS
 -- list_teams now returns member display names alongside the raw ids.
+-- NOTE: this mcp_exec definition is an INTERMEDIATE step in the
+-- overhaul; it is superseded by 0046_workspace_scope.sql, which holds
+-- the final, authoritative version. Kept verbatim so the chain stays
+-- reviewable step by step.
 -- mcp_exec: chat reads hide deleted rows and expose the edited marker;
 -- four new ops cover edit/delete, all role-scoped through the
 -- policies above.

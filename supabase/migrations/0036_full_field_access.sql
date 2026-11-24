@@ -12,6 +12,11 @@
 -- description 2000, card title 200 / description 8000, team name 60 /
 -- description 500, display name 80. Newly assigned users get an
 -- assignment notification, same as the app.
+-- NOTE: the mcp_exec definition below is an INTERMEDIATE step in the
+-- overhaul; it is superseded by 0046_workspace_scope.sql, which holds
+-- the final, authoritative version. Kept verbatim so the chain stays
+-- reviewable step by step.
+
 create or replace function public.mcp_exec(
   p_user_id uuid,
   p_op text,

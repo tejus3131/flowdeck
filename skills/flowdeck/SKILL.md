@@ -25,7 +25,10 @@ Every list-shaped tool returns `{ items, next_cursor }`. `next_cursor` is an
 opaque string, `null` on the last page. Pass it back as `cursor` for the next
 page; don't decode or invent it. `limit` defaults to 50 (max 200). If you
 need everything, page until `next_cursor` is null — never assume one call
-returned the whole list.
+returned the whole list. Pages are a snapshot, not a stable window: results
+sorted by something mutable (`updated_at`) can shift if rows change mid-walk
+— an item that moved between pages may appear twice or skip; re-read if the
+walk must be exact.
 
 ## Chat: mentions, order, edits
 
