@@ -259,6 +259,25 @@ export async function getBoardSnapshot(
 }
 
 /**
+ * The board's revision cursor alone (migration 0032) — the durable poll's
+ * cheap first read: an unchanged board skips the full snapshot entirely
+ * (six reads and the whole board over the wire for one number). Null when
+ * the board — or the caller's access to it — doesn't exist; the caller
+ * then takes the full path and gets the denied/empty snapshot it should.
+ */
+export async function getBoardRevision(boardId: string): Promise<number | null> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const { data, error } = await supabase
+    .from('board_revisions')
+    .select('revision')
+    .eq('board_id', assertId(boardId, 'board id'))
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.revision ?? null;
+}
+
+/**
  * The board as a live source. `live()` gives each connected viewer their
  * own producer running under their own request event, so the Supabase
  * realtime subscription below carries the caller's JWT — and Postgres RLS

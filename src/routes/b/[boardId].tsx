@@ -61,6 +61,7 @@ import {
   deleteList,
   findOrCreateTag,
   getBoardSnapshot,
+  getBoardRevision,
   getCrossBoardCards,
   type CrossCard,
   getBoardChatSnapshot,
@@ -161,10 +162,27 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     // The durable poll refresh gets its own mark: realtime outages show
     // up here, not in board-open. It also keeps the cache warm when
     // realtime is dead.
+    //
+    // Revision-gated (migration 0032's whole point): the poll's first
+    // read is the cursor ALONE — one tiny query. An unchanged board
+    // re-feeds the cached snapshot instead of six reads plus the full
+    // board over the wire, so idle tabs cost ~nothing server-side. The
+    // cache rides the same stream the engine feeds from (cachedStream
+    // writes every yield), so its revision is the engine's own; a
+    // missing/evicted cache or any landed write — mine or another
+    // viewer's, realtime dead or alive — bumps the cursor and takes the
+    // full path. Server logs showed the ungated poll re-snapshotting
+    // every 20s per tab at 600ms–1.5s a pull.
     () =>
       perfTrack('board-refresh', async () => {
-        const snapshot = await getBoardSnapshot(props.params.boardId);
-        cachePut(`board:${props.params.boardId}`, snapshot);
+        const id = props.params.boardId;
+        const [revision, cached] = await Promise.all([
+          getBoardRevision(id),
+          cacheGet<BoardSnapshot>(`board:${id}`),
+        ]);
+        if (cached && cached.revision === revision) return cached;
+        const snapshot = await getBoardSnapshot(id);
+        cachePut(`board:${id}`, snapshot);
         return snapshot;
       }),
   );
