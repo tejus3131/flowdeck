@@ -460,6 +460,11 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const [dragHeight, setDragHeight] = createSignal<number | null>(null);
   /** The card the next tick's delayed hide belongs to (drag image timing). */
   let pendingDragCard: string | null = null;
+  /** The dragged card's home slot — broadcast at dragstart so peers lift
+   *  the card straight into its preview at the original spot, letting the
+   *  source card stay hidden for the WHOLE drag (one representation, even
+   *  while the hover travels other lists). */
+  let dragHomeSlot: { listId: string; index: number } | null = null;
 
   // A resting pointer sends no hover broadcasts, and the relay expires
   // silent drags after 4s — so a long drag would drop its peer ghost
@@ -481,7 +486,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         stopHeartbeat();
         return;
       }
-      const hint = dropHint();
+      const hint = dropHint() ?? dragHomeSlot;
       const name = me()?.display_name || 'Someone';
       if (hint) {
         presence.broadcastDragHover(cardId, name, dragHeight(), hint.listId, hint.index);
@@ -1212,7 +1217,30 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 canEdit={canEdit()}
                 onDragStart={(cardId, height) => {
                   setDragHeight(height);
-                  presence.broadcastDrag(cardId, me()?.display_name || 'Someone', height);
+                  // Broadcast the card's home slot immediately — peers see
+                  // the preview at the card's original spot from the first
+                  // message, so the source can hide for the entire drag
+                  // without a vanish gap.
+                  const source = view().cards.find((c) => c.id === cardId);
+                  const homeIndex = source
+                    ? view()
+                        .cards.filter((c) => c.list_id === source.list_id)
+                        .findIndex((c) => c.id === cardId)
+                    : -1;
+                  dragHomeSlot =
+                    source && homeIndex >= 0 ? { listId: source.list_id, index: homeIndex } : null;
+                  const name = me()?.display_name || 'Someone';
+                  if (dragHomeSlot) {
+                    presence.broadcastDragHover(
+                      cardId,
+                      name,
+                      height,
+                      dragHomeSlot.listId,
+                      dragHomeSlot.index,
+                    );
+                  } else {
+                    presence.broadcastDrag(cardId, name, height);
+                  }
                   // The browser snapshots the drag image as dragstart
                   // completes — hiding the source in the same tick yields
                   // a blank preview, so the hide lands one frame late.
@@ -1225,6 +1253,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 onDragEnd={() => {
                   stopHeartbeat();
                   pendingDragCard = null;
+                  dragHomeSlot = null;
                   setDragging(null);
                   setDropHint(null);
                   setDragHeight(null);
@@ -1236,6 +1265,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   // is the single place that clears peers' ghost state.
                   stopHeartbeat();
                   pendingDragCard = null;
+                  dragHomeSlot = null;
                   setDragging(null);
                   setDropHint(null);
                   setDragHeight(null);
@@ -1855,35 +1885,27 @@ function BoardColumn(props: {
                 }}
                 onDragEnd={props.onDragEnd}
                 onClick={() => props.onOpenCard(card.id, card.client_op)}
-                // Trello model: while dragged, the source card leaves the
-                // list (display:none — zero space) so the ghost is its ONLY
-                // representation; hover the original spot and the ghost is
-                // the one placeholder there, never shadow + ghost both.
-                // The element stays in the DOM so dragend always fires,
-                // and indexAt/planDrop keep their shared full-list index
-                // space (the hidden card's degenerate midpoint can never
-                // win a comparison for a pointer inside the column).
                 class={[
                   'group relative cursor-pointer rounded-xl border border-neutral-200/80 bg-white p-3 text-sm shadow-xs transition hover:border-indigo-300 hover:shadow-sm active:cursor-grabbing dark:border-neutral-700/80 dark:bg-neutral-900 dark:hover:border-indigo-700',
-                  // …and for peers too: while someone else's preview is in
-                  // this column, the card they're moving is here as its
-                  // amber clone instead — one representation, not card +
-                  // ghost both. Cross-column hovers keep the ringed card
-                  // visible at home (no vanish gap before the first hover,
-                  // no missing card while the pointer floats elsewhere).
+                  // Trello model: while dragged, the source card leaves the
+                  // list (display:none — zero space) so the ghost is its ONLY
+                  // representation; hover the original spot and the ghost is
+                  // the one placeholder there, never shadow + ghost both.
+                  // The element stays in the DOM so dragend always fires,
+                  // and indexAt/planDrop keep their shared full-list index
+                  // space (the hidden card's degenerate midpoint can never
+                  // win a comparison for a pointer inside the column).
+                  // …and for peers the whole drag through: the dragstart
+                  // broadcast carries the card's home slot, so its preview
+                  // appears at the original spot from the first message —
+                  // the card hides for the ENTIRE drag, never reappearing
+                  // "at home" while the hover travels other lists.
                   {
                     hidden:
-                      props.dragging === card.id ||
-                      (props.remoteDrag?.cardId === card.id && props.remoteDropHint !== null),
+                      props.dragging === card.id || props.remoteDrag?.cardId === card.id,
                   },
-                  { 'ring-2 ring-amber-400': props.remoteDrag?.cardId === card.id },
                 ]}
               >
-                <Show when={props.remoteDrag?.cardId === card.id}>
-                  <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
-                    {props.remoteDrag!.name} moving…
-                  </span>
-                </Show>
                 <CardFace
                   card={card}
                   members={props.members}
