@@ -8,13 +8,13 @@ import { useSearchParams } from '@solidjs/router';
 import { For, Show, createEffect, createSignal } from 'solid-js';
 
 import { MembershipWatch } from '../../components/MembershipWatch';
+import { PermissionPicker } from '../../components/PermissionPicker';
 import { approveMcpClient, listMyWorkspaceChoices, mcpAuthSignedIn } from '../../lib/mcp-auth';
 import {
   ACCOUNT_ENTITIES,
   WORKSPACE_ENTITIES,
   defaultWorkspaceSelection,
   type PermissionSelection,
-  type WorkspaceSelection,
 } from '../../lib/mcp-permissions';
 
 export default function McpAuthorizePage() {
@@ -137,39 +137,6 @@ export default function McpAuthorizePage() {
     ),
   });
 
-  const workspaceOn = (wsId: string) => Object.keys(permissions().workspaces).includes(wsId);
-  const toggleWorkspace = (wsId: string, on: boolean) =>
-    setPermissions((current) => {
-      const next = { ...current, workspaces: { ...current.workspaces } };
-      if (on) next.workspaces[wsId] = defaultWorkspaceSelection();
-      else delete next.workspaces[wsId];
-      return next;
-    });
-  /** Toggling a write on pulls its implied read along (no write-without-read). */
-  const toggleAction = (
-    bucket: 'workspaces' | 'account',
-    bucketId: string,
-    entityId: string,
-    actionId: string,
-    implies: string | undefined,
-    on: boolean,
-  ) =>
-    setPermissions((current) => {
-      const bucketSel = { ...current[bucket] } as Record<string, WorkspaceSelection>;
-      const sel: WorkspaceSelection = { ...(bucketSel[bucketId] ?? {}) };
-      const ids = new Set<string>(sel[entityId] ?? []);
-      if (on) {
-        ids.add(actionId);
-        if (implies) ids.add(implies);
-      } else {
-        ids.delete(actionId);
-      }
-      if (ids.size > 0) sel[entityId] = [...ids];
-      else delete sel[entityId];
-      bucketSel[bucketId] = sel;
-      return { ...current, [bucket]: bucketSel } as PermissionSelection;
-    });
-
   const allow = async () => {
     if (busy() || !valid() || !hostConfirmed()) return;
     setBusy(true);
@@ -245,7 +212,7 @@ export default function McpAuthorizePage() {
             boards, cards, comments and chats, manage your teams and notifications — everything you
             can do, under the same permissions. You can revoke it any time on your{' '}
             <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-              Profile → API tokens
+              Profile → MCP connections
             </a>{' '}
             page.
           </p>
@@ -277,116 +244,11 @@ export default function McpAuthorizePage() {
               Everything (full power — not recommended)
             </label>
             <Show when={!grantAll()}>
-              <For each={workspaces()}>
-                {(ws) => (
-                  <div class="mb-3 rounded-xl border border-neutral-200 dark:border-neutral-800">
-                    <label class="flex items-center justify-between px-3 py-2 text-sm font-medium">
-                      <span class="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={workspaceOn(ws.id)}
-                          onChange={(event) => toggleWorkspace(ws.id, event.currentTarget.checked)}
-                        />
-                        {ws.name}
-                        <span class="text-xs font-normal text-neutral-400">({ws.role})</span>
-                      </span>
-                      <span class="text-xs font-normal text-neutral-400">
-                        {workspaceOn(ws.id) ? 'granted' : 'no access'}
-                      </span>
-                    </label>
-                    <Show when={workspaceOn(ws.id)}>
-                      <div class="flex flex-col gap-2 border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
-                        <For each={WORKSPACE_ENTITIES}>
-                          {(entity) => (
-                            <div>
-                              <p class="text-xs font-semibold text-neutral-500 dark:text-neutral-300">
-                                {entity.label}
-                              </p>
-                              <div class="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                                <For each={entity.actions}>
-                                  {(action) => {
-                                    const checked = () =>
-                                      (permissions().workspaces[ws.id]?.[entity.id] ?? []).includes(
-                                        action.id,
-                                      );
-                                    return (
-                                      <label class="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
-                                        <input
-                                          type="checkbox"
-                                          checked={checked()}
-                                          onChange={(event) =>
-                                            toggleAction(
-                                              'workspaces',
-                                              ws.id,
-                                              entity.id,
-                                              action.id,
-                                              action.implies,
-                                              event.currentTarget.checked,
-                                            )
-                                          }
-                                        />
-                                        {action.label}
-                                      </label>
-                                    );
-                                  }}
-                                </For>
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                  </div>
-                )}
-              </For>
-              <div class="mb-3 rounded-xl border border-neutral-200 dark:border-neutral-800">
-                <div class="flex items-center justify-between px-3 py-2 text-sm font-medium">
-                  <span>Across your account</span>
-                  <span class="text-xs font-normal text-neutral-400">outside any single workspace</span>
-                </div>
-                <div class="flex flex-col gap-2 border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
-                  <For each={ACCOUNT_ENTITIES}>
-                    {(entity) => (
-                      <div>
-                        <p class="text-xs font-semibold text-neutral-500 dark:text-neutral-300">
-                          {entity.label}
-                        </p>
-                        <div class="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                          <For each={entity.actions}>
-                            {(action) => {
-                              const checked = () =>
-                                (permissions().account[entity.id] ?? []).includes(action.id);
-                              return (
-                                <label class="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked()}
-                                    onChange={(event) =>
-                                      toggleAction(
-                                        'account',
-                                        '*',
-                                        entity.id,
-                                        action.id,
-                                        action.implies,
-                                        event.currentTarget.checked,
-                                      )
-                                    }
-                                  />
-                                  {action.label}
-                                </label>
-                              );
-                            }}
-                          </For>
-                        </div>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </div>
-              <p class="text-xs text-neutral-400">
-                Writes imply reads — enabling an action also enables the reading it needs. Nothing
-                can be granted without seeing it first.
-              </p>
+              <PermissionPicker
+                selection={permissions()}
+                workspaces={workspaces()}
+                onChange={setPermissions}
+              />
             </Show>
           </div>
         </div>

@@ -105,6 +105,9 @@ export type Database = {
           allowed_ops?: string[] | null
         }
         Update: {
+          workspace_ops?: Record<string, string[]> | null
+          workspace_scope?: string[] | null
+          allowed_ops?: string[] | null
           created_at?: string
           id?: string
           last_used_at?: string | null

@@ -78,6 +78,12 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
+      path: "/connection/:tokenId";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/connection/[tokenId]"), Extract<"default", keyof typeof import("./src/routes/connection/[tokenId]")>>>;
+      $$route?: undefined;
+    },
+    {
       path: "/docs/mcp";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/docs/mcp"), Extract<"default", keyof typeof import("./src/routes/docs/mcp")>>>;
@@ -226,6 +232,14 @@ declare module "virtual:file-routes" {
       id: "/mcp/authorize";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/mcp/authorize"), Extract<"default", keyof typeof import("./src/routes/mcp/authorize")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/connection/:tokenId";
+      id: "/connection/:tokenId";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/connection/[tokenId]"), Extract<"default", keyof typeof import("./src/routes/connection/[tokenId]")>>>;
       $$route?: undefined;
       children?: undefined;
     },

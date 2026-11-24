@@ -276,3 +276,56 @@ export function workspaceOpsUnion(workspaceOps: Record<string, string[]> | null)
   if (!workspaceOps) return ALL_OPS;
   return [...new Set(Object.values(workspaceOps).flat())].sort();
 }
+
+/**
+ * Flat ops → the picker's selection shape (the reverse of
+ * workspaceOps): an action is "on" when every op it grants is held.
+ */
+export function opsToWorkspaceSelection(ops: string[]): WorkspaceSelection {
+  const out: WorkspaceSelection = {};
+  for (const entity of WORKSPACE_ENTITIES) {
+    const ids = entity.actions
+      .filter((action) => action.ops.every((op) => ops.includes(op)))
+      .map((action) => action.id);
+    if (ids.length > 0) out[entity.id] = ids;
+  }
+  return out;
+}
+
+/** Flat ops → the account bucket's selection. */
+export function opsToAccountSelection(ops: string[]): WorkspaceSelection {
+  const out: WorkspaceSelection = {};
+  for (const entity of ACCOUNT_ENTITIES) {
+    const ids = entity.actions
+      .filter((action) => action.ops.every((op) => ops.includes(op)))
+      .map((action) => action.id);
+    if (ids.length > 0) out[entity.id] = ids;
+  }
+  return out;
+}
+
+/**
+ * workspace_ops jsonb → the picker's selection (for editing an existing
+ * connection). Legacy tokens (null) convert as account-wide: the caller
+ * applies the same flat op list to every workspace the user is in.
+ */
+export function workspaceOpsToSelection(
+  workspaceOps: Record<string, string[]> | null | undefined,
+  legacyOps: string[] | null = null,
+  legacyWorkspaceIds: string[] = [],
+): PermissionSelection {
+  if (workspaceOps) {
+    const workspaces: Record<string, WorkspaceSelection> = {};
+    for (const [key, ops] of Object.entries(workspaceOps)) {
+      if (key === '*') continue;
+      workspaces[key] = opsToWorkspaceSelection(ops);
+    }
+    return { workspaces, account: opsToAccountSelection(workspaceOps['*'] ?? []) };
+  }
+  return {
+    workspaces: Object.fromEntries(
+      legacyWorkspaceIds.map((id) => [id, opsToWorkspaceSelection(legacyOps ?? [])]),
+    ),
+    account: opsToAccountSelection(legacyOps ?? []),
+  };
+}

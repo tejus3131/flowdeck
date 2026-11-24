@@ -88,7 +88,7 @@ export default function McpDocsPage() {
         workspaces and tool categories to grant, and the client receives its
         token. If your client wants a manual token instead, mint one on your{' '}
         <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-          Profile → API tokens
+          Profile → MCP connections
         </a>{' '}
         page. Either way, revocation lives on that same profile page.
       </p>
@@ -96,7 +96,7 @@ export default function McpDocsPage() {
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
         On your{' '}
         <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-          Profile → API tokens
+          Profile → MCP connections
         </a>{' '}
         page, create a personal access token. It starts with <code>fd_…</code> and is shown once — copy it
         immediately. Revoke it any time; a revoked token stops working instantly.
