@@ -8,6 +8,7 @@ import { PriorityPill } from '../../components/PriorityPill';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
 import { perfFirstValue, perfTrack, perfStart, perfEnd, perfCancel } from '../../lib/perf';
 import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
+import { planDrop } from '../../lib/card-drop';
 import { trackRecentBoard, warmBoardActive } from '../../lib/prefetch';
 import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
@@ -119,20 +120,6 @@ const EMPTY_WORKSPACE: WorkspaceDetail = {
   deactivatedTeams: [],
   teamAccess: {},
 };
-
-/** Fractional position for a card dropped at display index `toIndex`. */
-function positionAt(cards: CardView[], listId: string, toIndex: number): number {
-  const positions = cards
-    .filter((card) => card.list_id === listId)
-    .map((card) => card.position)
-    .sort((a, b) => a - b);
-  const prev = positions[toIndex - 1];
-  const next = positions[toIndex];
-  if (prev === undefined && next === undefined) return 1;
-  if (prev === undefined) return next / 2;
-  if (next === undefined) return prev + 1;
-  return (prev + next) / 2;
-}
 
 const OP_LABELS: Record<string, string> = {
   addCard: 'Couldn\u2019t add that card',
@@ -469,6 +456,57 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
 
   const [dragging, setDragging] = createSignal<string | null>(null);
   const [dropHint, setDropHint] = createSignal<{ listId: string; index: number } | null>(null);
+  /** The dragged card's height — the ghost opens exactly that much space. */
+  const [dragHeight, setDragHeight] = createSignal<number | null>(null);
+
+  // ── auto-scroll while dragging (board card #50) ─────────────────────────
+  // Both axes: the horizontal board scroller and the hovered column's
+  // vertical scroller scroll at their edges. The pointer rides in a plain
+  // variable (the rAF loop makes no reactive reads); the loop lives
+  // exactly as long as the drag does.
+  let dragPoint: { x: number; y: number } | null = null;
+  onSettled(() => {
+    const onDragOver = (event: DragEvent) => {
+      if (dragging()) dragPoint = { x: event.clientX, y: event.clientY };
+    };
+    document.addEventListener('dragover', onDragOver);
+    return () => document.removeEventListener('dragover', onDragOver);
+  });
+  createEffect(
+    () => dragging(),
+    (cardId) => {
+      if (!cardId) return;
+      const EDGE = 90;
+      const SPEED = 18;
+      const step = () => {
+        const point = dragPoint;
+        if (point) {
+          const board = document.querySelector<HTMLElement>('[data-board-scroll]');
+          if (board) {
+            const rect = board.getBoundingClientRect();
+            // Only while the pointer sits in the board's vertical band.
+            if (point.y > rect.top - 60 && point.y < rect.bottom + 60) {
+              if (point.x - rect.left < EDGE) board.scrollLeft -= SPEED;
+              else if (rect.right - point.x < EDGE) board.scrollLeft += SPEED;
+            }
+          }
+          const column = document
+            .elementFromPoint(point.x, point.y)
+            ?.closest<HTMLElement>('[data-column]')
+            ?.querySelector<HTMLElement>('[data-cards-scroll]');
+          if (column) {
+            const rect = column.getBoundingClientRect();
+            if (point.y - rect.top < EDGE) column.scrollTop -= SPEED;
+            else if (rect.bottom - point.y < EDGE) column.scrollTop += SPEED;
+          }
+        }
+        raf = requestAnimationFrame(step);
+      };
+      let raf = requestAnimationFrame(step);
+      return () => cancelAnimationFrame(raf);
+    },
+  );
+
   const [openCardId, setOpenCardId] = createSignal<string | null>(null);
   // Detail hover cards over @mentions and #citations.
   const [hover, setHover] = createSignal<
@@ -555,10 +593,25 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   };
 
   const moveCard = (cardId: string, toListId: string, toIndex: number) => {
-    const position = positionAt(view().cards, toListId, toIndex);
+    // The planner never ties (lib/card-drop.ts): a healthy gap takes the
+    // midpoint; a degenerate zone — tied neighbours, or a gap halved to
+    // float precision — heals: the segment re-spreads across its gap
+    // and the displaced cards ride along as extra move ops. Without the
+    // heal, a drop inside a tie computed (1+1)/2 = 1: the card JOINED
+    // the tie and the fold's re-merge shuffled it seconds later.
+    const drop = planDrop(view().cards, toListId, toIndex, cardId);
+    for (const heal of drop.heals) {
+      // A provisional (relayed) card's write lives on its author's
+      // machine — healing it locally would fight the prediction.
+      if (engine.isTemp(heal.cardId)) continue;
+      runOp(
+        { kind: 'move-card', cardId: heal.cardId, listId: toListId, position: heal.position },
+        () => moveCardServer(heal.cardId, toListId, heal.position),
+      );
+    }
     runOp(
-      { kind: 'move-card', cardId, listId: toListId, position },
-      () => moveCardServer(cardId, toListId, position),
+      { kind: 'move-card', cardId, listId: toListId, position: drop.position },
+      () => moveCardServer(cardId, toListId, drop.position),
     );
   };
 
@@ -1077,7 +1130,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           </span>
         </header>
 
-        <div class="flex flex-1 gap-4 overflow-x-auto p-4">
+        <div data-board-scroll class="flex flex-1 gap-4 overflow-x-auto p-4">
           <For each={view().lists}>
             {(list) => (
               <BoardColumn
@@ -1087,20 +1140,24 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 dragging={dragging()}
                 remoteDrag={presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()}
                 dropHint={dropHint()?.listId === list.id ? dropHint()!.index : null}
+                dragHeight={dragHeight()}
                 isTemp={engine.isTemp(list.id)}
                 canEdit={canEdit()}
-                onDragStart={(cardId) => {
+                onDragStart={(cardId, height) => {
                   setDragging(cardId);
+                  setDragHeight(height);
                   presence.broadcastDrag(cardId, me()?.display_name || 'Someone');
                 }}
                 onDragEnd={() => {
                   setDragging(null);
                   setDropHint(null);
+                  setDragHeight(null);
                   presence.broadcastDrag(null, '');
                 }}
                 onDrop={(index, cardId) => {
                   setDragging(null);
                   setDropHint(null);
+                  setDragHeight(null);
                   // Cards still materializing can't be dragged yet (their
                   // real id hasn't been echoed) — the drop is a no-op.
                   if (cardId && canEdit() && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
@@ -1322,10 +1379,12 @@ function BoardColumn(props: {
   dragging: string | null;
   remoteDrag: RemoteDrag | null;
   dropHint: number | null;
+  /** The dragged card's height — the ghost opens exactly that much space. */
+  dragHeight: number | null;
   isTemp: boolean;
   canEdit: boolean;
   adding: boolean;
-  onDragStart: (cardId: string) => void;
+  onDragStart: (cardId: string, height: number) => void;
   onDragEnd: () => void;
   onDrop: (index: number, cardId: string | null) => void;
   onHover: (index: number) => void;
@@ -1344,6 +1403,51 @@ function BoardColumn(props: {
   const [renaming, setRenaming] = createSignal(false);
   const [confirming, setConfirming] = createSignal(false);
   const [keepOpen, setKeepOpen] = createSignal(false);
+
+  // The glide: when the ghost placeholder opens, moves or closes, the
+  // cards around it shift — FLIP-animating them makes the space open
+  // smoothly instead of snapping, and the dropped card rides the same
+  // animation from its old spot into the opened one. Measured in
+  // CONTENT space (top + scrollTop) so the drag's auto-scroll never
+  // masquerades as a layout change.
+  const lastTops = new Map<string, number>();
+  createEffect(
+    () => (props.dropHint, props.cards),
+    () => {
+      const container = document.querySelector<HTMLElement>(
+        `[data-column="${props.list.id}"] [data-cards-scroll]`,
+      );
+      if (!container) return;
+      const els = container.querySelectorAll<HTMLElement>('[data-card-id]');
+      const seen = new Set<string>();
+      for (const el of els) {
+        const id = el.dataset.cardId!;
+        seen.add(id);
+        const top = el.getBoundingClientRect().top + container.scrollTop;
+        const prev = lastTops.get(id);
+        lastTops.set(id, top);
+        if (prev === undefined || prev === top) continue;
+        el.style.transition = 'none';
+        el.style.transform = `translateY(${prev - top}px)`;
+        void el.offsetHeight; // reflow — the inverted position commits
+        el.style.transition = 'transform 160ms ease-out';
+        el.style.transform = '';
+        // Clear the inline transition once the glide lands: an inline
+        // style beats the Tailwind transition class, and a lingering one
+        // makes this card's hover border/shadow animate instantly.
+        el.addEventListener(
+          'transitionend',
+          () => {
+            el.style.transition = '';
+          },
+          { once: true },
+        );
+      }
+      // Prune cards gone from the column (deleted, moved away) — the map
+      // stays column-sized over a long session.
+      for (const id of lastTops.keys()) if (!seen.has(id)) lastTops.delete(id);
+    },
+  );
 
   // Where in this column a pointer sits: the index the dropped card takes.
   const indexAt = (clientY: number): number => {
@@ -1455,12 +1559,18 @@ function BoardColumn(props: {
       </header>
 
       <Show when={!props.collapsed}>
-      <div class="flex flex-1 flex-col gap-2 overflow-y-auto p-2.5">
+      <div data-cards-scroll class="flex flex-1 flex-col gap-2 overflow-y-auto p-2.5">
         <For each={props.cards}>
           {(card, index) => (
             <>
               <Show when={props.dropHint === index() && props.dragging !== card.id}>
-                <div class="h-1 rounded-full bg-indigo-500/60" />
+                {/* The ghost: card-sized space opens where the drop would
+                    land — the cards around it glide apart (FLIP below). */}
+                <div
+                  data-drop-placeholder
+                  class="rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                  style={{ height: `${props.dragHeight ?? 72}px` }}
+                />
               </Show>
               <article
                 data-card
@@ -1473,7 +1583,7 @@ function BoardColumn(props: {
                     transfer.effectAllowed = 'move';
                     transfer.setData('text/plain', card.id);
                   }
-                  props.onDragStart(card.id);
+                  props.onDragStart(card.id, event.currentTarget.getBoundingClientRect().height);
                 }}
                 onDragEnd={props.onDragEnd}
                 onClick={() => props.onOpenCard(card.id, card.client_op)}
@@ -1564,7 +1674,11 @@ function BoardColumn(props: {
           )}
         </For>
         <Show when={props.dropHint === props.cards.length && props.cards.length > 0}>
-          <div class="h-1 rounded-full bg-indigo-500/60" />
+          <div
+            data-drop-placeholder
+            class="rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+            style={{ height: `${props.dragHeight ?? 72}px` }}
+          />
         </Show>
 
         {/* Add-card (editors only): the input ALWAYS clears instantly on
