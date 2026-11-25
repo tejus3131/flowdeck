@@ -92,13 +92,25 @@ vs no flag for prod. Same for `RESEND_*`, `VAPID_*`.
 
 | Secret | Env scope | Used by |
 | --- | --- | --- |
-| `SUPABASE_ACCESS_TOKEN` | repo | db push, functions deploy |
-| `SUPABASE_DB_PASSWORD_PREVIEW` / `_PROD` | environments | db push |
-| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | repo | wrangler deploy |
+| `SUPABASE_ACCESS_TOKEN` | `preview` + `production` envs | functions deploy |
+| `SUPABASE_DB_PASSWORD_PREVIEW` / `_PROD` | matching environments | db push (`--db-url`) |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | `preview` + `production` envs | wrangler deploy |
 | `PREVIEW_ANON_KEY` | repo | probe smoke |
 
-Wrangler runtime secrets (Supabase secret key, Resend, VAPID) live in
-Cloudflare, not GitHub.
+Credentials policy: [ADR-15](./adr.md) — PR runs get zero provider
+credentials; deploy tokens are scoped, TTL'd, IP-restricted to GitHub
+runner ranges, and rotated. Wrangler runtime secrets (Supabase secret key,
+Resend, VAPID) live in Cloudflare, not GitHub.
+
+## CI hardening checklist (enforced in every workflow)
+
+- `permissions:` block per workflow — `contents: read` only; deploy
+  workflows add nothing else.
+- Every `uses:` pinned to a **full commit SHA** (not tags).
+- `persist-credentials: false` on checkout steps.
+- No `pull_request_target` with PR-head checkout — ever.
+- Deploy jobs reference environment secrets only (`environment: preview`
+  / `production`), so PR runs cannot read them.
 
 ## Preview access setup (one-time)
 
