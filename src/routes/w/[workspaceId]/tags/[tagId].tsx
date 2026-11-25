@@ -1,22 +1,18 @@
-// One tag's page — where a #tag chip lands. The vocabulary entry itself,
-// the cards carrying it, and every mention of it across the workspace
-// (board chat, card comments, descriptions) as one infinite-scroll feed.
+// One tag's page — the tag's TIME CAPSULE. Everything that happened to
+// the tag, newest first, as one infinite-scroll event feed: cited in
+// board chat, in a card comment, in a card description; added to a
+// card; removed from a card. A search box and a time window filter the
+// entries. The tagged-cards list lives on the search page (?tag=) —
+// this page links out instead of duplicating it.
 import { Title } from '@solidjs/meta';
 import { type RouteProps, liveQuery } from '@solidjs/router';
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled } from 'solid-js';
 
 import { Avatar } from '../../../../components/Avatar';
 import { browserClient } from '../../../../lib/supabase-client';
+import { getTagEvents, pageSlices, updateTag, type TagEventRow } from '../../../../lib/tags';
 import { createEngine } from '../../../../lib/sync';
 import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';
-import {
-  getTagMentions,
-  getTaggedCards,
-  pageSlices,
-  updateTag,
-  type TagMentionRow,
-  type TaggedCard,
-} from '../../../../lib/tags';
 import {
   getWorkspaceSnapshot,
   workspaceStream,
@@ -40,6 +36,13 @@ const EMPTY_DETAIL: WorkspaceDetail = {
 };
 
 const PAGE = 30;
+
+const TIME_WINDOWS: Array<{ id: string; label: string; days: number | null }> = [
+  { id: 'any', label: 'Any time', days: null },
+  { id: '7', label: 'Past week', days: 7 },
+  { id: '30', label: 'Past month', days: 30 },
+  { id: '90', label: 'Past 3 months', days: 90 },
+];
 
 export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>) {
   const workspaceLive = liveQuery(workspaceStream, 'workspace');
@@ -80,32 +83,43 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
   const tag = createMemo(() => (detail()?.tags ?? []).find((t) => t.id === props.params.tagId) ?? null);
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
 
-  // Cards carrying the tag (RLS: visible boards only). Same-route
-  // navigation (tag A → tag B) re-runs the read for the new tag.
-  const [cards, setCards] = createSignal<TaggedCard[]>([]);
-  createEffect(
-    () => props.params.tagId,
-    (tagId) => {
-      if (tagId) getTaggedCards(tagId).then(setCards).catch(() => {});
-    },
-  );
+  // ── filters: search through the entries + a time window ─────────────
+  // The input is debounced: the feed resets on the settled value, not on
+  // every keystroke — typing 'design' is one fetch, not six.
+  const [queryInput, setQueryInput] = createSignal('');
+  const [query, setQuery] = createSignal('');
+  let queryTimer: ReturnType<typeof setTimeout> | undefined;
+  const onQueryInput = (value: string) => {
+    setQueryInput(value);
+    clearTimeout(queryTimer);
+    queryTimer = setTimeout(() => setQuery(value), 300);
+  };
+  onCleanup(() => clearTimeout(queryTimer));
+  const [windowDays, setWindowDays] = createSignal<number | null>(null);
+  const windowFrom = () => {
+    const days = windowDays();
+    return days === null ? undefined : new Date(Date.now() - days * 86400_000).toISOString();
+  };
 
-  // ── the mention feed: infinite scroll over the RPC's pages ───────────
-  const [mentions, setMentions] = createSignal<TagMentionRow[]>([]);
+  // ── the event feed: infinite scroll over the RPC's pages ────────────
+  const [events, setEvents] = createSignal<TagEventRow[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [done, setDone] = createSignal(false);
   const [feedError, setFeedError] = createSignal<string | null>(null);
-  // A stale in-flight page must never append rows for the previous tag:
-  // each reset bumps the generation, late results discard themselves.
-  let feedGen = 0;
   const loadMore = async () => {
     if (busy() || done() || !tag()) return;
     const gen = feedGen;
     setBusy(true);
     try {
-      const page = await getTagMentions(props.params.tagId, mentions().length, PAGE);
-      if (gen !== feedGen) return; // a tag switch happened mid-flight
-      setMentions([...mentions(), ...page]);
+      const from = windowFrom();
+      const page = await getTagEvents(props.params.tagId, {
+        offset: events().length,
+        limit: PAGE,
+        query: query(),
+        ...(from ? { from } : {}),
+      });
+      if (gen !== feedGen) return; // a filter/tag change happened mid-flight
+      setEvents([...events(), ...page]);
       if (page.length < PAGE) setDone(true);
     } catch (err) {
       if (gen === feedGen) {
@@ -114,16 +128,39 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
       }
     } finally {
       setBusy(false);
-      // A switch raced this page: its own first page still needs loading
+      // A change raced this page: its own first page still needs loading
       // (the reset's call returned early on busy).
       if (gen !== feedGen) void loadMore();
     }
   };
-  // The feed resets with the tag: navigating tag A → tag B refetches from
-  // page 0 for the new id. The sentinel mounts AFTER the first page (it
-  // sits inside the feed's Show), so observation happens in the ref
-  // callback — the observer outlives Show re-mounts and each mount
-  // re-attaches to whatever element the ref hands it.
+  // A stale in-flight page must never append rows for the previous
+  // filter/tag: each reset bumps the generation, late results discard
+  // themselves.
+  let feedGen = 0;
+  const resetFeed = () => {
+    feedGen++;
+    setEvents([]);
+    setDone(false);
+    setFeedError(null);
+    // Solid 2.0's reads lag writes: loadMore must see the reset's
+    // setDone(false) — the microtask boundary lets the flush land first.
+    // oxlint-disable-next-line solid/reactivity -- deferred on purpose: the write flush must land before loadMore reads the reset state
+    queueMicrotask(() => void loadMore());
+  };
+  createEffect(
+    () => [props.params.tagId, tag()?.id] as const,
+    ([tagId, id]) => {
+      if (tagId && id) resetFeed();
+    },
+  );
+  // Filter changes reset the feed (tag identity didn't change).
+  createEffect(
+    () => [query(), windowDays()] as const,
+    () => {
+      if (tag()) resetFeed();
+    },
+  );
+  // The sentinel: attach on every mount — the observer outlives re-mounts.
   let observer: IntersectionObserver | undefined;
   const ensureObserver = () => {
     if (!observer) {
@@ -137,68 +174,65 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
   const attachSentinel = (el: HTMLDivElement) => {
     if (el) ensureObserver().observe(el);
   };
-  createEffect(
-    () => [props.params.tagId, tag()?.id] as const,
-    ([tagId, id]) => {
-      if (!tagId || !id) return;
-      feedGen++;
-      setMentions([]);
-      setDone(false);
-      setFeedError(null);
-      void loadMore();
-    },
-  );
 
-  // ── live: mentions arrive without a reload ───────────────────────────
-  // The feed is a union over three surfaces, so there is no single table
-  // to filter by tag — the page watches board_messages, card_comments,
-  // and cards (description edits) broadly (RLS limits events to boards
-  // this viewer can see) and re-runs the loaded window, debounced. The
-  // header (name/description) is already live through the workspace
-  // engine's tags stream.
+  // ── live: new events arrive without a reload ─────────────────────────
+  // The feed is a union over several surfaces, so there is no single
+  // table to filter by tag — the page watches board_messages,
+  // card_comments, and card_tags (add/remove) broadly (RLS limits
+  // events to boards this viewer can see) and re-runs the loaded
+  // window, debounced. Renames arrive through the workspace engine's
+  // tags stream.
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   const refreshWindow = () => {
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(async () => {
+      const gen = feedGen;
       if (busy()) {
         refreshWindow();
         return;
       }
+      setBusy(true);
       const tagId = props.params.tagId;
-      // New mentions land at the TOP (newest first): refreshing the
-      // loaded depth plus one page keeps the tail row from dropping
-      // off. The RPC caps a single call at 100, so the window walks
-      // consecutive slices — an infinite-scrolled feed keeps its depth
-      // instead of snapping back.
-      const target = mentions().length + PAGE;
+      // New events land at the TOP (newest first): refreshing the loaded
+      // depth plus one page keeps the tail row from dropping off. The
+      // RPC caps a single call at 100, so the window walks consecutive
+      // slices — an infinite-scrolled feed keeps its depth.
+      const target = events().length + PAGE;
       try {
-        const rows: TagMentionRow[] = [];
+        const rows: TagEventRow[] = [];
+        const from = windowFrom();
         for (const { offset, limit } of pageSlices(target)) {
-          const slice = await getTagMentions(tagId, offset, limit);
+          const slice = await getTagEvents(tagId, {
+            offset,
+            limit,
+            query: query(),
+            ...(from ? { from } : {}),
+          });
           rows.push(...slice);
           if (slice.length < limit) break; // the feed ran out
         }
-        // A tag switch raced this fetch: the reset's own load wins.
-        if (tagId !== props.params.tagId) return;
-        setMentions(rows);
+        // A filter/tag change raced this fetch: the reset's own load wins.
+        if (gen !== feedGen || tagId !== props.params.tagId) return;
+        setEvents(rows);
         if (rows.length < target) setDone(true);
       } catch {
         // Best-effort live refresh — the next event (or a reload) retries.
+      } finally {
+        setBusy(false);
       }
     }, 500);
   };
   onSettled(() => {
     const client = browserClient();
     if (!client) return () => undefined;
-    // chat + comments are the hot mention surfaces. cards is
-    // deliberately NOT watched: its UPDATE events fire on every drag and
-    // priority change workspace-wide — a colleague rearranging a board
-    // would keep resetting the debounce. A description mentioning the
-    // tag surfaces on the next chat/comment event or a manual reload.
+    // card_tags covers add/remove events; cards UPDATEs (drags) are
+    // deliberately not watched — a colleague rearranging a board would
+    // keep resetting the debounce.
     const channel = client
-      .channel(`tag-mentions:${props.params.workspaceId}`)
+      .channel(`tag-events:${props.params.workspaceId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'board_messages' }, refreshWindow)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'card_comments' }, refreshWindow)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'card_tags' }, refreshWindow)
       .subscribe();
     return () => {
       clearTimeout(refreshTimer);
@@ -237,10 +271,31 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
     }
   };
 
-  const mentionHref = (row: TagMentionRow) =>
+  const kindLabel: Record<TagEventRow['kind'], string> = {
+    chat: 'chat',
+    comment: 'comment',
+    description: 'description',
+    tagged: 'added to card',
+    untagged: 'removed from card',
+  };
+  const eventHref = (row: TagEventRow) =>
     row.kind === 'chat'
       ? `/b/${row.board_id}?chat=${row.message_id ?? ''}`
-      : `/b/${row.board_id}?card=${row.card_id ?? ''}`;
+      : row.kind === 'comment'
+        ? `/b/${row.board_id}?card=${row.card_id ?? ''}&comment=${row.comment_id ?? ''}`
+        : row.kind === 'description'
+          ? `/b/${row.board_id}?card=${row.card_id ?? ''}&event=description`
+          : `/b/${row.board_id}?card=${row.card_id ?? ''}`;
+  const eventWhere = (row: TagEventRow) =>
+    row.kind === 'chat'
+      ? `in #${row.board_name}`
+      : row.kind === 'tagged'
+        ? `added this tag to #${row.card_title}`
+        : row.kind === 'untagged'
+          ? `removed this tag from #${row.card_title}`
+          : row.kind === 'description'
+            ? `in #${row.card_title}'s description`
+            : `on #${row.card_title} · ${row.board_name}`;
 
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
@@ -311,21 +366,31 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                 </Show>
                 <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
                   {data().workspace.name}
+                  <Show when={tag()?.description}> · {tag()?.description}</Show>
                 </p>
               </div>
-              <a
-                href={`/w/${props.params.workspaceId}/tags`}
-                class="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-                All tags →
-              </a>
+              <div class="flex flex-col items-end gap-1">
+                <a
+                  href={`/w/${props.params.workspaceId}/tags`}
+                  class="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                >
+                  All tags →
+                </a>
+                <Show when={tag()}>
+                  <a
+                    href={`/search?tag=${encodeURIComponent(tag()?.name ?? '')}`}
+                    class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  >
+                    Cards with this tag →
+                  </a>
+                </Show>
+              </div>
             </div>
             <Show when={renameError()}>
               <p class="mt-1 text-xs text-rose-600 dark:text-rose-400">{renameError()}</p>
             </Show>
 
-            {/* Description: display prose, admins edit in place. Tags are
-                never deleted — this is the whole maintenance surface. */}
+            {/* Description: display prose, admins edit in place. */}
             <div class="mt-4">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-semibold uppercase tracking-wide text-neutral-400">
@@ -387,49 +452,43 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
               </Show>
             </div>
 
-            {/* Cards carrying the tag. */}
-            <section class="mt-6">
-              <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                Cards ({cards().length})
-              </h2>
-              <Show
-                when={cards().length > 0}
-                fallback={<p class="mt-2 text-sm text-neutral-400">No cards carry this tag.</p>}
-              >
-                <ul class="mt-2 flex flex-wrap gap-1.5">
-                  <For each={cards()}>
-                    {(card) => (
-                      <li>
-                        <a
-                          href={`/b/${card.board_id}?card=${card.card_id}`}
-                          class="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-xs hover:border-indigo-300 hover:bg-indigo-50 dark:border-neutral-700 dark:hover:border-indigo-700 dark:hover:bg-indigo-950"
-                        >
-                          <span class="font-medium">{card.card_title}</span>
-                          <span class="text-neutral-400">#{card.card_number ?? '—'}</span>
-                          <span class="text-neutral-400">· {card.board_name}</span>
-                        </a>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-            </section>
-
-            {/* The mention feed: chat, comments, descriptions — newest first. */}
+            {/* The event capsule: filters + one infinite feed. */}
             <section class="mt-8">
-              <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                Mentions
-              </h2>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                  Everything about this tag
+                </h2>
+                <div class="flex items-center gap-2">
+                  <input
+                    class="w-44 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs shadow-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-neutral-700 dark:bg-neutral-900 dark:focus:border-indigo-700 dark:focus:ring-indigo-900"
+                    placeholder="Search these entries…"
+                    value={queryInput()}
+                    onInput={(event) => onQueryInput(event.currentTarget.value)}
+                  />
+                  <select
+                    class="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs shadow-sm outline-none focus:border-indigo-300 dark:border-neutral-700 dark:bg-neutral-900"
+                    value={windowDays() ?? 'any'}
+                    onChange={(event) => {
+                      const found = TIME_WINDOWS.find((w) => w.id === event.currentTarget.value);
+                      setWindowDays(found?.days ?? null);
+                    }}
+                  >
+                    <For each={TIME_WINDOWS}>
+                      {(w) => <option value={w.id}>{w.label}</option>}
+                    </For>
+                  </select>
+                </div>
+              </div>
               <Show
-                when={mentions().length > 0 || done()}
+                when={events().length > 0 || done()}
                 fallback={<p class="mt-2 text-sm text-neutral-400">Loading…</p>}
               >
                 <ul class="mt-2 flex flex-col gap-2">
-                  <For each={mentions()}>
+                  <For each={events()}>
                     {(row) => (
                       <li>
                         <a
-                          href={mentionHref(row)}
+                          href={eventHref(row)}
                           class="flex items-start gap-2.5 rounded-xl px-2 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-900"
                         >
                           <Avatar src={row.avatar_url} name={row.author} size="sm" />
@@ -439,11 +498,7 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                                 {row.author}
                               </span>
                               <span class="rounded bg-neutral-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                                {row.kind === 'chat'
-                                  ? 'chat'
-                                  : row.kind === 'comment'
-                                    ? 'comment'
-                                    : 'description'}
+                                {kindLabel[row.kind]}
                               </span>
                               <time>
                                 {new Date(row.created_at).toLocaleString(undefined, {
@@ -455,11 +510,7 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                               </time>
                             </span>
                             <span class="mt-0.5 block text-sm text-neutral-700 dark:text-neutral-300">
-                              {row.kind === 'chat' ? (
-                                <>in #{row.board_name}</>
-                              ) : (
-                                <>on #{row.card_title} · {row.board_name}</>
-                              )}
+                              {eventWhere(row)}
                             </span>
                             <span class="mt-0.5 block truncate text-xs text-neutral-400">
                               {row.snippet}
@@ -476,9 +527,11 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                 <Show
                   when={!done() && !feedError()}
                   fallback={
-                    <Show when={done() && mentions().length === 0}>
+                    <Show when={done() && events().length === 0}>
                       <p class="mt-3 text-sm text-neutral-400">
-                        Nothing cites this tag yet — no chat messages, comments, or descriptions.
+                        {query() || windowDays() !== null
+                          ? 'Nothing matches these filters.'
+                          : 'Nothing has cited this tag yet — no chat messages, comments, descriptions, or cards.'}
                       </p>
                     </Show>
                   }

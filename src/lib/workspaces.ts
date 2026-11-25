@@ -7,6 +7,7 @@ import { getRequestEvent, redirect } from '@solidjs/web';
 import { stringifySetCookie } from 'cookie';
 
 import { createSupabaseRequestClient, createSupabaseServiceClient } from '../server/supabase';
+import { friendlyError } from '../server/friendly';
 import { filterInaccessible, insertNotifications } from '../server/notify';
 import { recapTokensForUsers } from './tokens';
 import { env } from 'virtual:solid-env/server';
@@ -768,7 +769,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
     .maybeSingle();
   if (!workspace) throw new Error('Workspace not found');
   if (workspace.owner_id !== user.id) {
-    throw new Error('Only the workspace owner can delete it');
+    throw friendlyError('Only the workspace owner can delete it');
   }
   // Deletion safety (0069): other members refuse first — the cascade
   // would delete their boards and content with the workspace. The
@@ -779,7 +780,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
     .eq('workspace_id', workspaceId)
     .neq('user_id', user.id);
   if ((otherMembers ?? 0) > 0) {
-    throw new Error(
+    throw friendlyError(
       `This workspace still has ${otherMembers} other member${otherMembers === 1 ? '' : 's'} — remove them (or transfer ownership) before deleting; their boards and content would go with it`,
     );
   }
@@ -800,7 +801,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
     .eq('boards.workspace_id', workspaceId);
   if (cardCountError) throw new Error(cardCountError.message);
   if ((cardsInWorkspace ?? 0) > 0) {
-    throw new Error(
+    throw friendlyError(
       `Boards here still hold ${cardsInWorkspace} card${cardsInWorkspace === 1 ? '' : 's'} — delete or purge those boards first (a board with cards deletes only after you confirm it explicitly)`,
     );
   }
@@ -838,7 +839,7 @@ export async function purgeAllBoards(
     .eq('user_id', user.id)
     .maybeSingle();
   if (role?.role !== 'owner') {
-    throw new Error('Only the workspace owner can purge every board');
+    throw friendlyError('Only the workspace owner can purge every board');
   }
   const { data, error } = await supabase.rpc('purge_workspace_boards', {
     p_workspace_id: workspaceId,
@@ -949,7 +950,7 @@ export async function inviteMember(input: {
       .eq('workspace_id', input.workspaceId)
       .eq('user_id', profile.id)
       .maybeSingle();
-    if (member) throw new Error('That person is already in this workspace');
+    if (member) throw friendlyError('That person is already in this workspace');
   }
 
   const { data: invite, error } = await supabase

@@ -5,6 +5,7 @@
 // serialized tag:<uuid> chips in messages, comments, and descriptions
 // would dangle; a rename keeps every link alive).
 import { createSupabaseRequestClient } from '../server/supabase';
+import { friendlyError } from '../server/friendly';
 
 function assertId(id: string, what: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id ?? '')) {
@@ -32,11 +33,11 @@ export function pageSlices(target: number, max = 100): Array<{ offset: number; l
   return plan;
 }
 
-/** One row of a tag's mention feed: a chat message, a comment, or a
- *  card description that cites the tag — display-ready (the RPC flattens
- *  chips and clips the text). */
-export type TagMentionRow = {
-  kind: 'chat' | 'comment' | 'description';
+/** One row of a tag's event capsule: a chat mention, a comment mention,
+ *  a description mention, or the tag added to / removed from a card —
+ *  display-ready (the RPC flattens chips and clips the text). */
+export type TagEventRow = {
+  kind: 'chat' | 'comment' | 'description' | 'tagged' | 'untagged';
   board_id: string;
   board_name: string;
   message_id?: string;
@@ -49,59 +50,37 @@ export type TagMentionRow = {
   created_at: string;
 };
 
-/** A page of the tag's mentions, newest first (infinite scroll feeds
- *  walk this with a growing offset). */
-export async function getTagMentions(
+/** A page of the tag's events, newest first (infinite scroll walks this
+ *  with a growing offset). `query` searches the entries; `from`/`to`
+ *  bound the time window. */
+export async function getTagEvents(
   tagId: string,
-  offset = 0,
-  limit = 30,
-): Promise<TagMentionRow[]> {
+  options: { offset?: number; limit?: number; query?: string; from?: string; to?: string } = {},
+): Promise<TagEventRow[]> {
   'use server';
   const supabase = createSupabaseRequestClient();
-  const { data, error } = await supabase.rpc('tag_mention_rows', {
+  // LIKE wildcards in the user's query must match literally: % and _ are
+  // escaped (Postgres's default LIKE escape is the backslash).
+  const escaped = (options.query ?? '').replace(/[\\%_]/g, (m) => `\\${m}`);
+  // The server-fn codec rejects undefined values — only send what's set.
+  const args: {
+    p_tag_id: string;
+    p_query: string;
+    p_limit: number;
+    p_offset: number;
+    p_from?: string;
+    p_to?: string;
+  } = {
     p_tag_id: assertId(tagId, 'tag id'),
-    p_limit: limit,
-    p_offset: offset,
-  });
+    p_query: escaped,
+    p_limit: options.limit ?? 30,
+    p_offset: options.offset ?? 0,
+  };
+  if (options.from) args.p_from = options.from;
+  if (options.to) args.p_to = options.to;
+  const { data, error } = await supabase.rpc('tag_event_rows', args);
   if (error) throw new Error(error.message);
-  return (data ?? []) as TagMentionRow[];
-}
-
-/** The cards carrying a tag (visible ones only — RLS on card_tags).
- *  Display-ready: card title/number plus its board for the click-through. */
-export type TaggedCard = {
-  card_id: string;
-  card_title: string;
-  card_number: number | null;
-  board_id: string;
-  board_name: string;
-};
-
-export async function getTaggedCards(tagId: string): Promise<TaggedCard[]> {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const { data, error } = await supabase
-    .from('card_tags')
-    .select('card_id, cards(id, title, number, board_id, boards(name))')
-    .eq('tag_id', assertId(tagId, 'tag id'))
-    .limit(500);
-  if (error) throw new Error(error.message);
-  return (data ?? [])
-    .map((row) => {
-      const card = row.cards as
-        | { id: string; title: string; number: number | null; board_id: string; boards: { name: string } | null }
-        | null;
-      return card
-        ? {
-            card_id: card.id,
-            card_title: card.title,
-            card_number: card.number,
-            board_id: card.board_id,
-            board_name: card.boards?.name ?? 'a board',
-          }
-        : null;
-    })
-    .filter((row): row is TaggedCard => row !== null);
+  return (data ?? []) as TagEventRow[];
 }
 
 /** Card counts per tag — the hub's "N cards" badges. RLS: only cards on
@@ -144,12 +123,12 @@ export async function updateTag(
   }
   if (patch.description !== undefined) {
     const description = String(patch.description ?? '');
-    if (description.length > 500) throw new Error('Tag description is too long (max 500 characters)');
+    if (description.length > 500) throw friendlyError('Tag description is too long (max 500 characters)');
     // Empty clears the description — unlike the name, which must exist.
     update.description = description.trim();
   }
   if (Object.keys(update).length === 0) {
-    throw new Error('Nothing to update — pass a name or a description');
+    throw friendlyError('Nothing to update — pass a name or a description');
   }
   const { data, error } = await supabase
     .from('tags')
@@ -158,7 +137,7 @@ export async function updateTag(
     .select('name, description')
     .single();
   if (error || !data) {
-    throw new Error('Tag not found or you cannot edit it (owners and admins only)');
+    throw friendlyError('Tag not found or you cannot edit it (owners and admins only)');
   }
   return { name: data.name, description: data.description ?? '' };
 }

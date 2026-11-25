@@ -63,6 +63,7 @@ import {
   getBoardSnapshot,
   getBoardRevision,
   getCrossBoardCards,
+  getWorkspaceBoardList,
   type CrossCard,
   getBoardChatSnapshot,
   getCardComments,
@@ -615,6 +616,41 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             .then(setCrossCards)
             .catch(() => {});
       }
+    },
+  );
+  // The workspace's boards, for the composer's # menu (cross-board
+  // citations → board backlinks). RLS: only boards this viewer can see.
+  // Keyed by workspace id: navigating to another workspace's board in
+  // the same session must not serve the OLD workspace's list — and a
+  // failed load retries on the next effect run instead of caching empty.
+  const [workspaceBoardsFor, setWorkspaceBoardsFor] = createSignal<{ wsId: string | null; boards: { id: string; name: string }[] }>({
+    wsId: null,
+    boards: [],
+  });
+  const workspaceBoards = () => workspaceBoardsFor().boards;
+  // A failed load retries (capped) instead of leaving the menu without
+  // cross-board chips until a full reload.
+  const [boardListRetry, setBoardListRetry] = createSignal(0);
+  createEffect(
+    () => [view().board.workspace_id, boardListRetry()] as const,
+    ([wsId]) => {
+      if (!wsId) return;
+      if (workspaceBoardsFor().wsId === wsId) return;
+      let alive = true;
+      onCleanup(() => {
+        alive = false;
+      });
+      void getWorkspaceBoardList(wsId)
+        .then((boards) => {
+          if (alive && view().board.workspace_id === wsId) {
+            setWorkspaceBoardsFor({ wsId, boards });
+          }
+        })
+        .catch(() => {
+          if (alive && boardListRetry() < 3) {
+            setTimeout(() => setBoardListRetry((n) => n + 1), 2000);
+          }
+        });
     },
   );
   // The clicked card's client_op: the drawer re-resolves the card when the
@@ -1411,6 +1447,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             workspaceId={view().board.workspace_id ?? ''}
             workspaceTags={detail().tags}
             crossCards={crossCards()}
+            workspaceBoards={workspaceBoards()}
             canEdit={canEdit()}
             boardName={view().board.name}
             accessDelegation={view().board.access_delegation}
@@ -1458,6 +1495,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         cards={view().cards}
         lists={view().lists}
         crossCards={crossCards()}
+            workspaceBoards={workspaceBoards()}
         workspaceTags={detail().tags}
         teams={detail().teams}
         onOpenCard={(cardId, clientOp) => {
@@ -1528,6 +1566,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 teams={detail().teams}
                 cards={view().cards}
                 crossCards={crossCards()}
+                workspaceBoards={workspaceBoards()}
                 workspaceTags={detail().tags}
                 boardName={view().board.name}
                 canEdit={canEdit()}
@@ -2303,6 +2342,9 @@ function SmartTextarea(props: {
   workspaceTags: { id: string; name: string }[];
   /** Every card the viewer can see across boards (# offers cross-board refs). */
   crossCards: CrossCard[];
+  /** The workspace's boards — the # menu offers cross-board citations
+   *  (chips serialize as [name](board:<uuid>) → board backlinks). */
+  workspaceBoards?: { id: string; name: string }[];
   /** The board these cards live on — chips read "Board › Card", matching
    *  the rendered markdown instead of a bare #N. */
   boardName?: string;
@@ -2402,8 +2444,9 @@ function SmartTextarea(props: {
       else chip.setAttribute('data-cross', id);
       // Tag labels travel WITH their # (the serialized form is [#name]),
       // so only prefix when it's missing — otherwise a re-edit doubles
-      // it into ##name.
-      chip.textContent = `${kind === 'tag' ? (match[1].startsWith('#') ? '' : '#') : kind === 'card' ? '' : '@'}${match[1]}`;
+      // it into ##name. People and teams take @; cards and boards
+      // render bare (the board chip names the board itself).
+      chip.textContent = `${kind === 'tag' ? (match[1].startsWith('#') ? '' : '#') : kind === 'user' || kind === 'team' || kind === 'all' ? '@' : ''}${match[1]}`;
       root.appendChild(chip);
       last = pattern.lastIndex;
     }
@@ -2553,7 +2596,20 @@ function SmartTextarea(props: {
           card.title ? `${card.board_name} › ${card.title}` : `${card.board_name} #${card.number}`,
         ),
       }));
-    return [...current, ...tags, ...board, ...cross];
+    // Other boards — cross-board citations. The chip serializes as
+    // [name](board:<uuid>): the cited board gets a backlink message in
+    // its own chat.
+    const otherBoards = (props.workspaceBoards ?? [])
+      .filter((boardItem) => boardItem.id !== props.board?.id)
+      .filter((boardItem) => !q || boardItem.name.toLowerCase().includes(q))
+      .slice(0, 3)
+      .map((boardItem) => ({
+        key: `bb:${boardItem.id}`,
+        label: `${boardItem.name} · board`,
+        hint: 'cite this board',
+        chip: makeChip('fd-chip fd-chip-card', ['data-board', boardItem.id], null, boardItem.name),
+      }));
+    return [...current, ...tags, ...board, ...cross, ...otherBoards];
   };
 
   /** The caret's text node + offset, when it sits in plain text. */
@@ -2745,6 +2801,9 @@ function DetailHoverCard(props: {
   cards: CardView[];
   lists: ListRow[];
   crossCards: CrossCard[];
+  /** The workspace's boards — the # menu offers cross-board citations
+   *  (chips serialize as [name](board:<uuid>) → board backlinks). */
+  workspaceBoards?: { id: string; name: string }[];
   workspaceTags: { id: string; name: string }[];
   teams: TeamView[];
   onOpenCard: (cardId: string, clientOp: string | null) => void;
@@ -3163,6 +3222,9 @@ function CardDrawer(props: {
   workspaceTags: { id: string; name: string }[];
   /** Cross-board card targets for # references. */
   crossCards: CrossCard[];
+  /** The workspace's boards — the # menu offers cross-board citations
+   *  (chips serialize as [name](board:<uuid>) → board backlinks). */
+  workspaceBoards?: { id: string; name: string }[];
   canEdit: boolean;
   /** The board's name — citation chips read "Board #12". */
   boardName: string;
@@ -3347,6 +3409,15 @@ function CardDrawer(props: {
   // Events are slow-moving (a trail, not a chat): fetch on settings-tab
   // open and poll gently while it's open — no live connection needed.
   const [events, setEvents] = createSignal<CardEventRow[]>([]);
+  // The timeline's rows re-slice when the workspace's tag vocabulary
+  // changes: <For>'s callback is an untracked scope, so the chips' name
+  // lookups inside eventLine never re-run on a rename by themselves. A
+  // fresh array makes For rebuild the rows, and the rebuild resolves
+  // the CURRENT names (renamed tags update the trail live).
+  const timelineRows = createMemo(() => {
+    void props.workspaceTags.length;
+    return events().slice();
+  });
   createEffect(
     // Only the SETTINGS tab polls; other tabs and the closed drawer hold
     // nothing open.
@@ -3553,7 +3624,7 @@ function CardDrawer(props: {
               mentioned this in{' '}
               <a
                 class="fd-backlink"
-                href={`/b/${String(detail.board_id ?? '')}?card=${String(detail.card_id ?? '')}`}
+                href={`/b/${String(detail.board_id ?? '')}?card=${String(detail.card_id ?? '')}&event=description`}
                 title={snippet}
               >
                 #{String(detail.card_title ?? 'a card')}'s description
@@ -3566,7 +3637,7 @@ function CardDrawer(props: {
             mentioned this in a comment on{' '}
             <a
               class="fd-backlink"
-              href={`/b/${String(detail.board_id ?? '')}?card=${String(detail.card_id ?? '')}`}
+              href={`/b/${String(detail.board_id ?? '')}?card=${String(detail.card_id ?? '')}&comment=${String(detail.comment_id ?? '')}`}
               title={snippet}
             >
               #{String(detail.card_title ?? 'a card')}
@@ -3634,6 +3705,99 @@ function CardDrawer(props: {
   });
 
   const comments = () => dedup([...older(), ...commentsEngine.view().list]);
+
+  // ── backlink anchors ─────────────────────────────────────────────────
+  // The trail's links land somewhere concrete: a cited comment scrolls
+  // to + flashes that comment; the description backlink lands on the
+  // SETTINGS tab at the card's latest description event (the diff that
+  // shows WHERE the citation lives — not the description body itself).
+  const [drawerParams, setDrawerParams] = useSearchParams<{ comment?: string; event?: string }>();
+  // The comment anchor arrives in two steps: the param switches the
+  // drawer to the CHAT tab (the comment lives there), and the flash
+  // effect scrolls + highlights once the row exists. Splitting them
+  // keeps each effect's inputs free of its own writes.
+  createEffect(
+    () => drawerParams.comment ?? null,
+    (commentId) => {
+      if (commentId && tab() !== 'chat') setTab('chat');
+    },
+  );
+  let anchoredComment: string | null = null;
+  createEffect(
+    // The card id rides along: switching cards with the SAME comment
+    // count must still retry the anchor (the rows are new).
+    () => [drawerParams.comment ?? null, comments().length, card()?.id, tab()] as const,
+    ([commentId]) => {
+      if (!commentId || anchoredComment === commentId) return;
+      queueMicrotask(() => {
+        const row = document.querySelector(`[data-comment-id="${commentId}"]`);
+        if (!row) return; // the tab switch / comments load re-fires this effect
+        anchoredComment = commentId;
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.classList.add('fd-chat-anchor');
+        // The param clears from the timer — a write from the effect's own
+        // apply would feed back into its inputs.
+        setTimeout(() => {
+          row.classList.remove('fd-chat-anchor');
+          setDrawerParams({ comment: '' }, { replace: true });
+        }, 2400);
+      });
+    },
+  );
+  // The description anchor follows the same two-step split as the comment
+  // one: the param switches the drawer to the SETTINGS tab (where the
+  // trail lives), and the flash effect scrolls + highlights the card's
+  // LATEST description event — re-queried after the switch, so it can
+  // never hold a node the tab change detached.
+  createEffect(
+    () => drawerParams.event ?? null,
+    (event) => {
+      if (event === 'description' && tab() !== 'settings') setTab('settings');
+    },
+  );
+  // The flash must survive the timeline RE-RENDERING: the first row it
+  // lands on can be replaced moments later (card() resolves and Solid
+  // recreates the rows). So the effect re-checks on every key change —
+  // a live, flashing node stops it; a replaced (detached) one re-flashes
+  // the current last row.
+  let anchoredEventRow: Element | null = null;
+  // The param leaving 'description' closes an anchor session — the next
+  // one starts clean, even when it lands on the same card + same row.
+  createEffect(
+    () => drawerParams.event ?? null,
+    (event) => {
+      if (event !== 'description') anchoredEventRow = null;
+    },
+  );
+  createEffect(
+    // Same card-id keying as the comment anchor; the tab rides along so
+    // the flash retries when the settings tab mounts its rows.
+    () => [drawerParams.event ?? null, events().length, card()?.id, tab()] as const,
+    ([event]) => {
+      if (event !== 'description') return;
+      if (anchoredEventRow?.isConnected && anchoredEventRow.classList.contains('fd-chat-anchor')) return;
+      queueMicrotask(() => {
+        const rows = document.querySelectorAll('[data-event-kind="description"]');
+        const row = rows[rows.length - 1];
+        if (!row) return; // the tab switch / events load re-fires this effect
+        if (anchoredEventRow === row) return;
+        anchoredEventRow?.classList.remove('fd-chat-anchor');
+        anchoredEventRow = row;
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.classList.add('fd-chat-anchor');
+        // A timer per anchor: each cleans up the row it flashed and
+        // clears the param (idempotent when timers overlap). A
+        // once-per-session flag never re-armed, so a later anchor's
+        // highlight stuck forever — no flag.
+        const target = row;
+        setTimeout(() => {
+          target.classList.remove('fd-chat-anchor');
+          setDrawerParams({ event: '' }, { replace: true });
+        }, 2400);
+      });
+    },
+  );
+
 
   // The scroller: latest at the bottom; auto-follow new comments.
   let commentsScroll: HTMLDivElement | undefined;
@@ -4464,6 +4628,7 @@ function CardDrawer(props: {
                   cards={props.cards}
                   workspaceTags={props.workspaceTags}
                   crossCards={props.crossCards}
+                  workspaceBoards={props.workspaceBoards}
                   boardName={props.boardName}
                   board={{ id: card()?.board_id ?? '', name: props.boardName }}
                   rows={8}
@@ -4510,9 +4675,9 @@ function CardDrawer(props: {
                 onClick={onBodyClick}
                 onMouseOver={onBodyHover}
               >
-                <For each={events()}>
+                <For each={timelineRows()}>
                   {(row) => (
-                    <li class="relative text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+                    <li data-event-kind={row.kind} class="relative text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
                       <span class="absolute -left-[17px] top-1.5 h-1.5 w-1.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
                       <Show
                         when={row.actor_id}
@@ -4575,7 +4740,7 @@ function CardDrawer(props: {
                 {(comment) => {
                   const mine = () => comment.author_id !== null && comment.author_id === props.myId;
                   return (
-                    <li class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
+                    <li data-comment-id={comment.id} class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
                       <Avatar src={comment.avatar_url} name={comment.author} size="sm" />
                       <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
                         <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
@@ -4679,6 +4844,7 @@ function CardDrawer(props: {
                                 cards={props.cards}
                                 workspaceTags={props.workspaceTags}
                                 crossCards={props.crossCards}
+                                workspaceBoards={props.workspaceBoards}
                                 boardName={props.boardName}
                                 board={{ id: card()?.board_id ?? '', name: props.boardName }}
                                 rows={2}
@@ -4835,6 +5001,7 @@ function CardDrawer(props: {
                 cards={props.cards}
                 workspaceTags={props.workspaceTags}
                 crossCards={props.crossCards}
+                workspaceBoards={props.workspaceBoards}
                 boardName={props.boardName}
                 board={{ id: card()?.board_id ?? '', name: props.boardName }}
                 rows={2}
@@ -4969,6 +5136,9 @@ function BoardChat(props: {
   /** This board's cards + cross-board cards — # citations resolve. */
   cards: CardView[];
   crossCards: CrossCard[];
+  /** The workspace's boards — the # menu offers cross-board citations
+   *  (chips serialize as [name](board:<uuid>) → board backlinks). */
+  workspaceBoards?: { id: string; name: string }[];
   /** The workspace's tag vocabulary — # offers tags too. */
   workspaceTags: { id: string; name: string }[];
   boardName: string;
@@ -5515,6 +5685,7 @@ function BoardChat(props: {
                               cards={props.cards}
                               workspaceTags={props.workspaceTags}
                               crossCards={props.crossCards}
+                              workspaceBoards={props.workspaceBoards}
                               boardName={props.boardName}
                               board={{ id: props.boardId, name: props.boardName }}
                               rows={2}
@@ -5652,6 +5823,7 @@ function BoardChat(props: {
               cards={props.cards}
               workspaceTags={props.workspaceTags}
               crossCards={props.crossCards}
+              workspaceBoards={props.workspaceBoards}
               boardName={props.boardName}
               board={{ id: props.boardId, name: props.boardName }}
               rows={2}
