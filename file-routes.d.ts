@@ -144,15 +144,15 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
-      path: "/w/:workspaceId/tags";
-      page: true;
-      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags")>>>;
-      $$route?: undefined;
-    },
-    {
       path: "/w/:workspaceId/tags/:tagId";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags/[tagId]"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags/[tagId]")>>>;
+      $$route?: undefined;
+    },
+    {
+      path: "/w/:workspaceId/tags/";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags/index"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags/index")>>>;
       $$route?: undefined;
     },
     {
@@ -256,21 +256,12 @@ declare module "virtual:file-routes" {
       children?: undefined;
     },
     {
-      path: "/w/:workspaceId/tags";
-      id: "/w/:workspaceId/tags";
+      path: "/w/:workspaceId/tags/";
+      id: "/w/:workspaceId/tags/";
       page: true;
-      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags")>>>;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags/index"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags/index")>>>;
       $$route?: undefined;
-      children: readonly [
-        {
-          path: "/:tagId";
-          id: "/:tagId";
-          page: true;
-          $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags/[tagId]"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags/[tagId]")>>>;
-          $$route?: undefined;
-          children?: undefined;
-        }
-      ];
+      children?: undefined;
     },
     {
       path: "/w/:workspaceId/members";
@@ -285,6 +276,14 @@ declare module "virtual:file-routes" {
       id: "/w/:workspaceId/t/:teamId";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/t/[teamId]"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/t/[teamId]")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/w/:workspaceId/tags/:tagId";
+      id: "/w/:workspaceId/tags/:tagId";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags/[tagId]"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags/[tagId]")>>>;
       $$route?: undefined;
       children?: undefined;
     }

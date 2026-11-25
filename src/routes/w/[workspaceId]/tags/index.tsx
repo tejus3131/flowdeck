@@ -6,18 +6,18 @@ import { Title } from '@solidjs/meta';
 import { type RouteProps, liveQuery } from '@solidjs/router';
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 
-import { createEngine } from '../../../lib/sync';
-import { mergeWorkspaceDetail } from '../../../lib/workspace-ops';
-import { findOrCreateTag } from '../../../lib/boards';
-import { deleteTag, getTagCardCounts, renameTag } from '../../../lib/tags';
+import { createEngine } from '../../../../lib/sync';
+import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';
+import { findOrCreateTag } from '../../../../lib/boards';
+import { deleteTag, getTagCardCounts, renameTag } from '../../../../lib/tags';
 import {
   getWorkspaceSnapshot,
   workspaceStream,
   type WorkspaceDetail,
-} from '../../../lib/workspaces';
-import { errorMessage } from '../../../lib/error-message';
-import { cachedStream, cachePut } from '../../../lib/cache';
-import { perfFirstValue } from '../../../lib/perf';
+} from '../../../../lib/workspaces';
+import { errorMessage } from '../../../../lib/error-message';
+import { cachedStream, cachePut } from '../../../../lib/cache';
+import { perfFirstValue } from '../../../../lib/perf';
 
 const EMPTY_DETAIL: WorkspaceDetail = {
   workspace: { id: '', name: '', invite_domains: [], board_creation: 'team_admins' },
