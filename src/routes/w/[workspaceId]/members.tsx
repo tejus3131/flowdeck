@@ -20,6 +20,7 @@ import {
 import { updateBoardCreation } from '../../../lib/workspaces';
 import {
   deleteWorkspace,
+  purgeAllBoards,
   getWorkspaceSnapshot,
   inviteMember,
   leaveWorkspace,
@@ -432,6 +433,32 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
     } finally {
       setDomainsBusy(false);
     }
+  };
+
+  // ── bulk purge: every board, one typed confirmation (0070). The
+  // workspace itself stays — this is the "empty it out" path that makes
+  // the final delete possible.
+  const [purgePanel, setPurgePanel] = createSignal(false);
+  const [purgeTyped, setPurgeTyped] = createSignal('');
+  const [purging, setPurging] = createSignal(false);
+  const [purgeNote, setPurgeNote] = createSignal<string | null>(null);
+  const purgeWs = async () => {
+    if (purging()) return;
+    setPurging(true);
+    setError(null);
+    try {
+      const result = await purgeAllBoards(props.params.workspaceId);
+      setPurgeNote(
+        `Purged ${result.boardsPurged} board${result.boardsPurged === 1 ? '' : 's'} and ${result.cardsDeleted} card${result.cardsDeleted === 1 ? '' : 's'} — permanently.`,
+      );
+      setPurgePanel(false);
+      setPurgeTyped('');
+      await engine.refresh();
+      revalidate('boards');
+    } catch (cause) {
+      setError(errorMessage(cause, 'Could not purge the boards'));
+    }
+    setPurging(false);
   };
 
   const deleteWs = async () => {
@@ -1194,6 +1221,58 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                   Deleting removes the workspace and every board, card, comment, team, and
                   invite inside it — for everyone.
                 </p>
+                <Show when={purgeNote()}>
+                  <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{purgeNote()}</p>
+                </Show>
+                <Show
+                  when={!purgePanel()}
+                  fallback={
+                    <div class="mt-2 rounded-xl border border-red-200 bg-red-50/60 p-3 dark:border-red-900 dark:bg-red-950/30">
+                      <p class="text-xs text-red-700 dark:text-red-300">
+                        Type <span class="font-mono font-semibold">{data().workspace.name}</span> to
+                        permanently delete every board in this workspace and all their cards.
+                        The workspace itself stays.
+                      </p>
+                      <input
+                        class="mt-2 w-44 rounded-lg border border-red-200 bg-white px-2 py-1 text-xs outline-none dark:border-red-900 dark:bg-neutral-900"
+                        placeholder="Workspace name"
+                        value={purgeTyped()}
+                        onInput={(event) => setPurgeTyped(event.currentTarget.value)}
+                      />
+                      <div class="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={purging() || purgeTyped() !== data().workspace.name}
+                          class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                          onClick={() => void purgeWs()}
+                        >
+                          {purging() ? 'Purging…' : `Purge all ${data().boards.length} board${data().boards.length === 1 ? '' : 's'}…`}
+                        </button>
+                        <button
+                          type="button"
+                          class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                          onClick={() => {
+                            setPurgePanel(false);
+                            setPurgeTyped('');
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  }
+                >
+                  <button
+                    type="button"
+                    class="mt-2 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                    onClick={() => {
+                      setPurgeNote(null);
+                      setPurgePanel(true);
+                    }}
+                  >
+                    Purge all boards…
+                  </button>
+                </Show>
                 <Show
                   when={confirmingDeleteWs()}
                   fallback={

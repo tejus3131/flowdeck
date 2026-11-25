@@ -817,6 +817,40 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
   return true;
 }
 
+/** The bulk purge: every board in the workspace, one deliberate act
+ *  (0070). The owner's alone — bigger blast radius than a single board's
+ *  purge, which also admits workspace admins. */
+export async function purgeAllBoards(
+  workspaceId: string,
+): Promise<{ boardsPurged: number; cardsDeleted: number }> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  if (!UUID.test(workspaceId ?? '')) throw new Error('Invalid workspace');
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('You need to sign in first');
+  // Friendly pre-check (the RPC re-verifies as the owner).
+  const { data: role } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (role?.role !== 'owner') {
+    throw new Error('Only the workspace owner can purge every board');
+  }
+  const { data, error } = await supabase.rpc('purge_workspace_boards', {
+    p_workspace_id: workspaceId,
+  });
+  if (error) throw new Error(error.message);
+  const result = (data ?? {}) as { boards_purged?: number; cards_deleted?: number };
+  return {
+    boardsPurged: result.boards_purged ?? 0,
+    cardsDeleted: result.cards_deleted ?? 0,
+  };
+}
+
 async function sendInviteEmail(to: string, workspaceName: string, acceptUrl: string) {
   if (!env.RESEND_API_KEY) return false;
   try {

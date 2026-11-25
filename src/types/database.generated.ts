@@ -1291,6 +1291,7 @@ export type Database = {
       }
       tag_mention_rows: { Args: { p_tag_id: string; p_limit?: number; p_offset?: number }; Returns: Json }
       purge_board: { Args: { p_board_id: string }; Returns: Json }
+      purge_workspace_boards: { Args: { p_workspace_id: string }; Returns: Json }
       resolve_card: { Args: { p_card_id: string }; Returns: Json }
       unresolve_card: { Args: { p_card_id: string }; Returns: Json }
       get_chat_seen: {
