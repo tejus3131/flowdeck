@@ -191,7 +191,10 @@ export type Database = {
           body: string
           client_op: string | null
           created_at: string
+          deleted_as: string | null
+          deleted_as_team_id: string | null
           deleted_at: string | null
+          deleted_by: string | null
           edited_at: string | null
           id: string
           seq: number
@@ -203,7 +206,10 @@ export type Database = {
           body: string
           client_op?: string | null
           created_at?: string
+          deleted_as?: string | null
+          deleted_as_team_id?: string | null
           deleted_at?: string | null
+          deleted_by?: string | null
           edited_at?: string | null
           id?: string
           seq: number
@@ -214,7 +220,10 @@ export type Database = {
           body?: string
           client_op?: string | null
           created_at?: string
+          deleted_as?: string | null
+          deleted_as_team_id?: string | null
           deleted_at?: string | null
+          deleted_by?: string | null
           edited_at?: string | null
           id?: string
           user_id?: string
@@ -434,7 +443,10 @@ export type Database = {
           card_id: string
           client_op: string | null
           created_at: string
+          deleted_as: string | null
+          deleted_as_team_id: string | null
           deleted_at: string | null
+          deleted_by: string | null
           edited_at: string | null
           id: string
           seq: number
@@ -446,7 +458,10 @@ export type Database = {
           card_id: string
           client_op?: string | null
           created_at?: string
+          deleted_as?: string | null
+          deleted_as_team_id?: string | null
           deleted_at?: string | null
+          deleted_by?: string | null
           edited_at?: string | null
           id?: string
           seq: number
@@ -457,7 +472,10 @@ export type Database = {
           card_id?: string
           client_op?: string | null
           created_at?: string
+          deleted_as?: string | null
+          deleted_as_team_id?: string | null
           deleted_at?: string | null
+          deleted_by?: string | null
           edited_at?: string | null
           id?: string
           user_id?: string
@@ -1208,6 +1226,8 @@ export type Database = {
           last_comment_at: string
         }[]
       }
+      delete_board_message: { Args: { p_id: string }; Returns: Json }
+      delete_comment: { Args: { p_id: string }; Returns: Json }
       get_chat_seen: {
         Args: { p_scope_id: string; p_scope_type: string }
         Returns: string

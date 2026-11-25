@@ -51,8 +51,10 @@ They work in board chat, card comments, and card descriptions.
   human** when only `can_request` is true (or anything looks unusual).
 - Messages and comments carry a `seq` — the true send order even when a
   burst lands within the same second. Sort by `seq`, never `created_at`.
-- Edit/delete are soft: edits stamp `edited`, deletes hide the row (history
-  is preserved). Clean up your own mistakes with `edit_comment` /
+- Editing is the author's own only. Deletes are soft AND role-scoped: the
+  author, workspace owners/admins, and team admins (on boards their team
+  edits). A delete leaves a tombstone the UI shows ("X deleted a message
+  from Y — as Admin"), so clean up your own mistakes with `edit_comment` /
   `delete_board_message` rather than posting corrections.
 - An author edits their own rows; workspace owners/admins can edit or delete
   anyone's.

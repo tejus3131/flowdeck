@@ -1343,6 +1343,12 @@ export type CommentRow = {
   /** The author's id + avatar — the chat-style rendering needs both. */
   author_id: string | null;
   avatar_url: string | null;
+  /** Tombstone: set when the row was deleted — the body reads empty and
+   *  the UI renders the deletion trail instead. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_as?: 'author' | 'owner' | 'admin' | 'team_admin' | null;
+  deleted_as_team_id?: string | null;
 };
 
 /** One card's comments with author names, newest last. */
@@ -1361,9 +1367,8 @@ export async function getCardComments(
   const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
   let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('card_id', resolved)
-    .is('deleted_at', null)
     .order('seq', { ascending: false })
     .limit(limit);
   if (before) query = query.lt('seq', before);
@@ -1375,9 +1380,13 @@ export async function getCardComments(
     .reverse()
     .map((row) => ({
       id: row.id,
-      body: row.body,
+      body: row.deleted_at ? '' : row.body,
       created_at: row.created_at,
       edited_at: row.edited_at,
+      deleted_at: row.deleted_at,
+      deleted_by: row.deleted_by,
+      deleted_as: (row.deleted_as as CommentRow['deleted_as']) ?? null,
+      deleted_as_team_id: row.deleted_as_team_id,
       seq: row.seq,
       agent: row.agent ?? false,
       client_op: row.client_op,
@@ -1433,9 +1442,8 @@ export const cardCommentsStream = live(async function* (
     const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
-      .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+      .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
       .eq('card_id', id)
-      .is('deleted_at', null)
       .order('seq', { ascending: false })
       .limit(30);
     if (error) throw new Error(error.message);
@@ -1445,9 +1453,13 @@ export const cardCommentsStream = live(async function* (
       .reverse()
       .map((row) => ({
         id: row.id,
-        body: row.body,
+        body: row.deleted_at ? '' : row.body,
         created_at: row.created_at,
         edited_at: row.edited_at,
+        deleted_at: row.deleted_at,
+        deleted_by: row.deleted_by,
+        deleted_as: (row.deleted_as as CommentRow['deleted_as']) ?? null,
+        deleted_as_team_id: row.deleted_as_team_id,
         seq: row.seq,
         client_op: row.client_op,
         agent: row.agent ?? false,
@@ -1616,22 +1628,17 @@ export async function editComment(commentId: string, body: string): Promise<void
 }
 
 /**
- * Soft-delete a comment. RLS decides who may (same as edits). The row
- * stays for history; every read filters it out.
+ * Soft-delete a comment through the role-scoped RPC (0057): the author
+ * always; anyone's for workspace owners/admins and team admins on
+ * boards their team can edit. The row becomes a tombstone.
  */
 export async function deleteComment(commentId: string): Promise<void> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(commentId, 'comment id');
   await requireUser(supabase);
-  const { data, error } = await supabase
-    .from('card_comments')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .is('deleted_at', null)
-    .select('id');
+  const { error } = await supabase.rpc('delete_comment', { p_id: id });
   if (error) throw new Error(error.message);
-  if (!data || data.length === 0) throw new Error('Comment not found or no access');
 }
 
 // ── board chat ────────────────────────────────────────────────────────────
@@ -1651,6 +1658,12 @@ export type BoardMessageRow = {
   agent?: boolean;
   /** Set when the body was edited after posting (the "(edited)" marker). */
   edited_at: string | null;
+  /** Tombstone: set when the row was deleted — the body reads empty and
+   *  the UI renders the deletion trail instead. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_as?: 'author' | 'owner' | 'admin' | 'team_admin' | null;
+  deleted_as_team_id?: string | null;
 };
 
 /**
@@ -1669,9 +1682,8 @@ async function boardChatSnapshot(
   const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
-    .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('board_id', boardId)
-    .is('deleted_at', null)
     .order('seq', { ascending: false })
     .limit(100);
   if (error) throw new Error(error.message);
@@ -1681,9 +1693,13 @@ async function boardChatSnapshot(
     .reverse()
     .map((row) => ({
       id: row.id,
-      body: row.body,
+      body: row.deleted_at ? '' : row.body,
       created_at: row.created_at,
       edited_at: row.edited_at,
+      deleted_at: row.deleted_at,
+      deleted_by: row.deleted_by,
+      deleted_as: (row.deleted_as as BoardMessageRow['deleted_as']) ?? null,
+      deleted_as_team_id: row.deleted_as_team_id,
       seq: row.seq,
       agent: row.agent ?? false,
       client_op: row.client_op,
@@ -1861,22 +1877,18 @@ export async function editBoardMessage(messageId: string, body: string): Promise
 }
 
 /**
- * Soft-delete a board message. RLS decides who may (same as edits). The
- * row stays for history; every read filters it out.
+ * Soft-delete a board message through the role-scoped RPC (0057): the
+ * author always; anyone's for workspace owners/admins and team admins
+ * on boards their team can edit. The row becomes a tombstone — who
+ * deleted it and in what role — instead of vanishing.
  */
 export async function deleteBoardMessage(messageId: string): Promise<void> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(messageId, 'message id');
   await requireUser(supabase);
-  const { data, error } = await supabase
-    .from('board_messages')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .is('deleted_at', null)
-    .select('id');
+  const { error } = await supabase.rpc('delete_board_message', { p_id: id });
   if (error) throw new Error(error.message);
-  if (!data || data.length === 0) throw new Error('Message not found or no access');
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
