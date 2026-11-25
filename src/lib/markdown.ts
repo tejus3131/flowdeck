@@ -153,6 +153,9 @@ export interface MarkdownContext {
   teams?: { id: string; name: string }[];
   /** Cross-board cards by id — chips read "Board › Card title". */
   crossCards?: Map<string, { title: string | null; board: string }>;
+  /** The workspace's tag vocabulary — tag chips show their CURRENT name
+   *  (renames update everywhere, like member and team chips). */
+  tags?: { id: string; name: string }[];
 }
 
 /**
@@ -191,7 +194,7 @@ export function renderMarkdown(source: string, context?: MarkdownContext): strin
     );
     if (!ok) frame.remove();
   }
-  styleReferences(doc, context?.members, context?.accessibleCardIds, context?.teams, context?.cardRefs, context?.crossCards);
+  styleReferences(doc, context?.members, context?.accessibleCardIds, context?.teams, context?.cardRefs, context?.crossCards, context?.tags);
   return doc.body.innerHTML;
 }
 
@@ -205,6 +208,7 @@ function styleReferences(
   teams?: { id: string; name: string }[],
   cardRefs?: Map<number, { title: string | null; board: string }>,
   crossCards?: Map<string, { title: string | null; board: string }>,
+  tags?: { id: string; name: string }[],
 ): void {
   const byId = new Map((members ?? []).map((m) => [m.user_id, m]));
   for (const anchor of [...doc.querySelectorAll('a[data-user-id]')]) {
@@ -257,14 +261,17 @@ function styleReferences(
     chip.textContent = anchor.textContent ?? 'board';
     anchor.replaceWith(chip);
   }
+  // Tag chips: the tag's CURRENT name (renames update everywhere); the
+  // label in the text is a snapshot for the fallback.
+  const tagsById = new Map((tags ?? []).map((tag) => [tag.id, tag]));
   for (const anchor of [...doc.querySelectorAll('a[data-tag-id]')]) {
+    const tag = tagsById.get(anchor.getAttribute('data-tag-id') ?? '');
     const chip = doc.createElement('span');
     chip.className = 'fd-tag-ref';
     chip.setAttribute('data-tag-id', anchor.getAttribute('data-tag-id') ?? '');
-    chip.textContent = anchor.textContent ?? 'tag';
+    chip.textContent = `#${tag?.name ?? anchor.textContent?.replace(/^#/, '') ?? 'tag'}`;
     anchor.replaceWith(chip);
-  }
-  // Team chips: the team's CURRENT name (renames update everywhere).
+  }  // Team chips: the team's CURRENT name (renames update everywhere).
   const teamsById = new Map((teams ?? []).map((team) => [team.id, team]));
   for (const anchor of [...doc.querySelectorAll('a[data-all]')]) {
     const chip = doc.createElement('span');

@@ -3,9 +3,10 @@
 // (board chat, card comments, descriptions) as one infinite-scroll feed.
 import { Title } from '@solidjs/meta';
 import { type RouteProps, liveQuery } from '@solidjs/router';
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled } from 'solid-js';
 
 import { Avatar } from '../../../../components/Avatar';
+import { browserClient } from '../../../../lib/supabase-client';
 import { createEngine } from '../../../../lib/sync';
 import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';
 import {
@@ -146,6 +147,51 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
       void loadMore();
     },
   );
+
+  // ── live: mentions arrive without a reload ───────────────────────────
+  // The feed is a union over three surfaces, so there is no single table
+  // to filter by tag — the page watches board_messages, card_comments,
+  // and cards (description edits) broadly (RLS limits events to boards
+  // this viewer can see) and re-runs the loaded window, debounced. The
+  // header (name/description) is already live through the workspace
+  // engine's tags stream.
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshWindow = () => {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+      if (busy()) {
+        refreshWindow();
+        return;
+      }
+      const tagId = props.params.tagId;
+      // Keep the loaded depth (infinite scroll keeps its place); cap at
+      // the RPC's page ceiling.
+      const size = Math.min(Math.max(PAGE, mentions().length), 100);
+      try {
+        const rows = await getTagMentions(tagId, 0, size);
+        // A tag switch raced this fetch: the reset's own load wins.
+        if (tagId !== props.params.tagId) return;
+        setMentions(rows);
+        if (rows.length < size) setDone(true);
+      } catch {
+        // Best-effort live refresh — the next event (or a reload) retries.
+      }
+    }, 500);
+  };
+  onSettled(() => {
+    const client = browserClient();
+    if (!client) return () => undefined;
+    const channel = client
+      .channel(`tag-mentions:${props.params.workspaceId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_messages' }, refreshWindow)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'card_comments' }, refreshWindow)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards' }, refreshWindow)
+      .subscribe();
+    return () => {
+      clearTimeout(refreshTimer);
+      void client.removeChannel(channel);
+    };
+  });
 
   // ── editing (owners/admins): name and description. Tags are never
   // deleted — links in messages, comments, and descriptions would
