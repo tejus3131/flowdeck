@@ -150,7 +150,8 @@ export async function updateTag(
   }
   if (Object.keys(update).length === 0) {
     throw new Error('Nothing to update — pass a name or a description');
-  }  const { data, error } = await supabase
+  }
+  const { data, error } = await supabase
     .from('tags')
     .update(update)
     .eq('id', assertId(tagId, 'tag id'))

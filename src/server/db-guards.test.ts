@@ -146,7 +146,7 @@ d('DB guards (local stack)', () => {
     expect(forged.trim().split('\n').pop()).toBe('0');
   });
 
-  it('log_board_mentions posts once per (source, target) — concurrent calls dedupe', () => {
+  it('log_board_mentions is idempotent per (source, target) — a retried call does not double-post (ON CONFLICT is the atomic guarantee)', () => {
     const targetBoard = sql(
       `insert into public.boards (workspace_id, name, owner_id) select '${WS}', 'Backlink target', '${OWNER}' returning id`,
     ).trim();

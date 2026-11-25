@@ -114,12 +114,24 @@ function humanLine(
         text: `${actor} removed you from @${team}`,
         detail: '',
       };
+    case 'workspace_purged':
+      // 0071's bulk purge: the body carries the counts.
+      return {
+        text: `${actor} purged every board in this workspace`,
+        detail: row.body ?? '',
+      };
     case 'invite':
       return {
         text: `${actor} invited you to ${row.body ?? 'a workspace'}`,
         detail: 'Tap to accept',
       };
   }
+  // A kind this build doesn't know yet: degrade to the stored body
+  // instead of throwing — the bell must never crash on a new row.
+  return {
+    text: row.body ?? 'Notification',
+    detail: '',
+  };
 }
 
 /** Notification hrefs are stored as absolute URLs (they also ride email

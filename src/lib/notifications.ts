@@ -24,6 +24,7 @@ export type NotificationRow = {
     | 'chat'
     | 'team_added'
     | 'team_removed'
+    | 'workspace_purged'
     | 'invite';
   card_id: string | null;
   board_id: string | null;
