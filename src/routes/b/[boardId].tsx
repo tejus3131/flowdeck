@@ -1455,6 +1455,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 teams={detail().teams}
                 cards={view().cards}
                 crossCards={crossCards()}
+                workspaceTags={detail().tags}
                 boardName={view().board.name}
                 canEdit={canEdit()}
                 myId={me()?.id ?? null}
@@ -4331,6 +4332,8 @@ function BoardChat(props: {
   /** This board's cards + cross-board cards — # citations resolve. */
   cards: CardView[];
   crossCards: CrossCard[];
+  /** The workspace's tag vocabulary — # offers tags too. */
+  workspaceTags: { id: string; name: string }[];
   boardName: string;
   canEdit: boolean;
   myId: string | null;
@@ -4775,17 +4778,18 @@ function BoardChat(props: {
               onInput={setDraft}
               members={props.members}
               teams={props.teams}
-              cards={[]}
-              workspaceTags={[]}
-              crossCards={[]}
+              cards={props.cards}
+              workspaceTags={props.workspaceTags}
+              crossCards={props.crossCards}
               rows={2}
               sendOnEnter
               onSend={() => post()}
-              placeholder="Message the board… @ to mention, teams too"
+              placeholder="Message the board… @ to mention, # to cite a card or tag"
             />
             <div class="flex items-center justify-between">
               <span class="text-[10px] text-neutral-400">
-                <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">Enter</kbd> to send
+                <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">Enter</kbd> to send ·
+                <span class="font-semibold">#</span> cite
               </span>
               <button
                 type="submit"
