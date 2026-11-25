@@ -5,6 +5,18 @@ AI agents — built on SolidStart 2 + Supabase (Postgres, RLS, Realtime).
 
 ## Project docs
 
+- [`docs/architecture.md`](docs/architecture.md) — **the locked
+  architecture**: layers, decisions, the canonical test, and the phases.
+  Read this before contributing anything structural.
+- [`docs/adr.md`](docs/adr.md) — the decision records (why each choice,
+  what it costs, what it rules out).
+- [`docs/layers/`](docs/layers/) — the per-layer contracts (L0 database →
+  L5 views): what each layer owns and may not do.
+- [`docs/ci-cd.md`](docs/ci-cd.md) — the branch model, environments,
+  workflows, and deploy matrix.
+- [`docs/observability.md`](docs/observability.md) — the event taxonomy,
+  dashboards, and the free-tier budget for analytics, flags, and MCP
+  profiling.
 - [`docs/performance.md`](docs/performance.md) — why the app was slow, the
   architecture that fixes it (client cache → delta sync → prefetch), and the
   phase roadmap with budgets.

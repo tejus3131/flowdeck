@@ -5,6 +5,10 @@ The checklist that keeps Flowdeck fast. The architecture landed once
 landed. They apply to every change that touches data or UI — bug fixes,
 features, revamps. A PR that breaks one of these is why we're slow again.
 
+> The layer contracts in [`architecture.md`](./architecture.md) +
+> [`layers/`](./layers/) are the structural rules; this file is the speed
+> rules. A PR must pass both.
+
 ## Adding a new data stream or view
 
 A "data stream" is anything the UI opens and shows: a panel, a tab, a list,
