@@ -94,19 +94,26 @@ const renderer = {
       return `<a href="#user-${userId}" data-user-id="${userId}">${label}</a>`;
     }
     // Board-only references travel as board:<uuid> — the chip names the
-    // board itself; the click routes to it.
+    // board itself; the click routes to it. Backlink bodies append
+    // ?m=<message-id> so the click can land ON the citing message.
     if (href.startsWith('board:')) {
-      const boardId = href.replace('board:', '');
+      const [boardId, query] = href.replace('board:', '').split('?');
       const label = (tokens ?? []).map((t) => t.raw ?? t.text ?? '').join('') || 'board';
       if (!UUID.test(boardId)) return label;
-      return `<a href="#board-${boardId}" data-board-id="${boardId}">${label}</a>`;
+      const anchor = new URLSearchParams(query ?? '').get('m');
+      return `<a href="#board-${boardId}" data-board-id="${boardId}"${anchor ? ` data-message-id="${anchor}"` : ''}>${label}</a>`;
     }
     // Cross-board card references travel as card:<uuid> — the label reads
-    // "Board #12"; the click routes to that board.
+    // "Board #12"; the click routes to that board. Backlink bodies append
+    // ?c=<comment-id> or ?e=description so the click lands on the citing
+    // comment / description event.
     if (href.startsWith('card:')) {
-      const cardId = href.replace('card:', '');
+      const [cardId, query] = href.replace('card:', '').split('?');
       const label = (tokens ?? []).map((t) => t.raw ?? t.text ?? '').join('') || 'card';
-      return `<a href="#card-${cardId}" data-card-id="${cardId}">${label}</a>`;
+      if (!UUID.test(cardId)) return label;
+      const params = new URLSearchParams(query ?? '');
+      const attrs = [params.get('c') ? ` data-comment-id="${params.get('c')}"` : '', params.get('e') ? ` data-event="${params.get('e')}"` : ''].join('');
+      return `<a href="#card-${cardId}" data-card-id="${cardId}"${attrs}>${label}</a>`;
     }
     // Tag references travel as tag:<uuid> — the chip links to search.
     if (href.startsWith('tag:')) {
@@ -153,6 +160,10 @@ export interface MarkdownContext {
   teams?: { id: string; name: string }[];
   /** Cross-board cards by id — chips read "Board › Card title". */
   crossCards?: Map<string, { title: string | null; board: string }>;
+  /** Boards the VIEWER can reach — board chips show the board's current
+   *  name; boards outside the set render locked (Slack-style "private"),
+   *  so a cited board's name never leaks to members who can't see it. */
+  boards?: { id: string; name: string }[];
   /** The workspace's tag vocabulary — tag chips show their CURRENT name
    *  (renames update everywhere, like member and team chips). */
   tags?: { id: string; name: string }[];
@@ -180,6 +191,9 @@ export function renderMarkdown(source: string, context?: MarkdownContext): strin
       'data-team-id',
       'data-all',
       'data-board-id',
+      'data-message-id',
+      'data-comment-id',
+      'data-event',
     ],
     ADD_TAGS: ['iframe'],
   });
@@ -194,7 +208,7 @@ export function renderMarkdown(source: string, context?: MarkdownContext): strin
     );
     if (!ok) frame.remove();
   }
-  styleReferences(doc, context?.members, context?.accessibleCardIds, context?.teams, context?.cardRefs, context?.crossCards, context?.tags);
+  styleReferences(doc, context?.members, context?.accessibleCardIds, context?.teams, context?.cardRefs, context?.crossCards, context?.tags, context?.boards);
   return doc.body.innerHTML;
 }
 
@@ -209,6 +223,7 @@ function styleReferences(
   cardRefs?: Map<number, { title: string | null; board: string }>,
   crossCards?: Map<string, { title: string | null; board: string }>,
   tags?: { id: string; name: string }[],
+  boards?: { id: string; name: string }[],
 ): void {
   const byId = new Map((members ?? []).map((m) => [m.user_id, m]));
   for (const anchor of [...doc.querySelectorAll('a[data-user-id]')]) {
@@ -248,17 +263,42 @@ function styleReferences(
     }
     chip.className = 'fd-card-ref';
     chip.setAttribute('data-card-id', cardId);
+    // Backlink anchors ride along: the click opens the citing comment /
+    // description event, not just the card.
+    if (anchor.hasAttribute('data-comment-id')) {
+      chip.setAttribute('data-comment-id', anchor.getAttribute('data-comment-id') ?? '');
+    }
+    if (anchor.hasAttribute('data-event')) {
+      chip.setAttribute('data-event', anchor.getAttribute('data-event') ?? '');
+    }
     const cross = crossCards?.get(cardId);
     // "Board › Card title" — same shape as # citations.
     chip.textContent = cross ? (cross.title ? `${cross.board} › ${cross.title}` : cross.board) : (anchor.textContent ?? 'card');
     anchor.replaceWith(chip);
   }
-  // Board chips: the board's name as written (the click routes to it).
+  // Board chips: the viewer's boards resolve to their CURRENT name;
+  // boards the viewer can't reach render locked — the backlink must not
+  // name a board its readers may have no access to (cards already had
+  // this gate; boards didn't).
+  const boardById = new Map((boards ?? []).map((b) => [b.id, b]));
   for (const anchor of Array.from(doc.querySelectorAll('a[data-board-id]'))) {
     const chip = doc.createElement('span');
+    const boardId = anchor.getAttribute('data-board-id') ?? '';
+    const known = boardById.get(boardId);
+    if (boards && !known) {
+      chip.className = 'fd-locked-ref';
+      chip.textContent = '🔒 private board';
+      anchor.replaceWith(chip);
+      continue;
+    }
     chip.className = 'fd-board-ref';
-    chip.setAttribute('data-board-id', anchor.getAttribute('data-board-id') ?? '');
-    chip.textContent = anchor.textContent ?? 'board';
+    chip.setAttribute('data-board-id', boardId);
+    // The backlink's source anchor rides along: the click lands ON the
+    // citing message, not just the board.
+    if (anchor.hasAttribute('data-message-id')) {
+      chip.setAttribute('data-message-id', anchor.getAttribute('data-message-id') ?? '');
+    }
+    chip.textContent = known?.name ?? anchor.textContent ?? 'board';
     anchor.replaceWith(chip);
   }
   // Tag chips: the tag's CURRENT name (renames update everywhere); the

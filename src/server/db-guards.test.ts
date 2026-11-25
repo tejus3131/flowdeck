@@ -28,8 +28,9 @@ const canConnect = (() => {
 const d = canConnect ? describe : describe.skip;
 
 // The scratch world: one workspace, one board, one list — torn down with
-// the purge flag at the end. The owner is the stack's existing first
-// user; the second member is a throwaway account.
+// the purge flag at the end. The owner is the probe fixture user,
+// SELF-SEEDED in beforeAll (a fresh `supabase db reset` has no profiles);
+// the second member is a throwaway account.
 const SLUG = `db-guards-${randomUUID().slice(0, 8)}`;
 const OWNER = '11be3592-fa7c-4756-ba18-01f21a84f44a';
 let WS = '';
@@ -49,6 +50,34 @@ const failSql = (...statements: string[]): string => {
 
 d('DB guards (local stack)', () => {
   beforeAll(() => {
+    // Self-seed the fixture user: a fresh `supabase db reset` leaves NO
+    // profiles, and this suite must not assume state beyond the
+    // migrations ("stack up but unseeded" is a real CI shape, not just
+    // "stack down"). Idempotent — on a stack that already has the probe
+    // fixture, every insert no-ops. The identities row is included so
+    // GoTrue's admin API (magic-link minting for the E2E probes) works
+    // against the seeded user as if it had signed up.
+    sql(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, confirmation_token, recovery_token, email_change, email_change_token_new)
+       select '${OWNER}',
+              -- GoTrue scopes its user lookups by instance_id: a NULL one
+              -- makes the user INVISIBLE to the admin API (it then tries
+              -- to create a duplicate and dies on the email unique index).
+              -- Copy whatever instance existing users carry; the zero
+              -- UUID is the stack default on a fresh reset.
+              coalesce((select instance_id from auth.users limit 1), '00000000-0000-0000-0000-000000000000'),
+              'authenticated', 'authenticated', 'probe@flowdeck.local', 'x', now(), now(), now(),
+              '{"provider":"email","providers":["email"]}', '{"display_name":"Probe User"}',
+              -- The token columns scan as plain strings server-side —
+              -- GoTrue rows keep '' where a SQL insert would leave NULL,
+              -- and a NULL makes the admin API's user lookup error out.
+              '', '', '', ''
+       on conflict do nothing`,
+      `insert into auth.identities (id, provider_id, user_id, identity_data, provider, created_at, updated_at)
+       values ('${OWNER}', '${OWNER}', '${OWNER}', json_build_object('sub', '${OWNER}', 'email', 'probe@flowdeck.local', 'email_verified', true, 'phone_verified', false), 'email', now(), now())
+       on conflict do nothing`,
+      `insert into public.profiles (id, email, display_name) values ('${OWNER}', 'probe@flowdeck.local', 'Probe User') on conflict do nothing`,
+    );
     WS = sql(
       `insert into public.workspaces (name, slug, owner_id) values ('DB guards ${SLUG}', '${SLUG}', '${OWNER}') returning id`,
     ).trim();
@@ -171,6 +200,37 @@ d('DB guards (local stack)', () => {
       `select count(*) from public.board_messages where board_id = '${targetBoard}' and client_op is not null`,
     ).trim();
     expect(rows).toBe('1');
+  });
+
+  it('log_board_mentions bodies name the actor, keep the board name out, and carry the ?m anchor (0073)', () => {
+    const targetBoard = sql(
+      `insert into public.boards (workspace_id, name, owner_id) select '${WS}', 'Polish target', '${OWNER}' returning id`,
+    ).trim();
+    const sourceId = '77777777-7777-7777-7777-777777777777';
+    sql(
+      `insert into public.board_messages (id, board_id, user_id, body, seq) select '${sourceId}'::uuid, '${BOARD}', '${OWNER}', 'see [Polish target](board:${targetBoard})', public.allocate_chat_seq('board_message', '${BOARD}')`,
+    );
+    sql(
+      "select set_config('role', 'authenticated', false)",
+      `select set_config('request.jwt.claims', json_build_object('sub', '${OWNER}', 'role', 'authenticated')::text, false)`,
+      `select public.log_board_mentions('see [Polish target](board:${targetBoard})', 'chat', '${BOARD}', null, '${sourceId}'::uuid)`,
+    );
+    const body = sql(
+      `select body from public.board_messages where board_id = '${targetBoard}' and client_op is not null`,
+    ).trim();
+    // The actor is named — a real mention chip, so renames follow the
+    // profile like every other member chip.
+    const actorName = sql(
+      `select coalesce(nullif(display_name, ''), split_part(email, '@', 1)) from public.profiles where id = '${OWNER}'`,
+    ).trim();
+    expect(body.startsWith(`[@${actorName}](user:${OWNER}) mentioned this board in the `)).toBe(true);
+    // The citing board's NAME is not in the stored body — only its id,
+    // under the neutral label (the renderer resolves the name per viewer).
+    expect(body).not.toContain('Guard board');
+    expect(body).toContain('[a board](board:');
+    // The source anchor threads through: the chip click lands ON the
+    // citing message.
+    expect(body).toContain(`?m=${sourceId})`);
   });
 
   it('purge_workspace_boards notifies the members it reaches', () => {
