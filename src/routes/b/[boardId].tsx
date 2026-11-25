@@ -33,7 +33,8 @@ import {
 } from '../../lib/board-ops';
 import { getMe } from '../../lib/auth';
 import { renderMarkdown } from '../../lib/markdown';
-import { foldContext, lineDiff } from '../../lib/diff';import { mentionIds, mentionTeamIds } from '../../lib/notification-text';
+import { foldContext, lineDiff } from '../../lib/diff';
+import { mentionIds, mentionTeamIds } from '../../lib/notification-text';
 import { markSeen, unseenCount } from '../../lib/seen';
 import { boardChatStamp, stampBoardChatSeen, hydrateBoardChatSeen } from '../../lib/board-chat-seen';
 import { openBoardChat, openCardScope } from '../../lib/open-scopes';
@@ -1444,7 +1445,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             }}
             onOpenTag={(tagId) => {
               setHover(null);
-              navigate(`/w/${view().board.workspace_id ?? ''}/tags/${tagId}`);
+              const wsId = view().board.workspace_id;
+              if (wsId) navigate(`/w/${wsId}/tags/${tagId}`);
             }}
           />
         )}
@@ -3555,7 +3557,8 @@ function CardDrawer(props: {
             </a>
           </>
         );
-      }      default:
+      }
+      default:
         return row.kind;
     }
   };

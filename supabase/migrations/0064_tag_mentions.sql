@@ -8,6 +8,10 @@
 -- calling reader can see, exactly like the per-board reads. Display is
 -- ready-made (board/card names, author, flattened snippet) so the page
 -- renders without a second round of lookups.
+--
+-- Scale note: offset pagination re-scans all three arms per page (the
+-- position() match cannot use an index). Fine at today's volumes; a
+-- keyset cursor over created_at is the upgrade path if feeds get deep.
 
 create or replace function public.tag_mention_rows(
   p_tag_id uuid,
@@ -67,7 +71,9 @@ as $$
       and position('(tag:' || p_tag_id::text || ')' in cm.body) > 0
 
     union all
-    -- Card descriptions citing the tag.
+    -- Card descriptions citing the tag. Authorship: the LAST description
+    -- edit's actor when the trail has one (0063 snapshots onward), else
+    -- the card's creator — updated_at is the card's, not the mention's.
     select jsonb_build_object(
              'kind', 'description',
              'board_id', c.board_id,
@@ -79,12 +85,19 @@ as $$
              'snippet', left(regexp_replace(regexp_replace(
                           c.description, '\[[^\]\n]*\]\([a-z]+:[0-9a-f-]+\)', '…', 'g'),
                           '\s+', ' ', 'g'), 160),
-             'created_at', c.updated_at
+             'created_at', coalesce(de.created_at, c.updated_at)
            ) as payload,
-           c.updated_at as created_at
+           coalesce(de.created_at, c.updated_at) as created_at
     from public.cards c
     join public.boards b on b.id = c.board_id
-    left join public.profiles p on p.id = c.created_by
+    left join lateral (
+      select e.actor_id, e.created_at
+      from public.card_events e
+      where e.card_id = c.id and e.kind = 'description'
+      order by e.created_at desc
+      limit 1
+    ) de on true
+    left join public.profiles p on p.id = coalesce(de.actor_id, c.created_by)
     where position('(tag:' || p_tag_id::text || ')' in c.description) > 0
 
     order by created_at desc

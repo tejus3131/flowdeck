@@ -92,7 +92,8 @@ export async function getTaggedCards(tagId: string): Promise<TaggedCard[]> {
 }
 
 /** Card counts per tag — the hub's "N cards" badges. RLS: only cards on
- *  boards the reader can see are counted. */
+ *  boards the reader can see are counted. One head-count per tag: the
+ *  rows never travel, the database does the counting. */
 export async function getTagCardCounts(
   tagIds: string[],
 ): Promise<Record<string, number>> {
@@ -102,17 +103,17 @@ export async function getTagCardCounts(
   );
   if (ids.length === 0) return {};
   const supabase = createSupabaseRequestClient();
-  const { data, error } = await supabase
-    .from('card_tags')
-    .select('tag_id')
-    .in('tag_id', ids);
-  if (error) throw new Error(error.message);
-  const counts: Record<string, number> = {};
-  for (const row of data ?? []) {
-    const id = row.tag_id as string;
-    counts[id] = (counts[id] ?? 0) + 1;
-  }
-  return counts;
+  const counts = await Promise.all(
+    ids.map(async (id) => {
+      const { count, error } = await supabase
+        .from('card_tags')
+        .select('tag_id', { count: 'exact', head: true })
+        .eq('tag_id', id);
+      if (error) throw new Error(error.message);
+      return [id, count ?? 0] as const;
+    }),
+  );
+  return Object.fromEntries(counts);
 }
 
 /** Rename a tag (owners/admins — RLS tags_update_admin). The same rules

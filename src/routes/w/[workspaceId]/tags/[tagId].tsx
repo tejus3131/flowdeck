@@ -3,11 +3,12 @@
 // (board chat, card comments, descriptions) as one infinite-scroll feed.
 import { Title } from '@solidjs/meta';
 import { type RouteProps, liveQuery } from '@solidjs/router';
-import { For, Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 
 import { Avatar } from '../../../../components/Avatar';
 import { createEngine } from '../../../../lib/sync';
-import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';import { getTagMentions, getTaggedCards, type TagMentionRow, type TaggedCard } from '../../../../lib/tags';
+import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';
+import { getTagMentions, getTaggedCards, type TagMentionRow, type TaggedCard } from '../../../../lib/tags';
 import { renameTag } from '../../../../lib/tags';
 import {
   getWorkspaceSnapshot,
@@ -72,48 +73,74 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
   const tag = createMemo(() => (detail()?.tags ?? []).find((t) => t.id === props.params.tagId) ?? null);
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
 
-  // Cards carrying the tag (RLS: visible boards only).
+  // Cards carrying the tag (RLS: visible boards only). Same-route
+  // navigation (tag A → tag B) re-runs the read for the new tag.
   const [cards, setCards] = createSignal<TaggedCard[]>([]);
-  onSettled(() => {
-    getTaggedCards(props.params.tagId).then(setCards).catch(() => {});
-    return () => undefined;
-  });
+  createEffect(
+    () => props.params.tagId,
+    (tagId) => {
+      if (tagId) getTaggedCards(tagId).then(setCards).catch(() => {});
+    },
+  );
 
   // ── the mention feed: infinite scroll over the RPC's pages ───────────
   const [mentions, setMentions] = createSignal<TagMentionRow[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [done, setDone] = createSignal(false);
   const [feedError, setFeedError] = createSignal<string | null>(null);
+  // A stale in-flight page must never append rows for the previous tag:
+  // each reset bumps the generation, late results discard themselves.
+  let feedGen = 0;
   const loadMore = async () => {
     if (busy() || done() || !tag()) return;
+    const gen = feedGen;
     setBusy(true);
     try {
       const page = await getTagMentions(props.params.tagId, mentions().length, PAGE);
+      if (gen !== feedGen) return; // a tag switch happened mid-flight
       setMentions([...mentions(), ...page]);
       if (page.length < PAGE) setDone(true);
     } catch (err) {
-      setFeedError(errorMessage(err));
-      setDone(true);
+      if (gen === feedGen) {
+        setFeedError(errorMessage(err));
+        setDone(true);
+      }
+    } finally {
+      setBusy(false);
+      // A switch raced this page: its own first page still needs loading
+      // (the reset's call returned early on busy).
+      if (gen !== feedGen) void loadMore();
     }
-    setBusy(false);
   };
-  // The tag row arrives async (the workspace snapshot); the feed starts
-  // the moment it resolves, then the sentinel pages in the rest.
+  // The feed resets with the tag: navigating tag A → tag B refetches from
+  // page 0 for the new id. The sentinel mounts AFTER the first page (it
+  // sits inside the feed's Show), so observation happens in the ref
+  // callback — the observer outlives Show re-mounts and each mount
+  // re-attaches to whatever element the ref hands it.
+  let observer: IntersectionObserver | undefined;
+  const ensureObserver = () => {
+    if (!observer) {
+      observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+      });
+    }
+    return observer;
+  };
+  onCleanup(() => observer?.disconnect());
+  const attachSentinel = (el: HTMLDivElement) => {
+    if (el) ensureObserver().observe(el);
+  };
   createEffect(
-    () => tag()?.id,
-    (id) => {
-      if (id && mentions().length === 0) void loadMore();
+    () => [props.params.tagId, tag()?.id] as const,
+    ([tagId, id]) => {
+      if (!tagId || !id) return;
+      feedGen++;
+      setMentions([]);
+      setDone(false);
+      setFeedError(null);
+      void loadMore();
     },
   );
-  let sentinel: HTMLDivElement | undefined;
-  let observer: IntersectionObserver | undefined;
-  onSettled(() => {
-    observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) void loadMore();
-    });
-    if (sentinel) observer.observe(sentinel);
-    return () => observer?.disconnect();
-  });
 
   // ── rename (admins) ───────────────────────────────────────────────────
   const [renaming, setRenaming] = createSignal(false);
@@ -315,7 +342,7 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                     </Show>
                   }
                 >
-                  <div ref={sentinel} class="py-3 text-center text-xs text-neutral-400">
+                  <div ref={attachSentinel} class="py-3 text-center text-xs text-neutral-400">
                     {busy() ? 'Loading…' : ''}
                   </div>
                 </Show>

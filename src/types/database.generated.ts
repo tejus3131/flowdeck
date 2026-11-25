@@ -1272,7 +1272,6 @@ export type Database = {
       log_card_mentions: {
         Args: {
           p_body: string
-          p_actor: string
           p_where: string
           p_board_id: string
           p_card_id?: string

@@ -1660,7 +1660,6 @@ export async function addComment(
   try {
     await supabase.rpc('log_card_mentions', {
       p_body: text,
-      p_actor: user.id,
       p_where: 'comment',
       p_board_id: card.board_id,
       p_card_id: resolved,
@@ -1923,7 +1922,6 @@ export async function postBoardMessage(
   try {
     await supabase.rpc('log_card_mentions', {
       p_body: text,
-      p_actor: user.id,
       p_where: 'chat',
       p_board_id: id,
       p_source_id: message.id,

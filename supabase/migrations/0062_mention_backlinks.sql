@@ -15,12 +15,21 @@
 -- The actor-gating rule: the mentioning user must be able to SEE the
 -- mentioned card's board. A backlink never lands on a card the actor
 -- could not have cited in the first place.
+--
+-- The actor is NEVER a parameter: it is auth.uid() — the session user
+-- (app) or the jwt claims mcp_exec sets (MCP). A client cannot forge
+-- "@anyone mentioned this card".
+-- Repeated calls for the same message/comment are idempotent: a row
+-- already anchored to the same source (and actor) is not re-written.
 
 -- ── log_card_mentions: parse card:<uuid> links and write trail rows ────
 
+-- The signature dropped p_actor after review — drop any older overload
+-- so fresh and upgraded stacks agree on one function.
+drop function if exists public.log_card_mentions(text, uuid, text, uuid, uuid, uuid);
+
 create or replace function public.log_card_mentions(
   p_body text,
-  p_actor uuid,
   p_where text,            -- 'chat' | 'comment'
   p_board_id uuid,         -- the board where the mention happened
   p_card_id uuid default null,  -- the commented card (comments only)
@@ -35,14 +44,18 @@ declare
   v_board_name text;
   v_card_title text;
   v_snippet text;
+  v_actor uuid;
   v_count integer := 0;
   v_mentioned record;
 begin
+  -- The actor is whoever the caller's JWT says they are — never a
+  -- parameter a client could forge.
+  v_actor := auth.uid();
   if p_where not in ('chat', 'comment') then
     raise exception 'unknown mention source: %', p_where;
   end if;
-  if p_actor is null or p_source_id is null or p_board_id is null then
-    return 0;  -- nothing citable without an anchor
+  if v_actor is null or p_source_id is null or p_board_id is null then
+    return 0;  -- nothing citable without an anchor or an identity
   end if;
 
   select name into v_board_name from public.boards where id = p_board_id;
@@ -73,11 +86,22 @@ begin
     if public.user_board_access(v_mentioned.board_id) is null then
       continue;
     end if;
+    -- Idempotent: a retried call for the same message/comment does not
+    -- duplicate the trail row (same card, same source anchor, same actor).
+    if exists (
+      select 1 from public.card_events e
+      where e.card_id = v_mentioned.id
+        and e.kind = 'mentioned'
+        and e.actor_id = v_actor
+        and coalesce(e.detail->>'message_id', e.detail->>'comment_id') = p_source_id::text
+    ) then
+      continue;
+    end if;
     insert into public.card_events (card_id, board_id, actor_id, kind, detail)
     values (
       v_mentioned.id,
       v_mentioned.board_id,
-      p_actor,
+      v_actor,
       'mentioned',
       jsonb_build_object(
         'where', p_where,
@@ -99,7 +123,7 @@ begin
 end;
 $$;
 
-revoke execute on function public.log_card_mentions(text, uuid, text, uuid, uuid, uuid) from anon;
+revoke execute on function public.log_card_mentions(text, text, uuid, uuid, uuid) from anon;
 
 -- ── mcp_exec: both write ops grow the backlink call (full redefinition
 --    superseding 0061's, kept whole so the chain stays reviewable) ───────
@@ -1433,8 +1457,9 @@ begin
                      where bta.board_id = v_board_id and tm2.user_id = tm.user_id)
         );
       -- Mention backlinks: every card the comment cites gets a row in
-      -- its own trail ("mentioned this in a comment on #Card").
-      perform public.log_card_mentions(p_arg->>'body', p_user_id, 'comment', v_board_id, v_card_id, v_new_id);
+      -- its own trail ("mentioned this in a comment on #Card"). The
+      -- actor comes from the jwt claims this function just set.
+      perform public.log_card_mentions(p_arg->>'body', 'comment', v_board_id, v_card_id, v_new_id);
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('comment_id', v_new_id));
 
     when 'edit_comment' then
@@ -1525,8 +1550,9 @@ begin
                      where bta.board_id = v_board_id and tm2.user_id = tm.user_id)
         );
       -- Mention backlinks: every card the message cites gets a row in
-      -- its own trail ("mentioned this in the #Board chat").
-      perform public.log_card_mentions(p_arg->>'body', p_user_id, 'chat', v_board_id, null, v_new_id);
+      -- its own trail ("mentioned this in the #Board chat"). The actor
+      -- comes from the jwt claims this function just set.
+      perform public.log_card_mentions(p_arg->>'body', 'chat', v_board_id, null, v_new_id);
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('message_id', v_new_id));
 
     when 'edit_board_message' then

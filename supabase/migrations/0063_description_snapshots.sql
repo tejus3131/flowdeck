@@ -1340,7 +1340,7 @@ begin
         );
       -- Mention backlinks: every card the comment cites gets a row in
       -- its own trail ("mentioned this in a comment on #Card").
-      perform public.log_card_mentions(p_arg->>'body', p_user_id, 'comment', v_board_id, v_card_id, v_new_id);
+      perform public.log_card_mentions(p_arg->>'body', 'comment', v_board_id, v_card_id, v_new_id);
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('comment_id', v_new_id));
 
     when 'edit_comment' then
@@ -1432,7 +1432,7 @@ begin
         );
       -- Mention backlinks: every card the message cites gets a row in
       -- its own trail ("mentioned this in the #Board chat").
-      perform public.log_card_mentions(p_arg->>'body', p_user_id, 'chat', v_board_id, null, v_new_id);
+      perform public.log_card_mentions(p_arg->>'body', 'chat', v_board_id, null, v_new_id);
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('message_id', v_new_id));
 
     when 'edit_board_message' then
