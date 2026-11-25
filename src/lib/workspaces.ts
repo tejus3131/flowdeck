@@ -770,6 +770,19 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
   if (workspace.owner_id !== user.id) {
     throw new Error('Only the workspace owner can delete it');
   }
+  // Deletion safety (0069): other members refuse first — the cascade
+  // would delete their boards and content with the workspace. The
+  // friendly count up front; the DB trigger is the guarantee.
+  const { count: otherMembers } = await supabase
+    .from('workspace_members')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+    .neq('user_id', user.id);
+  if ((otherMembers ?? 0) > 0) {
+    throw new Error(
+      `This workspace still has ${otherMembers} other member${otherMembers === 1 ? '' : 's'} — remove them (or transfer ownership) before deleting; their boards and content would go with it`,
+    );
+  }
   // Capture the members before the cascade deletes their rows — their
   // saved MCP tokens must stop advertising the dying workspace.
   const { data: members } = await supabase
@@ -802,6 +815,40 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
     );
   }
   return true;
+}
+
+/** The bulk purge: every board in the workspace, one deliberate act
+ *  (0070). The owner's alone — bigger blast radius than a single board's
+ *  purge, which also admits workspace admins. */
+export async function purgeAllBoards(
+  workspaceId: string,
+): Promise<{ boardsPurged: number; cardsDeleted: number }> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  if (!UUID.test(workspaceId ?? '')) throw new Error('Invalid workspace');
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('You need to sign in first');
+  // Friendly pre-check (the RPC re-verifies as the owner).
+  const { data: role } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (role?.role !== 'owner') {
+    throw new Error('Only the workspace owner can purge every board');
+  }
+  const { data, error } = await supabase.rpc('purge_workspace_boards', {
+    p_workspace_id: workspaceId,
+  });
+  if (error) throw new Error(error.message);
+  const result = (data ?? {}) as { boards_purged?: number; cards_deleted?: number };
+  return {
+    boardsPurged: result.boards_purged ?? 0,
+    cardsDeleted: result.cards_deleted ?? 0,
+  };
 }
 
 async function sendInviteEmail(to: string, workspaceName: string, acceptUrl: string) {

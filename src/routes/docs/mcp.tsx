@@ -27,10 +27,10 @@ const TOOLS: { name: string; args: string; returns: string; note?: string }[] = 
   { name: 'list_tags', args: 'workspace_id, cursor?, limit?', returns: '{ items, next_cursor } — the workspace\'s shared tags' },
   { name: 'create_tag', args: 'workspace_id, name, description?', returns: 'tag_id', note: 'find-or-create; names lowercased, max 24 chars' },
   { name: 'rename_tag', args: 'tag_id, name', returns: '—', note: 'workspace owners/admins only' },
-  { name: 'delete_tag', args: 'tag_id', returns: '—', note: 'workspace owners/admins only; linked cards just lose it' },
-  { name: 'merge_tags', args: 'source_tag_id, target_tag_id', returns: '—', note: 'moves every link to the target, deletes the source; owners/admins only' },
+
+  { name: 'merge_tags', args: 'source_tag_id, target_tag_id', returns: '—', note: 'moves every link to the target and removes the source (the one deliberate removal); owners/admins only. Tags are otherwise never deleted — rename instead' },
   { name: 'move_card', args: 'card_id, list_id, position?', returns: '—', note: 'position omitted = append at the end (atomic, concurrency-safe); explicit position is absolute (whole numbers)' },
-  { name: 'delete_card', args: 'card_id', returns: '—' },
+  { name: 'delete_card', args: 'card_id', returns: '—', note: 'refuses — cards are never deleted (the time capsule); resolve_card instead' },
   { name: 'add_comment', args: 'card_id, body', returns: 'comment_id' },
   { name: 'edit_comment', args: 'comment_id, body', returns: '—', note: 'own comments only' },
   { name: 'delete_comment', args: 'comment_id', returns: '—', note: 'soft delete + tombstone; own, ws owners/admins, team admins on their team\'s boards' },

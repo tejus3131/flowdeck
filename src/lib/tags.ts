@@ -1,8 +1,9 @@
 // The tags hub's server side: everything the workspace tags page and the
 // per-tag page read and mutate. Tag rows live in boards.ts's workspace
 // snapshots; this file owns the tag-specific reads (mentions, tagged
-// cards) and the admin lifecycle (rename / delete — RLS enforces
-// owners/admins, the same rules the MCP ops run under).
+// cards) and the editing surface (updateTag — tags are never deleted:
+// serialized tag:<uuid> chips in messages, comments, and descriptions
+// would dangle; a rename keeps every link alive).
 import { createSupabaseRequestClient } from '../server/supabase';
 
 function assertId(id: string, what: string): string {
@@ -17,6 +18,18 @@ function cleanText(value: unknown, what: string, max: number): string {
   const trimmed = value.trim();
   if (!trimmed) throw new Error(`${what} is empty`);
   return trimmed.slice(0, max);
+}
+
+/** Page plan for refreshing a loaded feed window without collapsing it:
+ *  the RPC caps any single call at `max` rows, so a live refresh of N
+ *  loaded rows walks consecutive slices. Trailing slices past the feed's
+ *  end simply come back empty — the caller stops at the first short one. */
+export function pageSlices(target: number, max = 100): Array<{ offset: number; limit: number }> {
+  const plan: Array<{ offset: number; limit: number }> = [];
+  for (let offset = 0; offset < target; offset += max) {
+    plan.push({ offset, limit: Math.min(max, target - offset) });
+  }
+  return plan;
 }
 
 /** One row of a tag's mention feed: a chat message, a comment, or a
@@ -116,27 +129,37 @@ export async function getTagCardCounts(
   return Object.fromEntries(counts);
 }
 
-/** Rename a tag (owners/admins — RLS tags_update_admin). The same rules
- *  as the MCP op: lower-cased, trimmed, max 24 chars. */
-export async function renameTag(tagId: string, rawName: string): Promise<{ name: string }> {
+/** Edit a tag (owners/admins — RLS tags_update_admin). The same rules
+ *  as the MCP ops: name lower-cased, trimmed, max 24 chars; description
+ *  max 500. Editors live on the per-tag page — the hub only lists. */
+export async function updateTag(
+  tagId: string,
+  patch: { name?: string; description?: string },
+): Promise<{ name: string; description: string }> {
   'use server';
   const supabase = createSupabaseRequestClient();
-  const name = cleanText(rawName, 'Tag name', 24).toLowerCase();
+  const update: { name?: string; description?: string } = {};
+  if (patch.name !== undefined) {
+    update.name = cleanText(patch.name, 'Tag name', 24).toLowerCase();
+  }
+  if (patch.description !== undefined) {
+    const description = String(patch.description ?? '');
+    if (description.length > 500) throw new Error('Tag description is too long (max 500 characters)');
+    // Empty clears the description — unlike the name, which must exist.
+    update.description = description.trim();
+  }
+  if (Object.keys(update).length === 0) {
+    throw new Error('Nothing to update — pass a name or a description');
+  }
   const { data, error } = await supabase
     .from('tags')
-    .update({ name })
+    .update(update)
     .eq('id', assertId(tagId, 'tag id'))
-    .select('name')
+    .select('name, description')
     .single();
-  if (error || !data) throw new Error('Tag not found or you cannot rename it (owners and admins only)');
-  return { name: data.name };
+  if (error || !data) {
+    throw new Error('Tag not found or you cannot edit it (owners and admins only)');
+  }
+  return { name: data.name, description: data.description ?? '' };
 }
 
-/** Delete a tag (owners/admins — RLS tags_delete_admin). Cards linked
- *  to it simply lose it. */
-export async function deleteTag(tagId: string): Promise<void> {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const { error } = await supabase.from('tags').delete().eq('id', assertId(tagId, 'tag id'));
-  if (error) throw new Error('Tag not found or you cannot delete it (owners and admins only)');
-}

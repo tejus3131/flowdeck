@@ -1269,6 +1269,16 @@ export type Database = {
       }
       delete_board_message: { Args: { p_id: string }; Returns: Json }
       delete_comment: { Args: { p_id: string }; Returns: Json }
+      log_board_mentions: {
+        Args: {
+          p_body: string
+          p_where: string
+          p_board_id: string
+          p_card_id?: string
+          p_source_id?: string
+        }
+        Returns: number
+      }
       log_card_mentions: {
         Args: {
           p_body: string
@@ -1281,6 +1291,7 @@ export type Database = {
       }
       tag_mention_rows: { Args: { p_tag_id: string; p_limit?: number; p_offset?: number }; Returns: Json }
       purge_board: { Args: { p_board_id: string }; Returns: Json }
+      purge_workspace_boards: { Args: { p_workspace_id: string }; Returns: Json }
       resolve_card: { Args: { p_card_id: string }; Returns: Json }
       unresolve_card: { Args: { p_card_id: string }; Returns: Json }
       get_chat_seen: {

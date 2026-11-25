@@ -132,6 +132,18 @@ export async function deleteTeam(teamId: string): Promise<boolean> {
   if (!UUID.test(teamId)) throw new Error('Invalid team');
   const workspaceId = await teamWorkspaceId(supabase, teamId);
   await requireWsRole(supabase, workspaceId, ['owner', 'admin']);
+  // Deletion safety (0068): a team holding members refuses — the same
+  // principle as boards holding cards. The friendly count up front;
+  // the DB trigger is the guarantee.
+  const { count: members } = await supabase
+    .from('team_members')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('team_id', teamId);
+  if ((members ?? 0) > 0) {
+    throw new Error(
+      `This team still has ${members} member${members === 1 ? '' : 's'} — remove them first (or deactivate the team once it's empty)`,
+    );
+  }
   const now = new Date().toISOString();
   const { error } = await supabase
     .from('teams')

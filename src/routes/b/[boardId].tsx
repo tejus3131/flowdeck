@@ -3258,6 +3258,8 @@ function CardDrawer(props: {
     ),
     // Team chips resolve to the team's current name.
     teams: props.teams,
+    // Tag chips too — renames update every rendered body live.
+    tags: props.workspaceTags,
   });
 
   // Escape closes (the same affordance the settings drawer has).
@@ -3541,6 +3543,20 @@ function CardDrawer(props: {
                 title={snippet}
               >
                 #{String(detail.board_name ?? 'a board')} chat
+              </a>
+            </>
+          );
+        }
+        if (String(detail.where ?? '') === 'description') {
+          return (
+            <>
+              mentioned this in{' '}
+              <a
+                class="fd-backlink"
+                href={`/b/${String(detail.board_id ?? '')}?card=${String(detail.card_id ?? '')}`}
+                title={snippet}
+              >
+                #{String(detail.card_title ?? 'a card')}'s description
               </a>
             </>
           );
@@ -5285,6 +5301,8 @@ function BoardChat(props: {
   const markdownContext = () => ({
     members: props.members,
     teams: props.teams,
+    // Tag chips render the tag's current name — renames update the chat live.
+    tags: props.workspaceTags,
     // # citations in board chat resolve across the org (same maps the
     // card drawer uses); chips read "Board › Card title".
     cardNumbers: [

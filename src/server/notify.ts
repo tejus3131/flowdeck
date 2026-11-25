@@ -101,6 +101,7 @@ export type NotifyKind =
   | 'chat'
   | 'team_added'
   | 'team_removed'
+  | 'workspace_purged'
   | 'invite';
 
 export type NewNotification = {
@@ -255,6 +256,15 @@ function payloadFor(row: NewNotification, ctx: Ctx, recipient: string): PushPayl
         body: '',
         url: '/',
         tag: row.subjectTeamId ?? 'team',
+      };
+    case 'workspace_purged':
+      // 0071: the row is SQL-inserted by purge_workspace_boards, so it
+      // never rides this path today — the shape keeps the unions honest.
+      return {
+        title: `${ctx.actorName} purged every board in this workspace`,
+        body: row.body ?? '',
+        url: '/',
+        tag: 'workspace_purged',
       };
     case 'invite':
       return {

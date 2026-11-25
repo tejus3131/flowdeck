@@ -288,10 +288,10 @@ describe('capWorkspaceOps', () => {
   const full = [
     'get_me', 'list_workspaces', // baseline — always survive
     'list_boards', 'get_board', 'get_cards', // member reads
-    'create_card', 'update_card', 'move_card', 'delete_card',
+    'create_card', 'update_card', 'move_card', 'resolve_card', 'unresolve_card',
     'rename_list', 'update_list', // member writes
     'delete_board', 'delete_list', // admin writes
-    'create_tag', 'rename_tag', 'delete_tag', 'merge_tags', // tag powers (create is member-level)
+    'create_tag', 'rename_tag', 'merge_tags', // tag powers (create is member-level; tags never delete)
     'invite_member', 'resolve_access_request', // admin people powers
     'create_board', // the gated op
     'search',
@@ -302,7 +302,7 @@ describe('capWorkspaceOps', () => {
     for (const op of ['list_boards', 'create_card', 'update_card', 'search', 'get_me']) {
       expect(capped).toContain(op);
     }
-    for (const op of ['delete_board', 'delete_list', 'rename_tag', 'delete_tag', 'merge_tags', 'invite_member', 'resolve_access_request', 'create_board']) {
+    for (const op of ['delete_board', 'delete_list', 'rename_tag', 'merge_tags', 'invite_member', 'resolve_access_request', 'create_board']) {
       expect(capped).not.toContain(op);
     }
     // Tag CREATION is member-level in the app (tags_insert_member) —

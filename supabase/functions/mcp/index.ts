@@ -224,7 +224,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_list',
-    description: 'Delete a list and its cards. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
+    description: 'Delete a list. Refuses while the list holds cards — move or resolve them first (cards are never deleted). Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { list_id: { type: 'string', format: 'uuid' } },
@@ -324,17 +324,6 @@ const TOOLS: ToolDef[] = [
     op: 'rename_tag',
   },
   {
-    name: 'delete_tag',
-    description: 'Delete a tag; cards linked to it simply lose it. Workspace owners/admins only.',
-    inputSchema: {
-      type: 'object',
-      properties: { tag_id: { type: 'string', format: 'uuid' } },
-      required: ['tag_id'],
-      additionalProperties: false,
-    },
-    op: 'delete_tag',
-  },
-  {
     name: 'merge_tags',
     description:
       'Merge one tag into another: every card linked to source_tag_id becomes linked to target_tag_id instead, then the source tag is deleted. Workspace owners/admins only.',
@@ -367,7 +356,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_card',
-    description: 'Delete a card. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
+    description: 'Refuses: cards are never deleted (the time capsule). Use resolve_card instead. On boards where you only have view access, the refusal is a read-only error.',
     inputSchema: {
       type: 'object',
       properties: { card_id: { type: 'string', format: 'uuid' } },
