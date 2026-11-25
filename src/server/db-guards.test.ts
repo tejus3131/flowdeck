@@ -28,8 +28,9 @@ const canConnect = (() => {
 const d = canConnect ? describe : describe.skip;
 
 // The scratch world: one workspace, one board, one list — torn down with
-// the purge flag at the end. The owner is the stack's existing first
-// user; the second member is a throwaway account.
+// the purge flag at the end. The owner is the probe fixture user,
+// SELF-SEEDED in beforeAll (a fresh `supabase db reset` has no profiles);
+// the second member is a throwaway account.
 const SLUG = `db-guards-${randomUUID().slice(0, 8)}`;
 const OWNER = '11be3592-fa7c-4756-ba18-01f21a84f44a';
 let WS = '';
@@ -49,6 +50,34 @@ const failSql = (...statements: string[]): string => {
 
 d('DB guards (local stack)', () => {
   beforeAll(() => {
+    // Self-seed the fixture user: a fresh `supabase db reset` leaves NO
+    // profiles, and this suite must not assume state beyond the
+    // migrations ("stack up but unseeded" is a real CI shape, not just
+    // "stack down"). Idempotent — on a stack that already has the probe
+    // fixture, every insert no-ops. The identities row is included so
+    // GoTrue's admin API (magic-link minting for the E2E probes) works
+    // against the seeded user as if it had signed up.
+    sql(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, confirmation_token, recovery_token, email_change, email_change_token_new)
+       select '${OWNER}',
+              -- GoTrue scopes its user lookups by instance_id: a NULL one
+              -- makes the user INVISIBLE to the admin API (it then tries
+              -- to create a duplicate and dies on the email unique index).
+              -- Copy whatever instance existing users carry; the zero
+              -- UUID is the stack default on a fresh reset.
+              coalesce((select instance_id from auth.users limit 1), '00000000-0000-0000-0000-000000000000'),
+              'authenticated', 'authenticated', 'probe@flowdeck.local', 'x', now(), now(), now(),
+              '{"provider":"email","providers":["email"]}', '{"display_name":"Probe User"}',
+              -- The token columns scan as plain strings server-side —
+              -- GoTrue rows keep '' where a SQL insert would leave NULL,
+              -- and a NULL makes the admin API's user lookup error out.
+              '', '', '', ''
+       on conflict do nothing`,
+      `insert into auth.identities (id, provider_id, user_id, identity_data, provider, created_at, updated_at)
+       values ('${OWNER}', '${OWNER}', '${OWNER}', json_build_object('sub', '${OWNER}', 'email', 'probe@flowdeck.local', 'email_verified', true, 'phone_verified', false), 'email', now(), now())
+       on conflict do nothing`,
+      `insert into public.profiles (id, email, display_name) values ('${OWNER}', 'probe@flowdeck.local', 'Probe User') on conflict do nothing`,
+    );
     WS = sql(
       `insert into public.workspaces (name, slug, owner_id) values ('DB guards ${SLUG}', '${SLUG}', '${OWNER}') returning id`,
     ).trim();
