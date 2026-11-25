@@ -173,6 +173,37 @@ d('DB guards (local stack)', () => {
     expect(rows).toBe('1');
   });
 
+  it('log_board_mentions bodies name the actor, keep the board name out, and carry the ?m anchor (0073)', () => {
+    const targetBoard = sql(
+      `insert into public.boards (workspace_id, name, owner_id) select '${WS}', 'Polish target', '${OWNER}' returning id`,
+    ).trim();
+    const sourceId = '77777777-7777-7777-7777-777777777777';
+    sql(
+      `insert into public.board_messages (id, board_id, user_id, body, seq) select '${sourceId}'::uuid, '${BOARD}', '${OWNER}', 'see [Polish target](board:${targetBoard})', public.allocate_chat_seq('board_message', '${BOARD}')`,
+    );
+    sql(
+      "select set_config('role', 'authenticated', false)",
+      `select set_config('request.jwt.claims', json_build_object('sub', '${OWNER}', 'role', 'authenticated')::text, false)`,
+      `select public.log_board_mentions('see [Polish target](board:${targetBoard})', 'chat', '${BOARD}', null, '${sourceId}'::uuid)`,
+    );
+    const body = sql(
+      `select body from public.board_messages where board_id = '${targetBoard}' and client_op is not null`,
+    ).trim();
+    // The actor is named — a real mention chip, so renames follow the
+    // profile like every other member chip.
+    const actorName = sql(
+      `select coalesce(nullif(display_name, ''), split_part(email, '@', 1)) from public.profiles where id = '${OWNER}'`,
+    ).trim();
+    expect(body.startsWith(`[@${actorName}](user:${OWNER}) mentioned this board in the `)).toBe(true);
+    // The citing board's NAME is not in the stored body — only its id,
+    // under the neutral label (the renderer resolves the name per viewer).
+    expect(body).not.toContain('Guard board');
+    expect(body).toContain('[a board](board:');
+    // The source anchor threads through: the chip click lands ON the
+    // citing message.
+    expect(body).toContain(`?m=${sourceId})`);
+  });
+
   it('purge_workspace_boards notifies the members it reaches', () => {
     // Re-add the throwaway member, purge, expect their notification row.
     sql(`insert into public.workspace_members (workspace_id, user_id, role) values ('${WS}', '${MEMBER}', 'member')`);

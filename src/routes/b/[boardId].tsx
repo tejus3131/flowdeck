@@ -604,18 +604,32 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const [hover, setHover] = createSignal<
     { kind: 'user' | 'card' | 'tag' | 'team'; id: string; rect: DOMRect } | null
   >(null);
-  // Cross-board reference targets, fetched when the drawer first opens.
-  const [crossCards, setCrossCards] = createSignal<CrossCard[]>([]);
+  // Cross-board reference targets — every card the viewer can reach
+  // outside this board. Feeds the # menu's cross-card chips AND the
+  // accessibleCardIds privacy gate, so it must be loaded with the BOARD,
+  // not lazily on the first drawer open (a viewer who never opens the
+  // drawer would see every cross-board chip as "private card").
+  // Keyed by workspace id (a stale list would gate the wrong cards);
+  // a failed load retries (capped), like the board list.
+  const [crossCardsFor, setCrossCardsFor] = createSignal<{ wsId: string | null; cards: CrossCard[] }>({ wsId: null, cards: [] });
+  const crossCards = () => crossCardsFor().cards;
+  const [crossCardsRetry, setCrossCardsRetry] = createSignal(0);
   createEffect(
-    () => openCardId(),
-    (id) => {
-      if (id && crossCards().length === 0) {
-        const wsId = view().board.workspace_id;
-        if (wsId)
-          void getCrossBoardCards(wsId)
-            .then(setCrossCards)
-            .catch(() => {});
-      }
+    () => [view().board.workspace_id, crossCardsRetry()] as const,
+    ([wsId]) => {
+      if (!wsId) return;
+      if (crossCardsFor().wsId === wsId) return;
+      let alive = true;
+      onCleanup(() => {
+        alive = false;
+      });
+      void getCrossBoardCards(wsId)
+        .then((cards) => {
+          if (alive && view().board.workspace_id === wsId) setCrossCardsFor({ wsId, cards });
+        })
+        .catch(() => {
+          if (alive && crossCardsRetry() < 3) setTimeout(() => setCrossCardsRetry((n) => n + 1), 2000);
+        });
     },
   );
   // The workspace's boards, for the composer's # menu (cross-board
@@ -1475,10 +1489,13 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             }}
             onHover={setHover}
             panelWidth={panelWidth}
-            onOpenCrossCard={(cardId) => {
+            onOpenCrossCard={(cardId, anchor) => {
               const target = crossCards().find((c) => c.id === cardId);
               setHover(null);
-              if (target) navigate(`/b/${target.board_id}?card=${target.id}`);
+              // Land on the citing comment / description event when the
+              // chip carried its anchor (board backlinks).
+              const extra = anchor?.commentId ? `&comment=${anchor.commentId}` : anchor?.event ? `&event=${anchor.event}` : '';
+              if (target) navigate(`/b/${target.board_id}?card=${target.id}${extra}`);
             }}
             onOpenTag={(tagId) => {
               setHover(null);
@@ -1584,9 +1601,12 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   const target = view().cards.find((c) => c.number === num);
                   if (target) openCard(target.id, target.client_op);
                 }}
-                onOpenCrossCard={(cardId) => {
+                onOpenCrossCard={(cardId, anchor) => {
                   const target = crossCards().find((c) => c.id === cardId);
-                  if (target) navigate(`/b/${target.board_id}?card=${target.id}`);
+                  // Land on the citing comment / description event when the
+                  // chip carried its anchor (board backlinks).
+                  const extra = anchor?.commentId ? `&comment=${anchor.commentId}` : anchor?.event ? `&event=${anchor.event}` : '';
+                  if (target) navigate(`/b/${target.board_id}?card=${target.id}${extra}`);
                 }}
                 anchorMessageId={chatAnchor}
               />
@@ -3271,8 +3291,10 @@ function CardDrawer(props: {
   onHover: (target: { kind: 'user' | 'card' | 'tag' | 'team'; id: string; rect: DOMRect } | null) => void;
   /** The shared panel width helper (resize handle + width style). */
   panelWidth: { width: () => number | null; dragging: () => boolean; startDrag: (event: MouseEvent) => void };
-  /** A cross-board reference was clicked — route to that board's card. */
-  onOpenCrossCard: (cardId: string) => void;
+  /** A cross-board reference was clicked — route to that board's card,
+   *  optionally landing ON the citing comment / description event (the
+   *  board-backlink chip carries the anchor). */
+  onOpenCrossCard: (cardId: string, anchor?: { commentId?: string; event?: string }) => void;
   /** A tag chip was clicked — jump to search filtered by it. */
   onOpenTag: (tagId: string) => void;
 }) {
@@ -3290,6 +3312,9 @@ function CardDrawer(props: {
    *  and the card numbers that exist (#citations). */
   const markdownContext = () => ({
     members: props.members,
+    // Boards the viewer can reach — board chips resolve current names and
+    // render locked for the rest (same privacy the card gate has).
+    boards: props.workspaceBoards ?? [],
     // Org-wide numbers (#N is unique across the workspace now): the union
     // of this board's cards and every card reachable cross-board.
     cardNumbers: [
@@ -4227,7 +4252,12 @@ function CardDrawer(props: {
     if (cross) {
       event.preventDefault();
       props.onHover(null);
-      props.onOpenCrossCard(cross.getAttribute('data-card-id') ?? '');
+      // Backlink anchors ride on the chip: open the citing comment /
+      // description event, not just the card.
+      props.onOpenCrossCard(cross.getAttribute('data-card-id') ?? '', {
+        commentId: cross.getAttribute('data-comment-id') ?? undefined,
+        event: cross.getAttribute('data-event') ?? undefined,
+      });
       return;
     }
     const tag = target?.closest?.('[data-tag-id]');
@@ -4250,7 +4280,10 @@ function CardDrawer(props: {
     if (boardChip) {
       event.preventDefault();
       props.onHover(null);
-      navigate(`/b/${boardChip.getAttribute('data-board-id') ?? ''}`);
+      // A backlink chip carries the citing message: land ON it, not just
+      // on the board.
+      const anchor = boardChip.getAttribute('data-message-id');
+      navigate(`/b/${boardChip.getAttribute('data-board-id') ?? ''}${anchor ? `?chat=${anchor}` : ''}`);
       return;
     }
     const prio = target?.closest?.('[data-priority]');
@@ -5160,7 +5193,7 @@ function BoardChat(props: {
   onHover: (target: { kind: 'user' | 'team'; id: string; rect: DOMRect } | null) => void;
   /** # citations open cards (this board) / cross-board cards. */
   onOpenCardRef: (num: number) => void;
-  onOpenCrossCard: (cardId: string) => void;
+  onOpenCrossCard: (cardId: string, anchor?: { commentId?: string; event?: string }) => void;
   /** A deep link (?chat=<message-id>) asks the panel to land on that
    *  exact message — mention backlinks click through to it. */
   anchorMessageId: () => string | null;
@@ -5470,6 +5503,10 @@ function BoardChat(props: {
 
   const markdownContext = () => ({
     members: props.members,
+    // Boards the viewer can reach: board chips resolve current names and
+    // render locked when the viewer can't see the board (backlinks must
+    // not name boards a reader has no access to).
+    boards: props.workspaceBoards ?? [],
     teams: props.teams,
     // Tag chips render the tag's current name — renames update the chat live.
     tags: props.workspaceTags,
@@ -5530,13 +5567,21 @@ function BoardChat(props: {
     const cross = target?.closest?.('[data-card-id]');
     if (cross) {
       event.preventDefault();
-      props.onOpenCrossCard(cross.getAttribute('data-card-id') ?? '');
+      // Backlink anchors ride on the chip: open the citing comment /
+      // description event, not just the card.
+      props.onOpenCrossCard(cross.getAttribute('data-card-id') ?? '', {
+        commentId: cross.getAttribute('data-comment-id') ?? undefined,
+        event: cross.getAttribute('data-event') ?? undefined,
+      });
       return;
     }
     const board = target?.closest?.('[data-board-id]');
     if (board) {
       event.preventDefault();
-      navigate(`/b/${board.getAttribute('data-board-id') ?? ''}`);
+      // A backlink chip carries the citing message: land ON it, not just
+      // on the board.
+      const anchor = board.getAttribute('data-message-id');
+      navigate(`/b/${board.getAttribute('data-board-id') ?? ''}${anchor ? `?chat=${anchor}` : ''}`);
     }
   };
 
