@@ -1371,7 +1371,7 @@ export async function getCardComments(
   const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
   let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)')
     .eq('card_id', resolved)
     .order('seq', { ascending: false })
     .limit(limit);
@@ -1446,7 +1446,7 @@ export const cardCommentsStream = live(async function* (
     const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
-      .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+      .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)')
       .eq('card_id', id)
       .order('seq', { ascending: false })
       .limit(30);
@@ -1533,7 +1533,7 @@ export async function addComment(
       seq,
       ...(clientOp ? { client_op: clientOp } : {}),
     })
-    .select('id, created_at, user_id, profiles(display_name, avatar_url)')
+    .select('id, created_at, user_id, profiles!card_comments_user_id_fkey(display_name, avatar_url)')
     .single();
   if (error || !comment) throw new Error(error?.message ?? 'Could not post the comment');
   await logActivity(supabase, user.id, card.board_id, 'comment.created', {});
@@ -1686,7 +1686,7 @@ async function boardChatSnapshot(
   const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
-    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!board_messages_user_id_fkey(display_name, avatar_url)')
     .eq('board_id', boardId)
     .order('seq', { ascending: false })
     .limit(100);
@@ -1798,7 +1798,7 @@ export async function postBoardMessage(
       seq,
       ...(clientOp ? { client_op: clientOp } : {}),
     })
-    .select('id, created_at, user_id, profiles(display_name, avatar_url)')
+    .select('id, created_at, user_id, profiles!board_messages_user_id_fkey(display_name, avatar_url)')
     .single();
   if (error || !message) throw new Error(error?.message ?? 'Could not post the message');
   await logActivity(supabase, user.id, id, 'chat.message', {});
