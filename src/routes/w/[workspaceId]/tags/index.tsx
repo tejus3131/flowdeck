@@ -1,7 +1,6 @@
-// The tags hub — one page per workspace: every tag in the vocabulary,
-// how many cards carry it, and the lifecycle (create for anyone, rename
-// and delete for owners/admins — the same rules the MCP ops run under).
-// Each tag click-throughs to its own page: the cards and the mention feed.
+// The tags hub — one page per workspace: the vocabulary at a glance.
+// Listing, counting, and creating (any member — the composer's # menu
+// does the same); every kind of EDITING lives on the per-tag page.
 import { Title } from '@solidjs/meta';
 import { type RouteProps, liveQuery } from '@solidjs/router';
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
@@ -9,7 +8,7 @@ import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { createEngine } from '../../../../lib/sync';
 import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';
 import { findOrCreateTag } from '../../../../lib/boards';
-import { deleteTag, getTagCardCounts, renameTag } from '../../../../lib/tags';
+import { getTagCardCounts } from '../../../../lib/tags';
 import {
   getWorkspaceSnapshot,
   workspaceStream,
@@ -69,8 +68,6 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
     return view.workspace.id ? view : null;
   });
 
-  const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
-
   // Card counts per tag — visible cards only (RLS on card_tags).
   const [counts, setCounts] = createSignal<Record<string, number>>({});
   createEffect(
@@ -101,40 +98,6 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
     setCreating(false);
   };
 
-  // ── rename (admins) ───────────────────────────────────────────────────
-  const [renamingId, setRenamingId] = createSignal<string | null>(null);
-  const [renameDraft, setRenameDraft] = createSignal('');
-  const [renameError, setRenameError] = createSignal<string | null>(null);
-  const rename = async (tagId: string) => {
-    if (!renameDraft().trim()) return;
-    setRenameError(null);
-    try {
-      await renameTag(tagId, renameDraft());
-      setRenamingId(null);
-      await engine.refresh();
-    } catch (err) {
-      setRenameError(errorMessage(err));
-    }
-  };
-
-  // ── delete (admins): arm then fire ────────────────────────────────────
-  const [armId, setArmId] = createSignal<string | null>(null);
-  const [deleteError, setDeleteError] = createSignal<string | null>(null);
-  const remove = async (tagId: string) => {
-    if (armId() !== tagId) {
-      setArmId(tagId);
-      setTimeout(() => setArmId((current) => (current === tagId ? null : current)), 3000);
-      return;
-    }
-    setArmId(null);
-    setDeleteError(null);
-    try {
-      await deleteTag(tagId);
-      await engine.refresh();
-    } catch (err) {
-      setDeleteError(errorMessage(err));
-    }
-  };
 
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
@@ -197,10 +160,10 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
               <ul class="mt-4 flex flex-col gap-1.5">
                 <For each={data().tags}>
                   {(tag) => (
-                    <li class="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-900">
+                    <li>
                       <a
                         href={`/w/${props.params.workspaceId}/tags/${tag.id}`}
-                        class="flex min-w-0 flex-1 items-center gap-2"
+                        class="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-900"
                       >
                         <span class="rounded-md bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">
                           #{tag.name}
@@ -212,72 +175,10 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
                           <span class="truncate text-xs text-neutral-400">{tag.description}</span>
                         </Show>
                       </a>
-                      <span class="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        <Show when={isAdmin()}>
-                          <Show
-                            when={renamingId() === tag.id}
-                            fallback={
-                              <button
-                                type="button"
-                                title="Rename tag"
-                                class="rounded-md px-1.5 py-0.5 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-                                onClick={() => {
-                                  setRenamingId(tag.id);
-                                  setRenameDraft(tag.name);
-                                  setRenameError(null);
-                                }}
-                              >
-                                ✎
-                              </button>
-                            }
-                          >
-                            <form
-                              class="flex items-center gap-1"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                void rename(tag.id);
-                              }}
-                            >
-                              <input
-                                class="w-32 rounded-md border border-neutral-200 bg-white px-2 py-0.5 text-xs outline-none focus:border-indigo-300 dark:border-neutral-700 dark:bg-neutral-900"
-                                value={renameDraft()}
-                                maxlength={24}
-                                autofocus
-                                onInput={(event) => setRenameDraft(event.currentTarget.value)}
-                              />
-                              <button type="submit" class="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                class="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                                onClick={() => setRenamingId(null)}
-                              >
-                                ✕
-                              </button>
-                            </form>
-                          </Show>
-                          <button
-                            type="button"
-                            class={[
-                              'rounded-md px-1.5 py-0.5 text-xs',
-                              armId() === tag.id
-                                ? 'bg-rose-100 font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300'
-                                : 'text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200',
-                            ]}
-                            onClick={() => void remove(tag.id)}
-                          >
-                            {armId() === tag.id ? 'Delete?' : '🗑'}
-                          </button>
-                        </Show>
-                      </span>
                     </li>
                   )}
                 </For>
               </ul>
-            </Show>
-            <Show when={renameError() || deleteError()}>
-              <p class="mt-2 text-xs text-rose-600 dark:text-rose-400">{renameError() ?? deleteError()}</p>
             </Show>
           </>
         )}

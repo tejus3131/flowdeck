@@ -8,8 +8,13 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'so
 import { Avatar } from '../../../../components/Avatar';
 import { createEngine } from '../../../../lib/sync';
 import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';
-import { getTagMentions, getTaggedCards, type TagMentionRow, type TaggedCard } from '../../../../lib/tags';
-import { renameTag } from '../../../../lib/tags';
+import {
+  getTagMentions,
+  getTaggedCards,
+  updateTag,
+  type TagMentionRow,
+  type TaggedCard,
+} from '../../../../lib/tags';
 import {
   getWorkspaceSnapshot,
   workspaceStream,
@@ -142,7 +147,9 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
     },
   );
 
-  // ── rename (admins) ───────────────────────────────────────────────────
+  // ── editing (owners/admins): name and description. Tags are never
+  // deleted — links in messages, comments, and descriptions would
+  // dangle; a rename keeps every link alive.
   const [renaming, setRenaming] = createSignal(false);
   const [renameDraft, setRenameDraft] = createSignal('');
   const [renameError, setRenameError] = createSignal<string | null>(null);
@@ -150,11 +157,24 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
     if (!renameDraft().trim()) return;
     setRenameError(null);
     try {
-      await renameTag(props.params.tagId, renameDraft());
+      await updateTag(props.params.tagId, { name: renameDraft() });
       setRenaming(false);
       await engine.refresh();
     } catch (err) {
       setRenameError(errorMessage(err));
+    }
+  };
+  const [editingDescription, setEditingDescription] = createSignal(false);
+  const [descriptionDraft, setDescriptionDraft] = createSignal('');
+  const [descriptionError, setDescriptionError] = createSignal<string | null>(null);
+  const saveDescription = async () => {
+    setEditingDescription(false);
+    setDescriptionError(null);
+    try {
+      await updateTag(props.params.tagId, { description: descriptionDraft() });
+      await engine.refresh();
+    } catch (err) {
+      setDescriptionError(errorMessage(err));
     }
   };
 
@@ -232,7 +252,6 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                 </Show>
                 <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
                   {data().workspace.name}
-                  <Show when={tag()?.description}> · {tag()?.description}</Show>
                 </p>
               </div>
               <a
@@ -245,6 +264,69 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
             <Show when={renameError()}>
               <p class="mt-1 text-xs text-rose-600 dark:text-rose-400">{renameError()}</p>
             </Show>
+
+            {/* Description: display prose, admins edit in place. Tags are
+                never deleted — this is the whole maintenance surface. */}
+            <div class="mt-4">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                  Description
+                </span>
+                <Show when={isAdmin() && !editingDescription()}>
+                  <button
+                    type="button"
+                    class="rounded-md px-1.5 py-0.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+                    onClick={() => {
+                      setDescriptionDraft(tag()?.description ?? '');
+                      setEditingDescription(true);
+                    }}
+                  >
+                    {tag()?.description ? 'Edit' : 'Add description'}
+                  </button>
+                </Show>
+              </div>
+              <Show
+                when={!editingDescription()}
+                fallback={
+                  <div class="mt-1 flex flex-col gap-1.5">
+                    <textarea
+                      class="w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-neutral-700 dark:bg-neutral-900 dark:focus:border-indigo-700 dark:focus:ring-indigo-900"
+                      rows={3}
+                      maxlength={500}
+                      value={descriptionDraft()}
+                      onInput={(event) => setDescriptionDraft(event.currentTarget.value)}
+                    />
+                    <div class="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        class="rounded-lg px-2.5 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        onClick={() => setEditingDescription(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+                        onClick={() => void saveDescription()}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                }
+              >
+                <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                  {tag()?.description || (
+                    <span class="text-neutral-400">
+                      What this tag means — scope, conventions, when to use it.
+                    </span>
+                  )}
+                </p>
+              </Show>
+              <Show when={descriptionError()}>
+                <p class="mt-1 text-xs text-rose-600 dark:text-rose-400">{descriptionError()}</p>
+              </Show>
+            </div>
 
             {/* Cards carrying the tag. */}
             <section class="mt-6">

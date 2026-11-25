@@ -324,17 +324,6 @@ const TOOLS: ToolDef[] = [
     op: 'rename_tag',
   },
   {
-    name: 'delete_tag',
-    description: 'Delete a tag; cards linked to it simply lose it. Workspace owners/admins only.',
-    inputSchema: {
-      type: 'object',
-      properties: { tag_id: { type: 'string', format: 'uuid' } },
-      required: ['tag_id'],
-      additionalProperties: false,
-    },
-    op: 'delete_tag',
-  },
-  {
     name: 'merge_tags',
     description:
       'Merge one tag into another: every card linked to source_tag_id becomes linked to target_tag_id instead, then the source tag is deleted. Workspace owners/admins only.',

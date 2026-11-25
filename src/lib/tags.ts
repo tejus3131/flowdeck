@@ -1,8 +1,9 @@
 // The tags hub's server side: everything the workspace tags page and the
 // per-tag page read and mutate. Tag rows live in boards.ts's workspace
 // snapshots; this file owns the tag-specific reads (mentions, tagged
-// cards) and the admin lifecycle (rename / delete — RLS enforces
-// owners/admins, the same rules the MCP ops run under).
+// cards) and the editing surface (updateTag — tags are never deleted:
+// serialized tag:<uuid> chips in messages, comments, and descriptions
+// would dangle; a rename keeps every link alive).
 import { createSupabaseRequestClient } from '../server/supabase';
 
 function assertId(id: string, what: string): string {
@@ -116,27 +117,32 @@ export async function getTagCardCounts(
   return Object.fromEntries(counts);
 }
 
-/** Rename a tag (owners/admins — RLS tags_update_admin). The same rules
- *  as the MCP op: lower-cased, trimmed, max 24 chars. */
-export async function renameTag(tagId: string, rawName: string): Promise<{ name: string }> {
+/** Edit a tag (owners/admins — RLS tags_update_admin). The same rules
+ *  as the MCP ops: name lower-cased, trimmed, max 24 chars; description
+ *  max 500. Editors live on the per-tag page — the hub only lists. */
+export async function updateTag(
+  tagId: string,
+  patch: { name?: string; description?: string },
+): Promise<{ name: string; description: string }> {
   'use server';
   const supabase = createSupabaseRequestClient();
-  const name = cleanText(rawName, 'Tag name', 24).toLowerCase();
+  const update: { name?: string; description?: string } = {};
+  if (patch.name !== undefined) {
+    update.name = cleanText(patch.name, 'Tag name', 24).toLowerCase();
+  }
+  if (patch.description !== undefined) {
+    update.description = String(patch.description).trim().slice(0, 500);
+  }
+  if (Object.keys(update).length === 0) return { name: '', description: '' };
   const { data, error } = await supabase
     .from('tags')
-    .update({ name })
+    .update(update)
     .eq('id', assertId(tagId, 'tag id'))
-    .select('name')
+    .select('name, description')
     .single();
-  if (error || !data) throw new Error('Tag not found or you cannot rename it (owners and admins only)');
-  return { name: data.name };
+  if (error || !data) {
+    throw new Error('Tag not found or you cannot edit it (owners and admins only)');
+  }
+  return { name: data.name, description: data.description ?? '' };
 }
 
-/** Delete a tag (owners/admins — RLS tags_delete_admin). Cards linked
- *  to it simply lose it. */
-export async function deleteTag(tagId: string): Promise<void> {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const { error } = await supabase.from('tags').delete().eq('id', assertId(tagId, 'tag id'));
-  if (error) throw new Error('Tag not found or you cannot delete it (owners and admins only)');
-}

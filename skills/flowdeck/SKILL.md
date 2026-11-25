@@ -84,7 +84,11 @@ with no position appends atomically, and the response carries where it landed.
 
 Tags are a workspace's shared vocabulary: lowercased, unique per workspace,
 max 24 chars. `create_tag` is find-or-create (safe to call repeatedly).
-Rename/delete/merge are workspace owner/admin only. Tags ride on cards via
+Tags are NEVER deleted — chips citing a tag are serialized into messages,
+comments, and descriptions as text, so deleting would dangle every link.
+Rename or merge instead (`rename_tag` for edits, owner/admin only;
+`merge_tags` moves card links to the target and removes the source —
+the one deliberate removal). Tags ride on cards via
 `update_card` `tag_ids` or `search(tag_id: ...)`.
 
 ## Notifications
