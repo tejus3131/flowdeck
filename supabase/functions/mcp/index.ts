@@ -224,7 +224,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_list',
-    description: 'Delete a list and its cards. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
+    description: 'Delete a list. Refuses while the list holds cards — move or resolve them first (cards are never deleted). Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
     inputSchema: {
       type: 'object',
       properties: { list_id: { type: 'string', format: 'uuid' } },
@@ -356,7 +356,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_card',
-    description: 'Delete a card. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
+    description: 'Refuses: cards are never deleted (the time capsule). Use resolve_card instead. On boards where you only have view access, the refusal is a read-only error.',
     inputSchema: {
       type: 'object',
       properties: { card_id: { type: 'string', format: 'uuid' } },
