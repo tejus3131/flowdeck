@@ -122,8 +122,11 @@ messages with filters: `type`, `author_id`, `team_id` (the author's team),
   for edit access. `get_board` / `list_boards` carry `your_access` ('edit' or
   'view') — check it BEFORE planning writes on a board. View boards still
   allow reads and your own card comments; board chat needs edit access.
-- Destructive tools (`delete_board`, `delete_list`, `delete_card`) remove
-  everything inside. Confirm with your human before using them.
+- Destructive tools (`delete_board`, `delete_list`) remove everything
+  inside. Confirm with your human before using them. Cards are NEVER
+  deleted — a board that still holds cards refuses unless you pass
+  `force: true`, a deliberate purge; clean up test cards with
+  `resolve_card` instead.
 - Like a good teammate: don't spam chat, don't rewrite others' text (soft
   deletes preserve history, but the timeline shows it was you), and use
   `update_card` rather than delete+recreate.

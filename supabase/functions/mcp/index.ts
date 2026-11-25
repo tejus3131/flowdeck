@@ -152,10 +152,17 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'delete_board',
-    description: 'Delete a board and everything in it. Destructive. Boards where you only have view access (get_board shows your_access: \'view\') fail with a read-only error instead of editing.',
+    description: `Delete a board and everything in it. Destructive. Boards where you only have view access (get_board shows your_access: 'view') fail with a read-only error instead of editing. Cards can never be deleted on their own — a board that still holds cards refuses unless force is true, the deliberate purge that removes them permanently.`,
     inputSchema: {
       type: 'object',
-      properties: { board_id: { type: 'string', format: 'uuid' } },
+      properties: {
+        board_id: { type: 'string', format: 'uuid' },
+        force: {
+          type: 'boolean',
+          description:
+            'Required to delete a board that still holds cards — a deliberate, fully destructive purge (cards included).',
+        },
+      },
       required: ['board_id'],
       additionalProperties: false,
     },

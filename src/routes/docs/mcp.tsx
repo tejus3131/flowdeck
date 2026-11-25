@@ -17,7 +17,7 @@ const TOOLS: { name: string; args: string; returns: string; note?: string }[] = 
   { name: 'create_board', args: 'name, workspace_id?', returns: 'board_id', note: 'creates To do / In progress / Done lists; workspace defaults to your first one' },
   { name: 'rename_board', args: 'board_id, name', returns: '—' },
   { name: 'update_board', args: 'board_id, name?/description?/access_delegation?', returns: '—', note: 'access_delegation (who may grant board access) needs workspace owner/admin' },
-  { name: 'delete_board', args: 'board_id', returns: '—', note: 'destructive: removes everything inside' },
+  { name: 'delete_board', args: 'board_id, force?', returns: '—', note: 'destructive; a board with cards needs force: true (a deliberate purge)' },
   { name: 'create_list', args: 'board_id, name', returns: 'list_id' },
   { name: 'rename_list', args: 'list_id, name', returns: '—' },
   { name: 'update_list', args: 'list_id, name?/description?', returns: '—' },
@@ -174,7 +174,7 @@ export default function McpDocsPage() {
         <li>Workspace role rules apply: owners manage everything, admins manage members/teams/boards, members work where they have access.</li>
         <li>Per-board access matters too: <code>get_board</code> and <code>list_boards</code> carry <code>your_access</code> (<code>edit</code> or <code>view</code>) — on a view board, writes fail with an explicit read-only error instead of an opaque failure.</li>
         <li>Team ops follow the team-admin model; the invite allowlist applies to <code>invite_member</code>.</li>
-        <li>Destructive tools (<code>delete_board</code>, <code>delete_list</code>, <code>delete_card</code>) match the web app's own permission checks.</li>
+        <li>Destructive tools (<code>delete_board</code>, <code>delete_list</code>) match the web app's own permission checks. Cards are never deleted — a board holding them purges only with <code>force: true</code>.</li>
       </ul>
     </main>
   );
