@@ -986,7 +986,7 @@ export async function updateCard(
   // The timeline needs the BEFORE state (diffs read "from → to").
   const { data: card } = await supabase
     .from('cards')
-    .select('board_id, title, priority')
+    .select('board_id, title, priority, description')
     .eq('id', resolved)
     .maybeSingle();
   if (Object.keys(update).length > 0) {
@@ -1014,12 +1014,15 @@ export async function updateCard(
         detail: { from: card.priority, to: update.priority },
       });
     }
-    if (update.description !== undefined) {
+    if (update.description !== undefined && update.description !== card.description) {
       await logCardEvent(supabase, {
         cardId: resolved,
         boardId: card.board_id,
         actorId: user.id,
         kind: 'description',
+        // Snapshots: the trail renders a collapsed from/to diff — the
+        // text must survive even after the card changes again.
+        detail: { from: card.description ?? '', to: update.description },
       });
     }
   }
