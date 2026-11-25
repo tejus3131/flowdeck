@@ -383,7 +383,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'edit_comment',
     description:
-      'Edit a card comment. Authors edit their own; workspace owners/admins can edit anyone\'s. The comment keeps an edited marker.',
+      'Edit a card comment. Authors edit their own only. The comment keeps an edited marker.',
     inputSchema: {
       type: 'object',
       properties: { comment_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 2000 } },
@@ -395,7 +395,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'delete_comment',
     description:
-      'Delete a card comment (soft delete: hidden from reads, kept for history). Authors delete their own; workspace owners/admins can delete anyone\'s.',
+      'Delete a card comment (soft delete with a visible tombstone). Authors delete their own; workspace owners/admins and team admins (on boards their team edits) can delete anyone\'s.',
     inputSchema: {
       type: 'object',
       properties: { comment_id: { type: 'string', format: 'uuid' } },
@@ -677,7 +677,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'edit_board_message',
     description:
-      'Edit a board chat message. Authors edit their own; workspace owners/admins can edit anyone\'s. Edits are soft — the row keeps an edited marker.',
+      'Edit a board chat message. Authors edit their own only. Edits are soft — the row keeps an edited marker.',
     inputSchema: {
       type: 'object',
       properties: { message_id: { type: 'string', format: 'uuid' }, body: { type: 'string', maxLength: 4000 } },
@@ -689,7 +689,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'delete_board_message',
     description:
-      'Delete a board chat message (soft delete: hidden from reads, kept for history). Authors delete their own; workspace owners/admins can delete anyone\'s.',
+      'Delete a board chat message (soft delete with a visible tombstone). Authors delete their own; workspace owners/admins and team admins (on boards their team edits) can delete anyone\'s.',
     inputSchema: {
       type: 'object',
       properties: { message_id: { type: 'string', format: 'uuid' } },
