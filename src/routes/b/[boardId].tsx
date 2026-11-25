@@ -2176,6 +2176,9 @@ function SmartTextarea(props: {
   workspaceTags: { id: string; name: string }[];
   /** Every card the viewer can see across boards (# offers cross-board refs). */
   crossCards: CrossCard[];
+  /** The board these cards live on — chips read "Board › Card", matching
+   *  the rendered markdown instead of a bare #N. */
+  boardName?: string;
   placeholder?: string;
   rows?: number;
   class?: string;
@@ -2262,7 +2265,10 @@ function SmartTextarea(props: {
       if (kind === 'user' || kind === 'team' || kind === 'all') chip.setAttribute('data-mention', `${kind}:${id}`);
       else if (kind === 'tag') chip.setAttribute('data-tag', id);
       else chip.setAttribute('data-cross', id);
-      chip.textContent = `${kind === 'tag' ? '#' : kind === 'card' ? '' : '@'}${match[1]}`;
+      // Tag labels travel WITH their # (the serialized form is [#name]),
+      // so only prefix when it's missing — otherwise a re-edit doubles
+      // it into ##name.
+      chip.textContent = `${kind === 'tag' ? (match[1].startsWith('#') ? '' : '#') : kind === 'card' ? '' : '@'}${match[1]}`;
       root.appendChild(chip);
       last = pattern.lastIndex;
     }
@@ -2355,7 +2361,14 @@ function SmartTextarea(props: {
         key: `c:${card.id}`,
         label: `#${card.number}`,
         hint: card.title,
-        chip: makeChip('fd-chip fd-chip-card', null, String(card.number), `#${card.number}`),
+        // The chip reads like the rendered citation ("Board › Card") —
+        // not a bare #N that transforms on send.
+        chip: makeChip(
+          'fd-chip fd-chip-card',
+          null,
+          String(card.number),
+          card.title ? `${props.boardName ?? 'Board'} › ${card.title}` : `#${card.number}`,
+        ),
       }));
     const tags = props.workspaceTags
       .filter((tag) => !q || tag.name.includes(q))
@@ -2377,7 +2390,12 @@ function SmartTextarea(props: {
         key: `x:${card.id}`,
         label: `${card.board_name} #${card.number}`,
         hint: card.title,
-        chip: makeChip('fd-chip fd-chip-card', ['data-cross', card.id], null, `${card.board_name} #${card.number}`),
+        chip: makeChip(
+          'fd-chip fd-chip-card',
+          ['data-cross', card.id],
+          null,
+          card.title ? `${card.board_name} › ${card.title}` : `${card.board_name} #${card.number}`,
+        ),
       }));
     return [...current, ...tags, ...cross];
   };
@@ -3941,6 +3959,7 @@ function CardDrawer(props: {
                   cards={props.cards}
                   workspaceTags={props.workspaceTags}
                   crossCards={props.crossCards}
+                  boardName={props.boardName}
                   rows={8}
                   onSend={() => saveBody()}
                   placeholder={'Describe the task — **markdown**, image links, #12 references, @name mentions'}
@@ -4200,6 +4219,7 @@ function CardDrawer(props: {
                 cards={props.cards}
                 workspaceTags={props.workspaceTags}
                 crossCards={props.crossCards}
+                boardName={props.boardName}
                 rows={2}
                 sendOnEnter
                 onSend={() => post()}
@@ -4781,6 +4801,7 @@ function BoardChat(props: {
               cards={props.cards}
               workspaceTags={props.workspaceTags}
               crossCards={props.crossCards}
+              boardName={props.boardName}
               rows={2}
               sendOnEnter
               onSend={() => post()}
