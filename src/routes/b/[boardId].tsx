@@ -788,7 +788,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       setChatUnread(0);
     } else {
       setChatUnread(
-        list.filter((row) => +new Date(row.created_at) > chatStamp()).length,
+        list.filter((row) => !row.deleted_at && +new Date(row.created_at) > chatStamp())
+          .length,
       );
     }
   };
@@ -835,6 +836,26 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const myRole = () => detail().myRole;
   const isWsAdmin = () => myRole() === 'owner' || myRole() === 'admin';
   const canDeleteBoard = () => view().board.owner_id === (me()?.id ?? '') || isWsAdmin();
+  /** The viewer's workspace delete role on this board (owners/admins may
+   *  delete others' messages — not edit them; 0057). */
+  const myWsRole = () => {
+    const role = myRole();
+    return role === 'owner' || role === 'admin' ? role : null;
+  };
+  /** The viewer team(s) they ADMIN with edit access to this board — team
+   *  admins may delete on boards their team edits (0057). First match. */
+  const myTeamAdminOnBoard = createMemo(() => {
+    const meId = me()?.id ?? null;
+    if (!meId) return null;
+    for (const grant of detail().teamAccess[props.params.boardId] ?? []) {
+      if (grant.access !== 'edit') continue;
+      const team = detail().teams.find((t) => t.id === grant.teamId);
+      if (team && team.members.some((m) => m.user_id === meId && m.role === 'admin')) {
+        return { teamId: team.id, teamName: team.name };
+      }
+    }
+    return null;
+  });
 
   /** Author path for a workspace op (settings drawer): outbox op + relay.
    *  The author's own board engine flip for self-targeting ops rides along
@@ -1367,6 +1388,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             boardName={view().board.name}
             accessDelegation={view().board.access_delegation}
             isWsAdmin={isWsAdmin()}
+            myWsRole={myWsRole()}
+            myTeamAdmin={myTeamAdminOnBoard()}
             onAccessGranted={relayMentionGrant}
             onTeamAccessGranted={relayTeamMentionGrant}
             myId={me()?.id ?? null}
@@ -1489,6 +1512,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 myName={me()?.display_name ?? me()?.email?.split('@')[0] ?? 'You'}
                 accessDelegation={view().board.access_delegation}
                 isWsAdmin={isWsAdmin()}
+                myWsRole={myWsRole()}
+                myTeamAdmin={myTeamAdminOnBoard()}
                 onAccessGranted={relayMentionGrant}
                 onTeamAccessGranted={relayTeamMentionGrant}
                 onHover={setHover}
@@ -2170,6 +2195,51 @@ function AddList(props: { onAdd: (name: string) => void }) {
  *  handle — the exact string @autocomplete inserts and chips validate. */
 function mentionNameOf(member: Member): string {
   return member.display_name?.split(/\s+/)[0] ?? member.email?.split('@')[0] ?? 'member';
+}
+
+/**
+ * The deletion trail for a tombstone row (0057): a markdown line whose
+ * people are REAL user: mentions, so chips carry avatars + hovers and
+ * survive renames — two people with the same name can't be confused.
+ * Rendered through the same renderMarkdown context as message bodies.
+ */
+function tombstoneLine(
+  row: {
+    deleted_by?: string | null;
+    deleted_as?: 'author' | 'owner' | 'admin' | 'team_admin' | null;
+    deleted_as_team_id?: string | null;
+    author_id: string | null;
+  },
+  meId: string | null,
+  members: Member[],
+  teams: TeamView[],
+  kind: 'message' | 'comment',
+): string {
+  const nameOf = (id: string | null | undefined): string => {
+    if (!id) return 'a former member';
+    const member = members.find((entry) => entry.user_id === id);
+    return (member?.display_name ?? member?.email?.split('@')[0] ?? 'a former member').replace(
+      /[\][()]/g,
+      '',
+    );
+  };
+  // The author's own delete reads as a simple line — no role needed.
+  if (row.deleted_as === 'author') {
+    return row.deleted_by === meId
+      ? `You deleted this ${kind}`
+      : `[${nameOf(row.deleted_by)}](user:${row.deleted_by}) deleted this ${kind}`;
+  }
+  const role =
+    row.deleted_as === 'owner'
+      ? ' as Owner'
+      : row.deleted_as === 'admin'
+        ? ' as Admin'
+        : row.deleted_as === 'team_admin'
+          ? ` as ${teams.find((t) => t.id === row.deleted_as_team_id)?.name ?? 'a team'} team admin`
+          : '';
+  return `[${nameOf(row.deleted_by)}](user:${row.deleted_by}) deleted a ${kind} from [${nameOf(
+    row.author_id,
+  )}](user:${row.author_id})${role}`;
 }
 
 /** A textarea that knows the board: typing `@` offers members, `#` offers
@@ -3032,6 +3102,11 @@ function CardDrawer(props: {
   accessDelegation: boolean;
   /** Workspace owners/admins can always grant — the panel adapts. */
   isWsAdmin: boolean;
+  /** The viewer's workspace role when it can delete others' comments
+   *  (0057: owners/admins delete, they no longer edit others'). */
+  myWsRole: 'owner' | 'admin' | null;
+  /** Team admin of a team with edit access to this board — may delete. */
+  myTeamAdmin: { teamId: string; teamName: string } | null;
   /** A mention-grant landed: mirror it on the workspace relay. */
   onAccessGranted: (userIds: string[]) => void;
   /** A TEAM mention-grant landed: mirror it on the workspace relay. */
@@ -3627,12 +3702,27 @@ function CardDrawer(props: {
     checkBlocked(body);
   };
 
-  // ── edit + delete (#21): the author always; anyone's for workspace
-  // owners/admins — the same role scoping the MCP ops run under. Older
-  // pages live outside the engine's snapshot (loadEarlier keeps them in
-  // the `older` signal), so those rows are applied + reverted there.
-  const canManageComment = (comment: CommentRow) =>
-    props.canEdit && (comment.author_id === props.myId || props.isWsAdmin);
+  // ── edit + delete (0057): EDIT is the author's alone. DELETE is
+  // role-scoped — author, workspace owners/admins, and team admins of a
+  // team with edit access to this board. Older pages live outside the
+  // engine's snapshot (loadEarlier keeps them in the `older` signal), so
+  // those rows are applied + reverted there.
+  const canEditComment = (comment: CommentRow) =>
+    props.canEdit && !comment.deleted_at && comment.author_id === props.myId;
+  const canDeleteComment = (comment: CommentRow) =>
+    props.canEdit &&
+    !comment.deleted_at &&
+    (comment.author_id === props.myId || Boolean(props.myWsRole) || Boolean(props.myTeamAdmin));
+  /** The role this viewer deletes under (optimistic tombstone stamp; the
+   *  RPC's value wins on echo). */
+  const deleteAsFor = (comment: CommentRow): {
+    role: 'author' | 'owner' | 'admin' | 'team_admin';
+    teamId: string | null;
+  } => {
+    if (comment.author_id === props.myId) return { role: 'author', teamId: null };
+    if (props.myWsRole) return { role: props.myWsRole, teamId: null };
+    return { role: 'team_admin', teamId: props.myTeamAdmin?.teamId ?? null };
+  };
   const [editingCommentId, setEditingCommentId] = createSignal<string | null>(null);
   const [commentEditDraft, setCommentEditDraft] = createSignal('');
   const [confirmCommentId, setConfirmCommentId] = createSignal<string | null>(null);
@@ -3688,34 +3778,56 @@ function CardDrawer(props: {
         (prev ? older().some((row) => row.id === id && row.body === body) : false),
     });
   };
-  const removeComment = (id: string) => {
+  /** Optimistic delete: the row becomes a tombstone in place (who deleted
+   *  it, in what role) — in the engine's list AND the older-pages list;
+   *  the guard holds until the echo carries the server-stamped trail. */
+  const removeComment = (comment: CommentRow) => {
+    const as = deleteAsFor(comment);
+    const at = new Date().toISOString();
     const prevOlder = older();
-    const hadOlder = prevOlder.some((row) => row.id === id);
-    setOlder((rows) => rows.filter((row) => row.id !== id));
+    const hadOlder = prevOlder.some((row) => row.id === comment.id);
+    const tombstone = (row: CommentRow): CommentRow => ({
+      ...row,
+      body: '',
+      deleted_at: at,
+      deleted_by: props.myId,
+      deleted_as: as.role,
+      deleted_as_team_id: as.teamId,
+    });
+    setOlder((rows) => rows.map((row) => (row.id === comment.id ? tombstone(row) : row)));
     commentsEngine.mutate({
       kind: 'comment-deleted',
-      guards: [id],
+      guards: [comment.id],
       apply: (draft) => {
-        draft.list = draft.list.filter((row) => row.id !== id);
+        const row = draft.list.find((entry) => entry.id === comment.id);
+        if (row) {
+          row.deleted_at = at;
+          row.deleted_by = props.myId;
+          row.deleted_as = as.role;
+          row.deleted_as_team_id = as.teamId;
+          row.body = '';
+        }
       },
       send: () =>
-        deleteComment(id).catch((error) => {
+        deleteComment(comment.id).catch((error) => {
           if (hadOlder) setOlder(prevOlder);
           throw error;
         }),
       echo: (durable) =>
-        !durable.list.some((row) => row.id === id) &&
-        (!hadOlder || !older().some((row) => row.id === id)),
+        durable.list.some((row) => row.id === comment.id && Boolean(row.deleted_at)) ||
+        (hadOlder
+          ? older().some((row) => row.id === comment.id && Boolean(row.deleted_at))
+          : false),
     });
   };
   /** Two-step delete: the first click arms ("Delete?"), the second fires. */
-  const askDeleteComment = (id: string) => {
-    if (confirmCommentId() === id) {
+  const askDeleteComment = (comment: CommentRow) => {
+    if (confirmCommentId() === comment.id) {
       clearTimeout(confirmCommentTimer);
       setConfirmCommentId(null);
-      removeComment(id);
+      removeComment(comment);
     } else {
-      setConfirmCommentId(id);
+      setConfirmCommentId(comment.id);
       clearTimeout(confirmCommentTimer);
       confirmCommentTimer = setTimeout(() => setConfirmCommentId(null), 3000);
     }
@@ -4234,7 +4346,7 @@ function CardDrawer(props: {
                               minute: '2-digit',
                             })}
                           </time>
-                          <Show when={comment.edited_at}>
+                          <Show when={comment.edited_at && !comment.deleted_at}>
                             <span
                               class="italic"
                               title={`Edited ${new Date(comment.edited_at!).toLocaleString(undefined, {
@@ -4247,7 +4359,7 @@ function CardDrawer(props: {
                               (edited)
                             </span>
                           </Show>
-                          <Show when={canManageComment(comment)}>
+                          <Show when={canEditComment(comment) || canDeleteComment(comment)}>
                             <span
                               class={[
                                 'flex items-center gap-1 transition-opacity',
@@ -4256,28 +4368,49 @@ function CardDrawer(props: {
                                   : 'opacity-0 group-hover:opacity-100',
                               ]}
                             >
-                              <button
-                                type="button"
-                                title="Edit comment"
-                                class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-                                onClick={() => startCommentEdit(comment)}
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                type="button"
-                                title={confirmCommentId() === comment.id ? 'Click again to delete' : 'Delete comment'}
-                                class={[
-                                  'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
-                                  { 'text-red-500': confirmCommentId() === comment.id },
-                                ]}
-                                onClick={() => askDeleteComment(comment.id)}
-                              >
-                                {confirmCommentId() === comment.id ? 'Delete?' : '🗑'}
-                              </button>
+                              <Show when={canEditComment(comment)}>
+                                <button
+                                  type="button"
+                                  title="Edit comment"
+                                  class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                                  onClick={() => startCommentEdit(comment)}
+                                >
+                                  ✏️
+                                </button>
+                              </Show>
+                              <Show when={canDeleteComment(comment)}>
+                                <button
+                                  type="button"
+                                  title={confirmCommentId() === comment.id ? 'Click again to delete' : 'Delete comment'}
+                                  class={[
+                                    'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
+                                    { 'text-red-500': confirmCommentId() === comment.id },
+                                  ]}
+                                  onClick={() => askDeleteComment(comment)}
+                                >
+                                  {confirmCommentId() === comment.id ? 'Delete?' : '🗑'}
+                                </button>
+                              </Show>
                             </span>
                           </Show>
                         </p>
+                        <Show
+                          when={!comment.deleted_at}
+                          fallback={
+                            // The deletion trail: real mention chips (avatars,
+                            // hovers, rename-proof) + the role the deleter held.
+                            <p
+                              class="prose-card mt-0.5 text-xs italic text-neutral-400"
+                              // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
+                              innerHTML={renderMarkdown(
+                                tombstoneLine(comment, props.myId, props.members, props.teams, 'comment'),
+                                markdownContext(),
+                              )}
+                              onClick={onBodyClick}
+                              onMouseOver={onBodyHover}
+                            />
+                          }
+                        >
                         <Show
                           when={editingCommentId() !== comment.id}
                           fallback={
@@ -4333,6 +4466,7 @@ function CardDrawer(props: {
                             // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
                             innerHTML={renderMarkdown(comment.body, markdownContext())}
                           />
+                        </Show>
                         </Show>
                       </div>
                     </li>
@@ -4594,6 +4728,11 @@ function BoardChat(props: {
   myName: string;
   accessDelegation: boolean;
   isWsAdmin: boolean;
+  /** The viewer's workspace role when it can delete others' messages
+   *  (0057: owners/admins delete, they no longer edit others'). */
+  myWsRole: 'owner' | 'admin' | null;
+  /** Team admin of a team with edit access to this board — may delete. */
+  myTeamAdmin: { teamId: string; teamName: string } | null;
   /** A mention-grant landed: mirror on the workspace relay. */
   onAccessGranted: (userIds: string[]) => void;
   onTeamAccessGranted: (teamIds: string[]) => void;
@@ -4791,10 +4930,26 @@ function BoardChat(props: {
     checkBlocked(body);
   };
 
-  // ── edit + delete (#21): the author always; anyone's for workspace
-  // owners/admins — the same role scoping the MCP ops run under.
-  const canManage = (message: BoardMessageRow) =>
-    props.canEdit && (message.author_id === props.myId || props.isWsAdmin);
+  // ── edit + delete (0057): EDIT is the author's alone. DELETE is
+  // role-scoped — author, workspace owners/admins, and team admins of a
+  // team with edit access to this board. The server re-checks; this only
+  // decides which affordances to show.
+  const canEditMsg = (message: BoardMessageRow) =>
+    props.canEdit && !message.deleted_at && message.author_id === props.myId;
+  const canDeleteMsg = (message: BoardMessageRow) =>
+    props.canEdit &&
+    !message.deleted_at &&
+    (message.author_id === props.myId || Boolean(props.myWsRole) || Boolean(props.myTeamAdmin));
+  /** The role this viewer deletes under (optimistic tombstone stamp; the
+   *  RPC's value wins on echo). */
+  const deleteAsFor = (message: BoardMessageRow): {
+    role: 'author' | 'owner' | 'admin' | 'team_admin';
+    teamId: string | null;
+  } => {
+    if (message.author_id === props.myId) return { role: 'author', teamId: null };
+    if (props.myWsRole) return { role: props.myWsRole, teamId: null };
+    return { role: 'team_admin', teamId: props.myTeamAdmin?.teamId ?? null };
+  };
   const [editingId, setEditingId] = createSignal<string | null>(null);
   const [editDraft, setEditDraft] = createSignal('');
   const [confirmId, setConfirmId] = createSignal<string | null>(null);
@@ -4834,25 +4989,38 @@ function BoardChat(props: {
       echo: (durable) => durable.list.some((row) => row.id === id && row.body === body),
     });
   };
-  const removeMessage = (id: string) => {
+  /** Optimistic delete: the row becomes a tombstone in place (who deleted
+   *  it, in what role); the guard holds until the echo carries the
+   *  server-stamped trail. */
+  const removeMessage = (message: BoardMessageRow) => {
+    const as = deleteAsFor(message);
+    const at = new Date().toISOString();
     engine.mutate({
       kind: 'message-deleted',
-      guards: [id],
+      guards: [message.id],
       apply: (draft) => {
-        draft.list = draft.list.filter((row) => row.id !== id);
+        const row = draft.list.find((entry) => entry.id === message.id);
+        if (row) {
+          row.deleted_at = at;
+          row.deleted_by = props.myId;
+          row.deleted_as = as.role;
+          row.deleted_as_team_id = as.teamId;
+          row.body = '';
+        }
       },
-      send: () => deleteBoardMessage(id),
-      echo: (durable) => !durable.list.some((row) => row.id === id),
+      send: () => deleteBoardMessage(message.id),
+      echo: (durable) =>
+        durable.list.some((row) => row.id === message.id && Boolean(row.deleted_at)),
     });
   };
   /** Two-step delete: the first click arms ("Delete?"), the second fires. */
-  const askDelete = (id: string) => {
-    if (confirmId() === id) {
+  const askDelete = (message: BoardMessageRow) => {
+    if (confirmId() === message.id) {
       clearTimeout(confirmTimer);
       setConfirmId(null);
-      removeMessage(id);
+      removeMessage(message);
     } else {
-      setConfirmId(id);
+      setConfirmId(message.id);
       clearTimeout(confirmTimer);
       confirmTimer = setTimeout(() => setConfirmId(null), 3000);
     }
@@ -4984,7 +5152,7 @@ function BoardChat(props: {
                             minute: '2-digit',
                           })}
                         </time>
-                        <Show when={message.edited_at}>
+                        <Show when={message.edited_at && !message.deleted_at}>
                           <span
                             class="italic"
                             title={`Edited ${new Date(message.edited_at!).toLocaleString(undefined, {
@@ -4997,7 +5165,7 @@ function BoardChat(props: {
                             (edited)
                           </span>
                         </Show>
-                        <Show when={canManage(message)}>
+                        <Show when={canEditMsg(message) || canDeleteMsg(message)}>
                           <span
                             class={[
                               'flex items-center gap-1 transition-opacity',
@@ -5006,28 +5174,49 @@ function BoardChat(props: {
                                 : 'opacity-0 group-hover:opacity-100',
                             ]}
                           >
-                            <button
-                              type="button"
-                              title="Edit message"
-                              class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-                              onClick={() => startEdit(message)}
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              type="button"
-                              title={confirmId() === message.id ? 'Click again to delete' : 'Delete message'}
-                              class={[
-                                'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
-                                { 'text-red-500': confirmId() === message.id },
-                              ]}
-                              onClick={() => askDelete(message.id)}
-                            >
-                              {confirmId() === message.id ? 'Delete?' : '🗑'}
-                            </button>
+                            <Show when={canEditMsg(message)}>
+                              <button
+                                type="button"
+                                title="Edit message"
+                                class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                                onClick={() => startEdit(message)}
+                              >
+                                ✏️
+                              </button>
+                            </Show>
+                            <Show when={canDeleteMsg(message)}>
+                              <button
+                                type="button"
+                                title={confirmId() === message.id ? 'Click again to delete' : 'Delete message'}
+                                class={[
+                                  'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
+                                  { 'text-red-500': confirmId() === message.id },
+                                ]}
+                                onClick={() => askDelete(message)}
+                              >
+                                {confirmId() === message.id ? 'Delete?' : '🗑'}
+                              </button>
+                            </Show>
                           </span>
                         </Show>
                       </p>
+                      <Show
+                        when={!message.deleted_at}
+                        fallback={
+                          // The deletion trail: real mention chips (avatars,
+                          // hovers, rename-proof) + the role the deleter held.
+                          <p
+                            class="prose-card mt-0.5 text-xs italic text-neutral-400"
+                            // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
+                            innerHTML={renderMarkdown(
+                              tombstoneLine(message, props.myId, props.members, props.teams, 'message'),
+                              markdownContext(),
+                            )}
+                            onClick={onBodyClick}
+                            onMouseOver={onChipHover}
+                          />
+                        }
+                      >
                       <Show
                         when={editingId() !== message.id}
                         fallback={
@@ -5083,6 +5272,7 @@ function BoardChat(props: {
                           onClick={onBodyClick}
                           onMouseOver={onChipHover}
                         />
+                      </Show>
                       </Show>
                     </div>
                   </li>
