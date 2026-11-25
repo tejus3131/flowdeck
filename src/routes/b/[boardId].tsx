@@ -3761,7 +3761,14 @@ function CardDrawer(props: {
   // a live, flashing node stops it; a replaced (detached) one re-flashes
   // the current last row.
   let anchoredEventRow: Element | null = null;
-  let anchoredEventTimer = false;
+  // The param leaving 'description' closes an anchor session — the next
+  // one starts clean, even when it lands on the same card + same row.
+  createEffect(
+    () => drawerParams.event ?? null,
+    (event) => {
+      if (event !== 'description') anchoredEventRow = null;
+    },
+  );
   createEffect(
     // Same card-id keying as the comment anchor; the tab rides along so
     // the flash retries when the settings tab mounts its rows.
@@ -3778,15 +3785,15 @@ function CardDrawer(props: {
         anchoredEventRow = row;
         row.scrollIntoView({ block: 'center', behavior: 'smooth' });
         row.classList.add('fd-chat-anchor');
-        if (!anchoredEventTimer) {
-          anchoredEventTimer = true;
-          // The param clears from the timer — a write from the effect's own
-          // apply would feed back into its inputs.
-          setTimeout(() => {
-            anchoredEventRow?.classList.remove('fd-chat-anchor');
-            setDrawerParams({ event: '' }, { replace: true });
-          }, 2400);
-        }
+        // A timer per anchor: each cleans up the row it flashed and
+        // clears the param (idempotent when timers overlap). A
+        // once-per-session flag never re-armed, so a later anchor's
+        // highlight stuck forever — no flag.
+        const target = row;
+        setTimeout(() => {
+          target.classList.remove('fd-chat-anchor');
+          setDrawerParams({ event: '' }, { replace: true });
+        }, 2400);
       });
     },
   );
@@ -4621,6 +4628,7 @@ function CardDrawer(props: {
                   cards={props.cards}
                   workspaceTags={props.workspaceTags}
                   crossCards={props.crossCards}
+                  workspaceBoards={props.workspaceBoards}
                   boardName={props.boardName}
                   board={{ id: card()?.board_id ?? '', name: props.boardName }}
                   rows={8}
@@ -4836,6 +4844,7 @@ function CardDrawer(props: {
                                 cards={props.cards}
                                 workspaceTags={props.workspaceTags}
                                 crossCards={props.crossCards}
+                                workspaceBoards={props.workspaceBoards}
                                 boardName={props.boardName}
                                 board={{ id: card()?.board_id ?? '', name: props.boardName }}
                                 rows={2}
@@ -4992,6 +5001,7 @@ function CardDrawer(props: {
                 cards={props.cards}
                 workspaceTags={props.workspaceTags}
                 crossCards={props.crossCards}
+                workspaceBoards={props.workspaceBoards}
                 boardName={props.boardName}
                 board={{ id: card()?.board_id ?? '', name: props.boardName }}
                 rows={2}
