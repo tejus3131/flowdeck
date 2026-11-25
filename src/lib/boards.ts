@@ -816,6 +816,16 @@ export async function deleteBoard(boardId: string) {
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
   await requireUser(supabase);
+  // The time capsule (0059): a board is content — it refuses to delete
+  // while it holds ANY card (resolved or not). Empty it first.
+  const { count, error: countError } = await supabase
+    .from('cards')
+    .select('id', { count: 'exact', head: true })
+    .eq('board_id', id);
+  if (countError) throw new Error(countError.message);
+  if ((count ?? 0) > 0) {
+    throw new Error(`This board still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`);
+  }
   const { error } = await supabase.from('boards').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -867,6 +877,16 @@ export async function deleteList(listId: string) {
   const supabase = createSupabaseRequestClient();
   const id = assertId(listId, 'list id');
   await requireUser(supabase);
+  // The time capsule (0059): a list never takes its cards with it —
+  // refuse while it holds ANY card (resolved or not).
+  const { count, error: countError } = await supabase
+    .from('cards')
+    .select('id', { count: 'exact', head: true })
+    .eq('list_id', id);
+  if (countError) throw new Error(countError.message);
+  if ((count ?? 0) > 0) {
+    throw new Error(`This list still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`);
+  }
   const { error } = await supabase.from('lists').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -1268,6 +1288,35 @@ async function logCardEvent(
   return cardId; // not found — let the caller's write surface the error
 }
 
+/**
+ * Resolve a card — hide it from the board without deleting anything
+ * (the time capsule, 0059). The RPC checks access, stamps the card, and
+ * logs the "resolved" event; the row stays fully editable.
+ */
+export async function resolveCard(cardId: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(cardId, 'card id');
+  await requireUser(supabase);
+  const { error } = await supabase.rpc('resolve_card', { p_card_id: id });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Unresolve a card — back to its frozen list. The RPC heals the position
+ * when the old slot collided with neighbors that moved, falls back to
+ * the board's first list when the frozen list is gone (legacy), and logs
+ * every part of it.
+ */
+export async function unresolveCard(cardId: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(cardId, 'card id');
+  await requireUser(supabase);
+  const { error } = await supabase.rpc('unresolve_card', { p_card_id: id });
+  if (error) throw new Error(error.message);
+}
+
 export async function deleteCard(cardId: string) {
   'use server';
   const supabase = createSupabaseRequestClient();
@@ -1307,6 +1356,14 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
   if (cardBefore && target.board_id !== cardBefore.board_id) {
     throw new Error('That list belongs to a different board');
   }
+  // The time capsule (0059): resolved cards are hidden from the board —
+  // they come back through unresolveCard, not by being moved in place.
+  const { data: resolved } = await supabase
+    .from('cards')
+    .select('resolved_at')
+    .eq('id', id)
+    .maybeSingle();
+  if (resolved?.resolved_at) throw new Error('This card is resolved — unresolve it first');
   const fromName =
     ((cardBefore?.lists as { name: string | null } | null | undefined)?.name as string | undefined) ?? null;
   const { error } = await supabase
