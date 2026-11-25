@@ -1026,30 +1026,29 @@ export async function updateCard(
       });
       // Mention backlinks: cards cited in the new description get a
       // 'mentioned' row in their own trail (best-effort, idempotent on
-      // the host card pair).
-      try {
-        await supabase.rpc('log_card_mentions', {
-          p_body: update.description,
-          p_where: 'description',
-          p_board_id: card.board_id,
-          p_card_id: resolved,
-          p_source_id: resolved,
-        });
-      } catch (backlinkError) {
-        console.error('description mention backlinks failed:', backlinkError);
+      // the host card pair). rpc() reports failures in the result — it
+      // never throws — so the error is read, not caught.
+      const { error: cardBacklinkError } = await supabase.rpc('log_card_mentions', {
+        p_body: update.description,
+        p_where: 'description',
+        p_board_id: card.board_id,
+        p_card_id: resolved,
+        p_source_id: resolved,
+      });
+      if (cardBacklinkError) {
+        console.error('description mention backlinks failed:', cardBacklinkError.message);
       }
       // Board backlinks: boards cited in the description get a message
       // in their own chat (same best-effort contract).
-      try {
-        await supabase.rpc('log_board_mentions', {
-          p_body: update.description,
-          p_where: 'description',
-          p_board_id: card.board_id,
-          p_card_id: resolved,
-          p_source_id: resolved,
-        });
-      } catch (boardBacklinkError) {
-        console.error('description board backlinks failed:', boardBacklinkError);
+      const { error: boardBacklinkError } = await supabase.rpc('log_board_mentions', {
+        p_body: update.description,
+        p_where: 'description',
+        p_board_id: card.board_id,
+        p_card_id: resolved,
+        p_source_id: resolved,
+      });
+      if (boardBacklinkError) {
+        console.error('description board backlinks failed:', boardBacklinkError.message);
       }
     }
   }
@@ -1683,30 +1682,29 @@ export async function addComment(
     console.error('comment notifications failed:', notifyError);
   }
   // Mention backlinks: cards cited in the comment get a 'mentioned' row
-  // in their own trail (best-effort — never blocks the comment).
-  try {
-    await supabase.rpc('log_card_mentions', {
-      p_body: text,
-      p_where: 'comment',
-      p_board_id: card.board_id,
-      p_card_id: resolved,
-      p_source_id: comment.id,
-    });
-  } catch (backlinkError) {
-    console.error('comment mention backlinks failed:', backlinkError);
+  // in their own trail (best-effort — never blocks the comment). rpc()
+  // reports failures in the result — it never throws.
+  const { error: cardBacklinkError } = await supabase.rpc('log_card_mentions', {
+    p_body: text,
+    p_where: 'comment',
+    p_board_id: card.board_id,
+    p_card_id: resolved,
+    p_source_id: comment.id,
+  });
+  if (cardBacklinkError) {
+    console.error('comment mention backlinks failed:', cardBacklinkError.message);
   }
   // Board backlinks: boards cited in the comment get a message in their
   // own chat (best-effort — never blocks the comment).
-  try {
-    await supabase.rpc('log_board_mentions', {
-      p_body: text,
-      p_where: 'comment',
-      p_board_id: card.board_id,
-      p_card_id: resolved,
-      p_source_id: comment.id,
-    });
-  } catch (boardBacklinkError) {
-    console.error('comment board backlinks failed:', boardBacklinkError);
+  const { error: boardBacklinkError } = await supabase.rpc('log_board_mentions', {
+    p_body: text,
+    p_where: 'comment',
+    p_board_id: card.board_id,
+    p_card_id: resolved,
+    p_source_id: comment.id,
+  });
+  if (boardBacklinkError) {
+    console.error('comment board backlinks failed:', boardBacklinkError.message);
   }
   return {
     id: comment.id,
@@ -1958,28 +1956,27 @@ export async function postBoardMessage(
     console.error('board chat notifications failed:', notifyError);
   }
   // Mention backlinks: cards cited in the message get a 'mentioned' row
-  // in their own trail (best-effort — never blocks the message).
-  try {
-    await supabase.rpc('log_card_mentions', {
-      p_body: text,
-      p_where: 'chat',
-      p_board_id: id,
-      p_source_id: message.id,
-    });
-  } catch (backlinkError) {
-    console.error('chat mention backlinks failed:', backlinkError);
+  // in their own trail (best-effort — never blocks the message). rpc()
+  // reports failures in the result — it never throws.
+  const { error: cardBacklinkError } = await supabase.rpc('log_card_mentions', {
+    p_body: text,
+    p_where: 'chat',
+    p_board_id: id,
+    p_source_id: message.id,
+  });
+  if (cardBacklinkError) {
+    console.error('chat mention backlinks failed:', cardBacklinkError.message);
   }
   // Board backlinks: boards cited in the message get a message in their
   // own chat (best-effort — never blocks the message).
-  try {
-    await supabase.rpc('log_board_mentions', {
-      p_body: text,
-      p_where: 'chat',
-      p_board_id: id,
-      p_source_id: message.id,
-    });
-  } catch (boardBacklinkError) {
-    console.error('chat board backlinks failed:', boardBacklinkError);
+  const { error: boardBacklinkError } = await supabase.rpc('log_board_mentions', {
+    p_body: text,
+    p_where: 'chat',
+    p_board_id: id,
+    p_source_id: message.id,
+  });
+  if (boardBacklinkError) {
+    console.error('chat board backlinks failed:', boardBacklinkError.message);
   }
   return {
     id: message.id,

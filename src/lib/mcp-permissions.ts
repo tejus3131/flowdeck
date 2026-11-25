@@ -105,7 +105,13 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
         implies: 'read',
         requires: 'boards.read',
       }),
-      write('delete', 'Delete cards', ['delete_card'], { implies: 'read', requires: 'boards.read' }),
+      // Cards are never deleted (0059) — resolve instead. The bucket
+      // keeps its name so existing grants hold; resolve/unresolve are
+      // the capsule's ops.
+      write('delete', 'Resolve cards', ['resolve_card', 'unresolve_card'], {
+        implies: 'read',
+        requires: 'boards.read',
+      }),
     ],
   },
   {
@@ -154,7 +160,10 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
       // rename/delete/merge stay admin. The MCP taxonomy now matches.
       write('create', 'Create tags', ['create_tag'], { implies: 'read' }),
       write('rename', 'Rename tags', ['rename_tag'], { implies: 'read', role: 'admin' }),
-      write('delete', 'Delete & merge tags', ['delete_tag', 'merge_tags'], { implies: 'read', role: 'admin' }),
+      // Tags are never deleted (0067) — the op left mcp_exec and the
+      // MCP tool list. The bucket keeps its name so existing grants
+      // hold; only merge remains.
+      write('delete', 'Merge tags', ['merge_tags'], { implies: 'read', role: 'admin' }),
     ],
   },
   {

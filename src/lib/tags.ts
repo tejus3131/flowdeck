@@ -131,10 +131,14 @@ export async function updateTag(
     update.name = cleanText(patch.name, 'Tag name', 24).toLowerCase();
   }
   if (patch.description !== undefined) {
-    update.description = String(patch.description).trim().slice(0, 500);
+    const description = String(patch.description ?? '');
+    if (description.length > 500) throw new Error('Tag description is too long (max 500 characters)');
+    // Empty clears the description — unlike the name, which must exist.
+    update.description = description.trim();
   }
-  if (Object.keys(update).length === 0) return { name: '', description: '' };
-  const { data, error } = await supabase
+  if (Object.keys(update).length === 0) {
+    throw new Error('Nothing to update — pass a name or a description');
+  }  const { data, error } = await supabase
     .from('tags')
     .update(update)
     .eq('id', assertId(tagId, 'tag id'))

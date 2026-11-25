@@ -1,10 +1,11 @@
 -- 0065: backlinks for the citations people actually type.
 --
--- The # menu's same-board citation serializes as [#12](flowdeck-card-ref:12)
--- — NOT card:<uuid> (that's the cross-board form). 0062's parser only read
--- card:<uuid>, so every same-board # citation produced NO backlink. The
--- parser now reads both: flowdeck-card-ref:N resolves against the board
--- where the mention happened (p_board_id).
+-- The # menu's same-board citation is stored as PLAIN '#12' text — the
+-- renderer's reference pre-pass linkifies it to
+-- [#12](flowdeck-card-ref:12) at DISPLAY time only. 0062's parser read
+-- the cross-board card:<uuid> form exclusively, so every same-board #
+-- citation produced NO backlink. The parser now reads both: plain #N
+-- resolves against the board where the mention happened (p_board_id).
 --
 -- Descriptions join the write path too: a card cited in another card's
 -- description gets a 'mentioned' row with where='description' (the app's
