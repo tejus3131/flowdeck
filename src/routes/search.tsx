@@ -63,7 +63,7 @@ export default function SearchPage() {
     },
   );
 
-  const [searchParams, setSearchParams] = useSearchParams<{ tag?: string; q?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams<{ tag?: string; q?: string; priority?: string }>();
   const [query, setQuery] = createSignal('');
   const [selectedTags, setSelectedTags] = createSignal<string[]>([]);
   const [priorities, setPriorities] = createSignal<string[]>([]);
@@ -90,6 +90,17 @@ export default function SearchPage() {
     () => (detail()?.tags.length ?? 0) > 0 && searchParams.q,
     (q) => {
       if (q) setQuery(q);
+    },
+  );
+  // Deep link: /search?priority=high preselects that priority (the
+  // activity timeline's priority chips route here).
+  createEffect(
+    () => searchParams.priority,
+    (priority) => {
+      if (priority && !priorities().includes(priority)) {
+        setPriorities([priority]);
+        setDirty(true);
+      }
     },
   );
 

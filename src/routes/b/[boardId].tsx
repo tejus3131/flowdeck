@@ -3341,10 +3341,41 @@ function CardDrawer(props: {
     const member = props.members.find((entry) => entry.user_id === actorId);
     return member?.display_name ?? member?.email?.split('@')[0] ?? 'Someone';
   };
-  const eventLine = (row: CardEventRow): string => {
+  /** One referenced entity in an event's detail — NEW rows (0058) carry
+   *  {id, name}; OLD rows carry bare name strings (rendered as text). */
+  type EventRef = { id?: string; name?: string | null };
+  const refItems = (value: unknown): EventRef[] =>
+    (Array.isArray(value) ? value : []).filter((item) => item != null) as EventRef[];
+
+  /** A person chip: the CURRENT display name (renames can't stale it),
+   *  hover raises the profile card, click opens the profile. */
+  const personChip = (item: EventRef) => {
+    const member = item.id ? props.members.find((m) => m.user_id === item.id) : undefined;
+    const label =
+      member?.display_name ?? member?.email?.split('@')[0] ?? item.name ?? 'someone';
+    if (!item.id) return <span class="font-medium">{label}</span>;
+    return (
+      <span class="fd-mention" data-user-id={item.id}>
+        {label}
+      </span>
+    );
+  };
+  /** A tag chip: current name + hover info, click → the tag's search. */
+  const tagChip = (item: EventRef) => {
+    const tag = item.id ? props.workspaceTags.find((t) => t.id === item.id) : undefined;
+    const label = tag?.name ?? item.name ?? 'tag';
+    if (!item.id) return <span class="font-medium">#{label}</span>;
+    return (
+      <span class="fd-tag-ref" data-tag-id={item.id}>
+        #{label}
+      </span>
+    );
+  };
+
+  const eventLine = (row: CardEventRow) => {
     const detail = row.detail ?? {};
-    const added = (detail.added as string[] | undefined) ?? [];
-    const removed = (detail.removed as string[] | undefined) ?? [];
+    const added = refItems(detail.added);
+    const removed = refItems(detail.removed);
     switch (row.kind) {
       case 'created':
         return 'created this card';
@@ -3354,20 +3385,62 @@ function CardDrawer(props: {
         return `renamed this from “${String(detail.from ?? '')}” to “${String(detail.to ?? '')}”`;
       case 'priority': {
         const to = detail.to as string | null | undefined;
-        return to ? `set priority to ${to}` : 'cleared the priority';
+        return to ? (
+          <>
+            set priority to{' '}
+            <span class="fd-prio-ref" data-priority={to} title={`All cards with ${to} priority`}>
+              {to}
+            </span>
+          </>
+        ) : (
+          'cleared the priority'
+        );
       }
       case 'tags': {
-        const parts: string[] = [];
-        if (added.length > 0) parts.push(`added ${added.map((name) => `#${name}`).join(', ')}`);
-        if (removed.length > 0)
-          parts.push(`removed ${removed.map((name) => `#${name}`).join(', ')}`);
-        return parts.join(' · ') || 'changed tags';
+        const addedPart =
+          added.length > 0 ? (
+            <>
+              added <For each={added}>{(item) => tagChip(item)}</For>
+            </>
+          ) : null;
+        const removedPart =
+          removed.length > 0 ? (
+            <>
+              removed <For each={removed}>{(item) => tagChip(item)}</For>
+            </>
+          ) : null;
+        return addedPart || removedPart ? (
+          <>
+            {addedPart}
+            {addedPart && removedPart ? ' · ' : ''}
+            {removedPart}
+          </>
+        ) : (
+          'changed tags'
+        );
       }
       case 'assignees': {
-        const parts: string[] = [];
-        if (added.length > 0) parts.push(`assigned ${added.join(', ')}`);
-        if (removed.length > 0) parts.push(`unassigned ${removed.join(', ')}`);
-        return parts.join(' · ') || 'changed assignees';
+        const addedPart =
+          added.length > 0 ? (
+            <>
+              assigned <For each={added}>{(item) => personChip(item)}</For>
+            </>
+          ) : null;
+        const removedPart =
+          removed.length > 0 ? (
+            <>
+              unassigned <For each={removed}>{(item) => personChip(item)}</For>
+            </>
+          ) : null;
+        return addedPart || removedPart ? (
+          <>
+            {addedPart}
+            {addedPart && removedPart ? ' · ' : ''}
+            {removedPart}
+          </>
+        ) : (
+          'changed assignees'
+        );
       }
       case 'description':
         return 'updated the description';
@@ -3884,6 +3957,13 @@ function CardDrawer(props: {
       event.preventDefault();
       props.onHover(null);
       navigate(`/b/${boardChip.getAttribute('data-board-id') ?? ''}`);
+      return;
+    }
+    const prio = target?.closest?.('[data-priority]');
+    if (prio) {
+      event.preventDefault();
+      props.onHover(null);
+      navigate(`/search?priority=${encodeURIComponent(prio.getAttribute('data-priority') ?? '')}`);
     }
   };
 
@@ -4268,14 +4348,27 @@ function CardDrawer(props: {
                 </p>
               }
             >
-              <ol class="flex flex-col gap-1 border-l border-neutral-200 pl-3 dark:border-neutral-700">
+              <ol
+                class="fd-timeline flex flex-col gap-1 border-l border-neutral-200 pl-3 dark:border-neutral-700"
+                onClick={onBodyClick}
+                onMouseOver={onBodyHover}
+              >
                 <For each={events()}>
                   {(row) => (
                     <li class="relative text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
                       <span class="absolute -left-[17px] top-1.5 h-1.5 w-1.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-                      <span class="font-medium text-neutral-700 dark:text-neutral-200">
-                        {actorName(row.actor_id)}
-                      </span>{' '}
+                      <Show
+                        when={row.actor_id}
+                        fallback={
+                          <span class="font-medium text-neutral-700 dark:text-neutral-200">
+                            {actorName(row.actor_id)}
+                          </span>
+                        }
+                      >
+                        <span class="fd-mention" data-user-id={row.actor_id}>
+                          {actorName(row.actor_id)}
+                        </span>
+                      </Show>{' '}
                       {eventLine(row)}
                       <Show when={row.agent}>
                         <span class="ml-0.5 rounded bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
