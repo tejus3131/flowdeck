@@ -811,11 +811,35 @@ export async function updateBoard(
   }
 }
 
-export async function deleteBoard(boardId: string) {
+/**
+ * Delete a board. Without `purge` this refuses while the board holds any
+ * card (the capsule's accidental-loss guard). With `purge` it takes the
+ * sanctioned end-of-life path (0061's purge_board RPC): the whole board —
+ * cards, comments, every event — goes permanently. The UI only passes
+ * purge after an explicit typed confirmation; owners / workspace
+ * owners+admins only (the RPC re-checks).
+ */
+export async function deleteBoard(boardId: string, purge?: boolean): Promise<void> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
   await requireUser(supabase);
+  if (purge) {
+    const { error } = await supabase.rpc('purge_board', { p_board_id: id });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  // The friendly pre-check — the DB trigger (0060) is the guarantee.
+  const { count, error: countError } = await supabase
+    .from('cards')
+    .select('id', { count: 'exact', head: true })
+    .eq('board_id', id);
+  if (countError) throw new Error(countError.message);
+  if ((count ?? 0) > 0) {
+    throw new Error(
+      `This board still holds ${count} card${count === 1 ? '' : 's'} — deleting it would remove them permanently. Confirm the delete to proceed.`,
+    );
+  }
   const { error } = await supabase.from('boards').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -867,6 +891,16 @@ export async function deleteList(listId: string) {
   const supabase = createSupabaseRequestClient();
   const id = assertId(listId, 'list id');
   await requireUser(supabase);
+  // The time capsule (0059): a list never takes its cards with it —
+  // refuse while it holds ANY card (resolved or not).
+  const { count, error: countError } = await supabase
+    .from('cards')
+    .select('id', { count: 'exact', head: true })
+    .eq('list_id', id);
+  if (countError) throw new Error(countError.message);
+  if ((count ?? 0) > 0) {
+    throw new Error(`This list still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`);
+  }
   const { error } = await supabase.from('lists').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -1268,14 +1302,35 @@ async function logCardEvent(
   return cardId; // not found — let the caller's write surface the error
 }
 
-export async function deleteCard(cardId: string) {
+/**
+ * Resolve a card — hide it from the board without deleting anything
+ * (the time capsule, 0059). The RPC checks access, stamps the card, and
+ * logs the "resolved" event; the row stays fully editable.
+ */
+export async function resolveCard(cardId: string): Promise<void> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(cardId, 'card id');
-  const user = await requireUser(supabase);
-  const { error } = await supabase.from('cards').delete().eq('id', id);
+  await requireUser(supabase);
+  const { error } = await supabase.rpc('resolve_card', { p_card_id: id });
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Unresolve a card — back to its frozen list. The RPC heals the position
+ * when the old slot collided with neighbors that moved, falls back to
+ * the board's first list when the frozen list is gone (legacy), and logs
+ * every part of it.
+ */
+export async function unresolveCard(cardId: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(cardId, 'card id');
+  await requireUser(supabase);
+  const { error } = await supabase.rpc('unresolve_card', { p_card_id: id });
+  if (error) throw new Error(error.message);
+}
+
 
 /**
  * Move a card to a list at a fractional position. The client computes the
@@ -1307,6 +1362,14 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
   if (cardBefore && target.board_id !== cardBefore.board_id) {
     throw new Error('That list belongs to a different board');
   }
+  // The time capsule (0059): resolved cards are hidden from the board —
+  // they come back through unresolveCard, not by being moved in place.
+  const { data: resolved } = await supabase
+    .from('cards')
+    .select('resolved_at')
+    .eq('id', id)
+    .maybeSingle();
+  if (resolved?.resolved_at) throw new Error('This card is resolved — unresolve it first');
   const fromName =
     ((cardBefore?.lists as { name: string | null } | null | undefined)?.name as string | undefined) ?? null;
   const { error } = await supabase
@@ -1995,6 +2058,8 @@ export type SearchHit = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Set when the card is resolved (hidden from its board — 0059). */
+  resolved_at: string | null;
   assignees: string[];
   tags: { id: string; name: string }[];
   comment_count: number;
@@ -2015,6 +2080,10 @@ export async function searchCards(filters: {
   assigneeIds?: string[];
   creatorIds?: string[];
   boardId?: string;
+  /** Multi-board facet (a superset of boardId). */
+  boardIds?: string[];
+  /** Resolved state (0059): unresolved (the default) / resolved / both. */
+  resolved?: 'unresolved' | 'resolved' | 'both';
   /** Cardinality filters: cards missing the thing. */
   unassigned?: boolean;
   noPriority?: boolean;
@@ -2027,10 +2096,21 @@ export async function searchCards(filters: {
   let query = supabase
     .from('cards')
     .select(
-      'id, number, title, priority, created_by, created_at, updated_at, boards!inner(id, name), card_assignees(user_id), card_tags(tags(id, name))',
+      'id, number, title, priority, resolved_at, created_by, created_at, updated_at, boards!inner(id, name), card_assignees(user_id), card_tags(tags(id, name))',
     )
     .order('updated_at', { ascending: false })
     .limit(200);
+  // The time capsule (0059): the default view is unresolved cards only;
+  // the resolved shelf and the "both" view opt in explicitly.
+  if (filters.resolved !== 'both') {
+    query =
+      filters.resolved === 'resolved'
+        ? query.not('resolved_at', 'is', null)
+        : query.is('resolved_at', null);
+  }
+  if (filters.boardIds && filters.boardIds.length > 0) {
+    query = query.in('board_id', filters.boardIds);
+  }
 
   const text = filters.query?.trim();
   if (text) {
@@ -2100,6 +2180,7 @@ export async function searchCards(filters: {
         created_by: row.created_by,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        resolved_at: row.resolved_at,
         assignees: ((row.card_assignees ?? []) as { user_id: string }[]).map((a) => a.user_id),
         tags,
         comment_count: 0,

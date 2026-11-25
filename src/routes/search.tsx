@@ -63,13 +63,17 @@ export default function SearchPage() {
     },
   );
 
-  const [searchParams, setSearchParams] = useSearchParams<{ tag?: string; q?: string; priority?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams<{ tag?: string; q?: string; priority?: string; resolved?: string; board?: string }>();
   const [query, setQuery] = createSignal('');
   const [selectedTags, setSelectedTags] = createSignal<string[]>([]);
   const [priorities, setPriorities] = createSignal<string[]>([]);
   const [assignees, setAssignees] = createSignal<string[]>([]);
   const [creators, setCreators] = createSignal<string[]>([]);
   const [untagged, setUntagged] = createSignal(false);
+  // The time capsule (0059): the default search view is unresolved cards;
+  // the resolved shelf (board settings) deep-links in with resolved ones.
+  const [resolved, setResolved] = createSignal<'unresolved' | 'resolved' | 'both'>('unresolved');
+  const [boards, setBoards] = createSignal<string[]>([]);
   const [hits, setHits] = createSignal<SearchHit[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [dirty, setDirty] = createSignal(true);
@@ -103,6 +107,27 @@ export default function SearchPage() {
       }
     },
   );
+  // Deep link: ?resolved=resolved|both (the board settings resolved
+  // shelf routes here).
+  createEffect(
+    () => searchParams.resolved,
+    (value) => {
+      if ((value === 'resolved' || value === 'both') && resolved() !== value) {
+        setResolved(value);
+        setDirty(true);
+      }
+    },
+  );
+  // Deep link: ?board=<id> preselects that board.
+  createEffect(
+    () => (detail()?.boards.length ?? 0) > 0 && searchParams.board,
+    (boardId) => {
+      if (boardId && detail()?.boards.some((b) => b.id === boardId) && !boards().includes(boardId)) {
+        setBoards([boardId]);
+        setDirty(true);
+      }
+    },
+  );
 
   // Run the search when filters change. The compute returns the filter
   // bundle itself (a fresh object every change) — Solid 2 skips the apply
@@ -116,6 +141,8 @@ export default function SearchPage() {
       assignees: assignees(),
       creators: creators(),
       untagged: untagged(),
+      resolved: resolved(),
+      boards: boards(),
       ws: workspaceId(),
       dirty: dirty(),
     }),
@@ -130,6 +157,8 @@ export default function SearchPage() {
       // function codec reject the call before it ever leaves the page.
       void searchCards({
         ...(filters.q.trim() ? { query: filters.q.trim() } : {}),
+        resolved: filters.resolved,
+        ...(filters.boards.length > 0 ? { boardIds: filters.boards } : {}),
         ...(filters.tags.length > 0 ? { tagIds: filters.tags } : {}),
         ...(filters.priorities.length > 0 ? { priorities: filters.priorities } : {}),
         ...(filters.assignees.length > 0 ? { assigneeIds: filters.assignees } : {}),
@@ -207,6 +236,33 @@ export default function SearchPage() {
             }}
           />
           <FilterDropdown
+            label="Status"
+            items={[
+              { value: 'unresolved', label: 'Unresolved' },
+              { value: 'resolved', label: 'Resolved' },
+              { value: 'both', label: 'Both' },
+            ]}
+            leading={[]}
+            selected={[resolved()]}
+            onChange={(next) => {
+              setResolved((next[0] as 'unresolved' | 'resolved' | 'both') ?? 'unresolved');
+              setDirty(true);
+            }}
+          />
+          <FilterDropdown
+            label="Board"
+            items={(detail()?.boards ?? []).map((board) => ({
+              value: board.id,
+              label: board.name,
+            }))}
+            selected={boards()}
+            onChange={(next) => {
+              setBoards(next);
+              setDirty(true);
+            }}
+            searchable
+          />
+          <FilterDropdown
             label="Assignee"
             items={(detail()?.members ?? []).map((member) => ({
               value: member.user_id,
@@ -239,7 +295,9 @@ export default function SearchPage() {
               selectedTags().length > 0 ||
               priorities().length > 0 ||
               assignees().length > 0 ||
-              creators().length > 0
+              creators().length > 0 ||
+              boards().length > 0 ||
+              resolved() !== 'unresolved'
             }
           >
             <button
@@ -280,6 +338,11 @@ export default function SearchPage() {
                         {' '}· {new Date(hit.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                       </p>
                       <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <Show when={hit.resolved_at}>
+                          <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                            Resolved
+                          </span>
+                        </Show>
                         <Show when={hit.priority}>
                           <PriorityPill priority={hit.priority!} />
                         </Show>

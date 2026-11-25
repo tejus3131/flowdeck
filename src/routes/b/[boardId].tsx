@@ -57,7 +57,6 @@ import {
   createCard,
   createList,
   deleteBoard,
-  deleteCard,
   deleteList,
   findOrCreateTag,
   getBoardSnapshot,
@@ -72,6 +71,8 @@ import {
   editComment,
   deleteComment,
   moveCard as moveCardServer,
+  resolveCard as resolveCardServer,
+  unresolveCard as unresolveCardServer,
   postBoardMessage,
   editBoardMessage,
   deleteBoardMessage,
@@ -130,6 +131,9 @@ const EMPTY_WORKSPACE: WorkspaceDetail = {
 const OP_LABELS: Record<string, string> = {
   addCard: 'Couldn\u2019t add that card',
   moveCard: 'Couldn\u2019t move that card',
+  resolveCard: 'Couldn\u2019t resolve that card',
+  'resolve-card': 'Couldn\u2019t resolve that card',
+  // 'deleteCard' label kept for old in-flight ops (cards can't be deleted anymore).
   deleteCard: 'Couldn\u2019t delete that card',
   updateCard: 'Couldn\u2019t save that card',
   addList: 'Couldn\u2019t add that list',
@@ -693,8 +697,20 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     );
   };
 
-  const removeCard = (cardId: string) => {
-    runOp({ kind: 'delete-card', cardId }, () => deleteCard(cardId));
+  /** The time capsule's hide/unhide (0059): resolve removes the card from
+   *  the board's lists; unresolve brings it back to its frozen list (the
+   *  RPC heals position and logs the trail). */
+  const toggleResolve = (cardId: string, resolved: boolean) => {
+    runOp(
+      {
+        kind: 'resolve-card',
+        cardId,
+        resolved,
+        at: new Date().toISOString(),
+        by: me()?.id ?? null,
+      },
+      () => (resolved ? resolveCardServer(cardId) : unresolveCardServer(cardId)),
+    );
   };
 
   const addList = (name: string) => {
@@ -1017,11 +1033,13 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const isGrantable = (_member: Member) => true;
 
   const [deleting, setDeleting] = createSignal(false);
-  const removeBoard = async () => {
+  /** purge = the deliberate end-of-life (0061): only the settings drawer
+   *  passes it, after a typed confirmation when cards are involved. */
+  const removeBoard = async (purge = false) => {
     setSettingsError(null);
     setDeleting(true);
     try {
-      await deleteBoard(props.params.boardId);
+      await deleteBoard(props.params.boardId, purge || undefined);
       // Relay-after-ack (server-minted identity): open dashboards drop the
       // board instantly; the durable echo covers everyone else.
       wsRelay.broadcastOp({
@@ -1245,7 +1263,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             </Show>
             <Show when={view().lists.length > 0 || view().cards.length > 0}>
               <span>
-                {view().lists.length} lists · {view().cards.length} cards
+                {view().lists.length} lists · {view().cards.filter((c) => !c.resolved_at).length} cards
               </span>
             </Show>
           </span>
@@ -1256,7 +1274,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             {(list) => (
               <BoardColumn
                 list={list}
-                cards={view().cards.filter((card) => card.list_id === list.id)}
+                cards={view().cards.filter((card) => card.list_id === list.id && !card.resolved_at)}
                 members={detail().members}
                 dragging={dragging()}
                 remoteDrag={presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()}
@@ -1360,7 +1378,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 onRemove={() => removeList(list.id)}
                 onRename={(name) => renameList(list.id, name)}
                 onOpenCard={(cardId, clientOp) => openCard(cardId, clientOp)}
-                onRemoveCard={(cardId) => removeCard(cardId)}
+                onResolveCard={(cardId) => toggleResolve(cardId, true)}
                 collapsed={collapsedLists().has(list.id)}
                 onToggleCollapse={() => toggleListCollapse(list.id)}
               />
@@ -1400,10 +1418,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
               setOpenCardId(null);
               setHover(null);
             }}
-            onDelete={(cardIdNow) => {
-              removeCard(cardIdNow);
-              setOpenCardId(null);
-            }}
+            onResolve={(cardIdNow, resolved) => toggleResolve(cardIdNow, resolved)}
             onUpdate={(patch) => updateCard(openCardResolvedId(), patch, openCardOp())}
             onPostComment={postComment}
             onCommentFail={commentFailed}
@@ -1547,8 +1562,12 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           onEffectiveAccess={effectiveAccess}
           onIsGrantable={isGrantable}
           onChangeAccess={changeAccess}
-          onDelete={() => void removeBoard()}
+          onDelete={(purge) => void removeBoard(purge)}
           onClose={() => setPanel(null)}
+          cardCount={view().cards.length}
+          resolvedCards={view().cards.filter((c) => c.resolved_at)}
+          lists={view().lists}
+          onUnresolve={(cardId) => toggleResolve(cardId, false)}
         />
             </Show>
           </aside>
@@ -1663,7 +1682,8 @@ function BoardColumn(props: {
   onRemove: () => void;
   onRename: (name: string) => void;
   onOpenCard: (cardId: string, clientOp: string | null) => void;
-  onRemoveCard: (cardId: string) => void;
+  /** Resolve (hide) the card — the time capsule's delete (0059). */
+  onResolveCard: (cardId: string) => void;
   /** Per-device collapse state (a preference — "hide the done pile"). */
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -1985,14 +2005,14 @@ function BoardColumn(props: {
                 <Show when={props.canEdit}>
                   <button
                     type="button"
-                    title="Delete card"
-                    class="absolute right-2 top-2 hidden rounded px-1 text-neutral-300 hover:text-red-500 group-hover:block dark:text-neutral-600"
+                    title="Resolve card — hides it from the board, nothing is deleted"
+                    class="absolute right-2 top-2 hidden rounded px-1 text-neutral-300 hover:text-neutral-600 group-hover:block dark:text-neutral-600 dark:hover:text-neutral-300"
                     onClick={(event) => {
                       event.stopPropagation();
-                      props.onRemoveCard(card.id);
+                      props.onResolveCard(card.id);
                     }}
                   >
-                    ×
+                    ✓
                   </button>
                 </Show>
               </article>
@@ -3117,8 +3137,9 @@ function CardDrawer(props: {
   teams: TeamView[];
   myName: string;
   onClose: () => void;
-  /** Deletes the card with this (swap-resolved) id. */
-  onDelete: (cardId: string) => void;
+  /** Resolve/unresolve the card with this (swap-resolved) id — the time
+   *  capsule's hide/unhide (0059); nothing is ever deleted. */
+  onResolve: (cardId: string, resolved: boolean) => void;
   onUpdate: (patch: {
     title?: string;
     description?: string;
@@ -3382,7 +3403,14 @@ function CardDrawer(props: {
     switch (row.kind) {
       case 'created':
         return 'created this card';
+      case 'resolved':
+        return 'marked this resolved';
+      case 'unresolved':
+        return 'marked this unresolved';
       case 'moved':
+        if (detail.reason === 'previous list deleted') {
+          return `moved to ${String(detail.to ?? 'a list')} — the previous list no longer exists`;
+        }
         return `moved this from ${String(detail.from ?? 'a list')} to ${String(detail.to ?? 'a list')}`;
       case 'renamed':
         return `renamed this from “${String(detail.from ?? '')}” to “${String(detail.to ?? '')}”`;
@@ -4034,6 +4062,14 @@ function CardDrawer(props: {
             >
               {card()?.title ?? '…'}
             </span>
+            <Show when={card()?.resolved_at}>
+              <span
+                class="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                title="Hidden from the board — unresolve to bring it back"
+              >
+                Resolved
+              </span>
+            </Show>
           </div>
           <button
             type="button"
@@ -4078,6 +4114,25 @@ function CardDrawer(props: {
           </div>
           <Show when={tab() === 'chat'}>
             <ChatPrefMenu scopeType="card" scopeId={cardIdNow()} />
+          </Show>
+          <Show when={props.canEdit}>
+            <button
+              type="button"
+              class={[
+                'rounded-lg px-2.5 py-1 text-xs font-semibold',
+                card()?.resolved_at
+                  ? 'text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950'
+                  : 'text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-200',
+              ]}
+              title={
+                card()?.resolved_at
+                  ? 'Bring this card back to the board'
+                  : 'Hide this card from the board — nothing is deleted'
+              }
+              onClick={() => props.onResolve(cardIdNow(), !card()?.resolved_at)}
+            >
+              {card()?.resolved_at ? '↩ Unresolve' : '✓ Resolve'}
+            </button>
           </Show>
         </div>
 
@@ -5528,12 +5583,25 @@ function BoardSettings(props: {
   onEffectiveAccess: (member: Member) => 'edit' | 'view' | null;
   onIsGrantable: (member: Member) => boolean;
   onChangeAccess: (userId: string, access: 'edit' | 'view' | null) => void;
-  onDelete: () => void;
+  /** Deletes the board; purge=true takes the destructive path (0061). */
+  onDelete: (purge: boolean) => void;
   onClose: () => void;
+  /** Every card on the board (resolved too) — the purge confirm's stakes. */
+  cardCount: number;
+  /** The board's resolved (hidden) cards — the time capsule's view (0059). */
+  resolvedCards: CardView[];
+  /** List names for the resolved rows (the frozen list each came from). */
+  lists: ListRow[];
+  /** Bring a resolved card back (the RPC heals position + logs it). */
+  onUnresolve: (cardId: string) => void;
 }) {
   const [nameDraft, setNameDraft] = createSignal(props.board.name);
   const [descriptionDraft, setDescriptionDraft] = createSignal<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = createSignal(false);
+  /** How many resolved rows show at once — "Show more" grows the slice. */
+  const [resolvedShown, setResolvedShown] = createSignal(20);
+  /** The purge confirm's typed board name (0061's deliberate path). */
+  const [typedConfirm, setTypedConfirm] = createSignal('');
 
   // Escape closes (same affordance as the card drawer).
   const onKey = (event: KeyboardEvent) => {
@@ -5888,6 +5956,72 @@ function BoardSettings(props: {
           </Show>
         </section>
 
+        {/* ── resolved cards: the time capsule's shelf (0059) ───────────── */}
+        <section class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+            <span>Resolved cards · {props.resolvedCards.length}</span>
+            <a
+              href={`/search?board=${props.boardId}&resolved=resolved`}
+              class="rounded-md px-1.5 py-0.5 font-medium normal-case tracking-normal text-indigo-500 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+              title="Search this board's resolved cards — the search page's resolved view, board pre-filtered"
+            >
+              🔍 Search these
+            </a>
+          </h3>
+          <p class="mt-1 text-xs text-neutral-400">
+            Nothing is ever deleted — resolved cards hide from the board and stay
+            fully editable. Unresolving returns them to their list.
+          </p>
+          <Show
+            when={props.resolvedCards.length > 0}
+            fallback={
+              <p class="mt-2 text-xs text-neutral-400">No resolved cards on this board.</p>
+            }
+          >
+            <ul class="mt-2 flex flex-col gap-1.5">
+              <For each={props.resolvedCards.slice(0, resolvedShown())}>
+                {(card) => (
+                  <li class="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-700">
+                    <span class="min-w-0 flex-1">
+                      <span class="rounded bg-neutral-100 px-1 font-mono text-[10px] text-neutral-500 dark:bg-neutral-800">
+                        #{card.number ?? '–'}
+                      </span>{' '}
+                      <span class="font-medium">{card.title}</span>
+                      <span class="ml-2 text-neutral-400">
+                        in{' '}
+                        {props.lists.find((l) => l.id === card.list_id)?.name ??
+                          'a deleted list'}
+                      </span>
+                    </span>
+                    <span class="shrink-0 text-neutral-400">
+                      {new Date(card.resolved_at!).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      class="shrink-0 rounded-md px-2 py-1 font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                      onClick={() => props.onUnresolve(card.id)}
+                    >
+                      Unresolve
+                    </button>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <Show when={props.resolvedCards.length > resolvedShown()}>
+              <button
+                type="button"
+                class="mt-2 w-full rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                onClick={() => setResolvedShown(resolvedShown() + 20)}
+              >
+                Show more ({props.resolvedCards.length - resolvedShown()} left)
+              </button>
+            </Show>
+          </Show>
+        </section>
+
         {/* ── danger zone ──────────────────────────────────────────────── */}
         <Show when={props.canDelete}>
           <section class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
@@ -5896,6 +6030,10 @@ function BoardSettings(props: {
             </h3>
             <p class="mt-1 text-xs text-neutral-400">
               Deleting removes the board, its lists, cards, and comments for everyone.
+              <Show when={props.cardCount > 0}>
+                {' '}Cards can never be deleted on their own — a board that holds
+                them deletes only through this deliberate, typed confirmation.
+              </Show>
             </p>
             <Show
               when={confirmingDelete()}
@@ -5903,29 +6041,69 @@ function BoardSettings(props: {
                 <button
                   type="button"
                   class="mt-2 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-                  onClick={() => setConfirmingDelete(true)}
+                  onClick={() => {
+                    setTypedConfirm('');
+                    setConfirmingDelete(true);
+                  }}
                 >
-                  Delete this board…
+                  Delete this board{props.cardCount > 0 ? ` (${props.cardCount} cards)` : ''}…
                 </button>
               }
             >
-              <span class="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={props.deleting}
-                  class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                  onClick={() => props.onDelete()}
-                >
-                  {props.deleting ? 'Deleting…' : 'Really delete everything?'}
-                </button>
-                <button
-                  type="button"
-                  class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                  onClick={() => setConfirmingDelete(false)}
-                >
-                  Cancel
-                </button>
-              </span>
+              <Show
+                when={props.cardCount === 0}
+                fallback={
+                  <span class="mt-2 flex flex-col gap-2">
+                    <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                      Type <span class="font-semibold">{props.board.name}</span> to
+                      permanently delete this board and its {props.cardCount} card
+                      {props.cardCount === 1 ? '' : 's'} (cards included — this is
+                      the capsule's one sanctioned purge):
+                    </span>
+                    <input
+                      class="max-w-xs"
+                      value={typedConfirm()}
+                      onInput={(event) => setTypedConfirm(event.currentTarget.value)}
+                      placeholder={props.board.name}
+                    />
+                    <span class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={props.deleting || typedConfirm() !== props.board.name}
+                        class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                        onClick={() => props.onDelete(true)}
+                      >
+                        {props.deleting ? 'Deleting…' : 'Purge everything permanently'}
+                      </button>
+                      <button
+                        type="button"
+                        class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                        onClick={() => setConfirmingDelete(false)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  </span>
+                }
+              >
+                <span class="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={props.deleting}
+                    class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                    onClick={() => props.onDelete(false)}
+                  >
+                    {props.deleting ? 'Deleting…' : 'Really delete everything?'}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    Cancel
+                  </button>
+                </span>
+              </Show>
             </Show>
           </section>
         </Show>

@@ -35,7 +35,20 @@ export type UpdateCardOp = {
   tags?: { id: string; name: string }[];
   assignees?: string[];
 };
+/** KEPT DELIBERATELY (0059 made cards undeletable — resolve instead): old
+ *  clients may still relay in-flight 'delete-card' ops, and the engine
+ *  replays history; new writes use 'resolve-card'. Do not "clean up". */
 export type DeleteCardOp = { kind: 'delete-card'; cardId: string };
+/** Resolve / unresolve — the time capsule's hide/unhide (0059). The card
+ *  stays (fully editable, still logged); the board's lists just stop
+ *  showing it. `at`/`by` stamp the optimistic view until the echo. */
+export type ResolveCardOp = {
+  kind: 'resolve-card';
+  cardId: string;
+  resolved: boolean;
+  at: string;
+  by: string | null;
+};
 /** A comment landing on a card — the board engine bumps the card's stats;
  *  the open drawer's own engine appends the row itself. countBefore is the
  *  author's count at send time (a lower bound for the echo). */
@@ -79,6 +92,7 @@ export type BoardOpPayload =
   | CreateCardOp
   | MoveCardOp
   | UpdateCardOp
+  | ResolveCardOp
   | DeleteCardOp
   | CommentCreatedOp
   | CreateListOp
@@ -96,6 +110,7 @@ export const OPS_KNOWN: ReadonlySet<string> = new Set<BoardOpPayload['kind']>([
   'create-card',
   'move-card',
   'update-card',
+  'resolve-card',
   'delete-card',
   'comment-created',
   'create-list',
@@ -113,6 +128,7 @@ export function guardsFor(payload: BoardOpPayload): string[] {
       return [payload.tempId];
     case 'move-card':
     case 'update-card':
+    case 'resolve-card':
     case 'delete-card':
     case 'comment-created':
       return [payload.cardId];
@@ -170,6 +186,8 @@ export function applyBoardOp(draft: BoardSnapshot, payload: BoardOpPayload, now:
         updated_at: now,
         client_op: payload.clientOp,
         number: null,
+        resolved_at: null,
+        resolved_by: null,
         comment_count: 0,
         last_comment_at: null,
         priority: null,
@@ -204,6 +222,14 @@ export function applyBoardOp(draft: BoardSnapshot, payload: BoardOpPayload, now:
       if (payload.assignees !== undefined) card.assignees = payload.assignees;
       card.tags = [...(card.tags ?? [])].sort((a, b) => a.name.localeCompare(b.name));
       card.updated_at = now;
+      break;
+    }
+    case 'resolve-card': {
+      const card = draft.cards.find((c) => c.id === payload.cardId);
+      if (card) {
+        card.resolved_at = payload.resolved ? payload.at : null;
+        card.resolved_by = payload.resolved ? payload.by : null;
+      }
       break;
     }
     case 'delete-card':
@@ -280,6 +306,10 @@ export function echoBoardOp(durable: BoardSnapshot, payload: BoardOpPayload): bo
       }
       return true;
     }
+    case 'resolve-card':
+      return durable.cards.some(
+        (c) => c.id === payload.cardId && Boolean(c.resolved_at) === payload.resolved,
+      );
     case 'delete-card':
       return !durable.cards.some((c) => c.id === payload.cardId);
     case 'comment-created': {
