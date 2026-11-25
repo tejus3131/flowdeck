@@ -1652,6 +1652,20 @@ export async function addComment(
   } catch (notifyError) {
     console.error('comment notifications failed:', notifyError);
   }
+  // Mention backlinks: cards cited in the comment get a 'mentioned' row
+  // in their own trail (best-effort — never blocks the comment).
+  try {
+    await supabase.rpc('log_card_mentions', {
+      p_body: text,
+      p_actor: user.id,
+      p_where: 'comment',
+      p_board_id: card.board_id,
+      p_card_id: resolved,
+      p_source_id: comment.id,
+    });
+  } catch (backlinkError) {
+    console.error('comment mention backlinks failed:', backlinkError);
+  }
   return {
     id: comment.id,
     createdAt: comment.created_at,
@@ -1900,6 +1914,19 @@ export async function postBoardMessage(
     });
   } catch (notifyError) {
     console.error('board chat notifications failed:', notifyError);
+  }
+  // Mention backlinks: cards cited in the message get a 'mentioned' row
+  // in their own trail (best-effort — never blocks the message).
+  try {
+    await supabase.rpc('log_card_mentions', {
+      p_body: text,
+      p_actor: user.id,
+      p_where: 'chat',
+      p_board_id: id,
+      p_source_id: message.id,
+    });
+  } catch (backlinkError) {
+    console.error('chat mention backlinks failed:', backlinkError);
   }
   return {
     id: message.id,

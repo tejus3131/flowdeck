@@ -450,8 +450,11 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     },
   );
 
-  // Deep links: ?card=<id> opens the drawer, ?chat=1 opens the chat tab.
+  // Deep links: ?card=<id> opens the drawer, ?chat=1 opens the chat tab,
+  // ?chat=<message-id> opens the chat ON that exact message (mention
+  // backlinks in card trails click through to the citing message).
   const [searchParams, setSearchParams] = useSearchParams<{ card?: string; chat?: string }>();
+  const [chatAnchor, setChatAnchor] = createSignal<string | null>(null);
   createEffect(
     () => (view().board.id ? searchParams.card : null),
     (cardId) => {
@@ -465,6 +468,11 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     () => (view().board.id ? searchParams.chat : null),
     (chat) => {
       if (chat) {
+        // A UUID names the message to land on; anything else just opens
+        // the tab.
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(chat)) {
+          setChatAnchor(chat);
+        }
         switchPanel('chat');
         setSearchParams({ chat: '' }, { replace: true });
       }
@@ -1540,6 +1548,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   const target = crossCards().find((c) => c.id === cardId);
                   if (target) navigate(`/b/${target.board_id}?card=${target.id}`);
                 }}
+                anchorMessageId={chatAnchor}
               />
             </Show>
             <Show when={panel() === 'settings'}>
@@ -3475,7 +3484,37 @@ function CardDrawer(props: {
       }
       case 'description':
         return 'updated the description';
-      default:
+      case 'mentioned': {
+        // A chat message or comment cited this card — the trail links
+        // back to the exact message (mention backlinks, 0062).
+        const snippet = String(detail.snippet ?? '');
+        if (String(detail.where ?? '') === 'chat') {
+          return (
+            <>
+              mentioned this in the{' '}
+              <a
+                class="fd-backlink"
+                href={`/b/${String(detail.board_id ?? '')}?chat=${String(detail.message_id ?? '')}`}
+                title={snippet}
+              >
+                #{String(detail.board_name ?? 'a board')} chat
+              </a>
+            </>
+          );
+        }
+        return (
+          <>
+            mentioned this in a comment on{' '}
+            <a
+              class="fd-backlink"
+              href={`/b/${String(detail.board_id ?? '')}?card=${String(detail.card_id ?? '')}`}
+              title={snippet}
+            >
+              #{String(detail.card_title ?? 'a card')}
+            </a>
+          </>
+        );
+      }      default:
         return row.kind;
     }
   };
@@ -4892,6 +4931,9 @@ function BoardChat(props: {
   /** # citations open cards (this board) / cross-board cards. */
   onOpenCardRef: (num: number) => void;
   onOpenCrossCard: (cardId: string) => void;
+  /** A deep link (?chat=<message-id>) asks the panel to land on that
+   *  exact message — mention backlinks click through to it. */
+  anchorMessageId: () => string | null;
 }) {
   type ChatSnapshot = { list: BoardMessageRow[] };
   const chatLive = liveQuery(boardChatStream, 'board-chat');
@@ -4938,6 +4980,25 @@ function BoardChat(props: {
     () => {
       queueMicrotask(() => {
         if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      });
+    },
+  );
+
+  // Deep link (?chat=<message-id>): scroll the cited message into view
+  // and flash it. Retries as pages load in — the anchor lands as soon as
+  // the row exists, then stops.
+  let anchoredId: string | null = null;
+  createEffect(
+    () => [props.anchorMessageId(), engine.view().list.length] as const,
+    ([anchorId]) => {
+      if (!anchorId || anchoredId === anchorId) return;
+      queueMicrotask(() => {
+        const row = scroller?.querySelector(`[data-msg-id="${anchorId}"]`);
+        if (!row) return;
+        anchoredId = anchorId;
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.classList.add('fd-chat-anchor');
+        setTimeout(() => row.classList.remove('fd-chat-anchor'), 2400);
       });
     },
   );
@@ -5282,7 +5343,7 @@ function BoardChat(props: {
               {(message) => {
                 const mine = () => message.author_id !== null && message.author_id === props.myId;
                 return (
-                  <li class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
+                  <li data-msg-id={message.id} class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
                     <Avatar src={message.avatar_url} name={message.author} size="sm" />
                     <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
                       <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
