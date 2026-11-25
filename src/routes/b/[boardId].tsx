@@ -69,6 +69,8 @@ import {
   getCardEvents,
   type CardEventRow,
   chatSeq,
+  editComment,
+  deleteComment,
   moveCard as moveCardServer,
   postBoardMessage,
   editBoardMessage,
@@ -3603,6 +3605,93 @@ function CardDrawer(props: {
     checkBlocked(body);
   };
 
+  // ── edit + delete (#21): the author always; anyone's for workspace
+  // owners/admins — the same role scoping the MCP ops run under. Older
+  // pages live outside the engine's snapshot (loadEarlier keeps them in
+  // the `older` signal), so those rows are applied + reverted there.
+  const canManageComment = (comment: CommentRow) =>
+    props.canEdit && (comment.author_id === props.myId || props.isWsAdmin);
+  const [editingCommentId, setEditingCommentId] = createSignal<string | null>(null);
+  const [commentEditDraft, setCommentEditDraft] = createSignal('');
+  const [confirmCommentId, setConfirmCommentId] = createSignal<string | null>(null);
+  let confirmCommentTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(confirmCommentTimer));
+
+  const startCommentEdit = (comment: CommentRow) => {
+    setEditingCommentId(comment.id);
+    setCommentEditDraft(comment.body);
+  };
+  /** Optimistic edit: the bubble swaps instantly, the guard holds until
+   *  the live echo carries the new body (or the older-page row shows it). */
+  const saveCommentEdit = () => {
+    const id = editingCommentId();
+    const body = commentEditDraft().trim();
+    if (!id || !body) return;
+    const editedAt = new Date().toISOString();
+    const prev = older().find((row) => row.id === id) ?? null;
+    setEditingCommentId(null);
+    setOlder((rows) =>
+      rows.map((row) => (row.id === id ? { ...row, body, edited_at: editedAt } : row)),
+    );
+    commentsEngine.mutate({
+      kind: 'comment-edited',
+      guards: [id],
+      apply: (draft) => {
+        const row = draft.list.find((entry) => entry.id === id);
+        if (row) {
+          row.body = body;
+          row.edited_at = editedAt;
+        }
+      },
+      send: () =>
+        editComment(id, body).catch((error) => {
+          if (prev) {
+            setOlder((rows) =>
+              rows.map((row) =>
+                row.id === id ? { ...row, body: prev.body, edited_at: prev.edited_at } : row,
+              ),
+            );
+          }
+          throw error;
+        }),
+      echo: (durable) =>
+        durable.list.some((row) => row.id === id && row.body === body) ||
+        (prev ? older().some((row) => row.id === id && row.body === body) : false),
+    });
+  };
+  const removeComment = (id: string) => {
+    const prevOlder = older();
+    const hadOlder = prevOlder.some((row) => row.id === id);
+    setOlder((rows) => rows.filter((row) => row.id !== id));
+    commentsEngine.mutate({
+      kind: 'comment-deleted',
+      guards: [id],
+      apply: (draft) => {
+        draft.list = draft.list.filter((row) => row.id !== id);
+      },
+      send: () =>
+        deleteComment(id).catch((error) => {
+          if (hadOlder) setOlder(prevOlder);
+          throw error;
+        }),
+      echo: (durable) =>
+        !durable.list.some((row) => row.id === id) &&
+        (!hadOlder || !older().some((row) => row.id === id)),
+    });
+  };
+  /** Two-step delete: the first click arms ("Delete?"), the second fires. */
+  const askDeleteComment = (id: string) => {
+    if (confirmCommentId() === id) {
+      clearTimeout(confirmCommentTimer);
+      setConfirmCommentId(null);
+      removeComment(id);
+    } else {
+      setConfirmCommentId(id);
+      clearTimeout(confirmCommentTimer);
+      confirmCommentTimer = setTimeout(() => setConfirmCommentId(null), 3000);
+    }
+  };
+
   /** Citations ([data-card-ref="#12"]) open that card — this device knows
    *  how, the drawer only sees the number. */
   /** Team chips route to the team page — this drawer knows the workspace. */
@@ -4095,10 +4184,10 @@ function CardDrawer(props: {
                 {(comment) => {
                   const mine = () => comment.author_id !== null && comment.author_id === props.myId;
                   return (
-                    <li class={`flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
+                    <li class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
                       <Avatar src={comment.avatar_url} name={comment.author} size="sm" />
-                      <div class={`min-w-0 max-w-[85%] ${mine() ? 'items-end text-right' : ''}`}>
-                        <p class={`flex items-baseline gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
+                      <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
+                        <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
                           <span class="font-semibold text-neutral-500 dark:text-neutral-300">
                             {mine() ? 'You' : comment.author}
                           </span>
@@ -4129,18 +4218,93 @@ function CardDrawer(props: {
                               (edited)
                             </span>
                           </Show>
+                          <Show when={canManageComment(comment)}>
+                            <span
+                              class={[
+                                'flex items-center gap-1 transition-opacity',
+                                confirmCommentId() === comment.id
+                                  ? 'opacity-100'
+                                  : 'opacity-0 group-hover:opacity-100',
+                              ]}
+                            >
+                              <button
+                                type="button"
+                                title="Edit comment"
+                                class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                                onClick={() => startCommentEdit(comment)}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                title={confirmCommentId() === comment.id ? 'Click again to delete' : 'Delete comment'}
+                                class={[
+                                  'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
+                                  { 'text-red-500': confirmCommentId() === comment.id },
+                                ]}
+                                onClick={() => askDeleteComment(comment.id)}
+                              >
+                                {confirmCommentId() === comment.id ? 'Delete?' : '🗑'}
+                              </button>
+                            </span>
+                          </Show>
                         </p>
-                        <div
-                          class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
-                            mine()
-                              ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                              : 'bg-neutral-100 dark:bg-neutral-800/60'
-                          }`}
-                          onClick={onBodyClick}
-                          onMouseOver={onBodyHover}
-                          // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
-                          innerHTML={renderMarkdown(comment.body, markdownContext())}
-                        />
+                        <Show
+                          when={editingCommentId() !== comment.id}
+                          fallback={
+                            <form
+                              class={['mt-0.5 flex w-full flex-col gap-1.5', { 'text-left': mine() }]}
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                saveCommentEdit();
+                              }}
+                            >
+                              <SmartTextarea
+                                value={commentEditDraft()}
+                                onInput={setCommentEditDraft}
+                                members={props.members}
+                                teams={props.teams}
+                                cards={props.cards}
+                                workspaceTags={props.workspaceTags}
+                                crossCards={props.crossCards}
+                                boardName={props.boardName}
+                                board={{ id: card()?.board_id ?? '', name: props.boardName }}
+                                rows={2}
+                                sendOnEnter
+                                onSend={() => saveCommentEdit()}
+                                placeholder="Edit comment…"
+                              />
+                              <div class="flex items-center justify-end gap-2 text-xs">
+                                <button
+                                  type="button"
+                                  class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                  onClick={() => setEditingCommentId(null)}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={!commentEditDraft().trim()}
+                                  class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </form>
+                          }
+                        >
+                          <div
+                            class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
+                              mine()
+                                ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                                : 'bg-neutral-100 dark:bg-neutral-800/60'
+                            }`}
+                            onClick={onBodyClick}
+                            onMouseOver={onBodyHover}
+                            // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
+                            innerHTML={renderMarkdown(comment.body, markdownContext())}
+                          />
+                        </Show>
                       </div>
                     </li>
                   );

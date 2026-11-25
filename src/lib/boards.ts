@@ -1584,6 +1584,46 @@ export async function addComment(
   };
 }
 
+/**
+ * Edit a comment. RLS decides who may: the author always; anyone's for
+ * workspace owners/admins (the same policies the MCP ops run under).
+ * Edits stamp edited_at — the "(edited)" marker.
+ */
+export async function editComment(commentId: string, body: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(commentId, 'comment id');
+  const text = cleanText(body, 'Comment', 4000);
+  await requireUser(supabase);
+  const { data, error } = await supabase
+    .from('card_comments')
+    .update({ body: text, edited_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Comment not found or no access');
+}
+
+/**
+ * Soft-delete a comment. RLS decides who may (same as edits). The row
+ * stays for history; every read filters it out.
+ */
+export async function deleteComment(commentId: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(commentId, 'comment id');
+  await requireUser(supabase);
+  const { data, error } = await supabase
+    .from('card_comments')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Comment not found or no access');
+}
+
 // ── board chat ────────────────────────────────────────────────────────────
 
 /** A board-chat row — same shape as a comment, attached to the board. */
