@@ -1317,14 +1317,6 @@ export async function unresolveCard(cardId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function deleteCard(cardId: string) {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const id = assertId(cardId, 'card id');
-  const user = await requireUser(supabase);
-  const { error } = await supabase.from('cards').delete().eq('id', id);
-  if (error) throw new Error(error.message);
-}
 
 /**
  * Move a card to a list at a fractional position. The client computes the
