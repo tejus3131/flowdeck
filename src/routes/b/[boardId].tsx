@@ -133,6 +133,7 @@ const OP_LABELS: Record<string, string> = {
   moveCard: 'Couldn\u2019t move that card',
   resolveCard: 'Couldn\u2019t resolve that card',
   'resolve-card': 'Couldn\u2019t resolve that card',
+  // 'deleteCard' label kept for old in-flight ops (cards can't be deleted anymore).
   deleteCard: 'Couldn\u2019t delete that card',
   updateCard: 'Couldn\u2019t save that card',
   addList: 'Couldn\u2019t add that list',
@@ -5592,7 +5593,7 @@ function BoardSettings(props: {
   const [descriptionDraft, setDescriptionDraft] = createSignal<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = createSignal(false);
   /** How many resolved rows show at once — "Show more" grows the slice. */
-  const [resolvedShown, setResolvedShown] = createSignal(10);
+  const [resolvedShown, setResolvedShown] = createSignal(20);
 
   // Escape closes (same affordance as the card drawer).
   const onKey = (event: KeyboardEvent) => {
