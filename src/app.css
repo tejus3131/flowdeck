@@ -136,6 +136,10 @@ textarea {
 .fd-chip-all {
   @apply rounded-md bg-violet-100 px-1 py-0.5 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200;
 }
+/* A board-only reference (# menu → the board itself). */
+.prose-card .fd-board-ref {
+  @apply inline-flex items-center rounded-md bg-indigo-100 px-1.5 py-0.5 text-[0.85em] font-semibold text-indigo-700 no-underline hover:bg-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300;
+}
 
 /* ── The smart composer's chips (SmartTextarea backdrop tokens) ──────────
    The textarea's own text is transparent; this layer renders mentions

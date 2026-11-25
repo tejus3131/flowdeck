@@ -214,6 +214,8 @@ export type Database = {
           body?: string
           client_op?: string | null
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
           user_id?: string
         }
@@ -455,6 +457,8 @@ export type Database = {
           card_id?: string
           client_op?: string | null
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
           user_id?: string
         }
@@ -1203,6 +1207,14 @@ export type Database = {
           comment_count: number
           last_comment_at: string
         }[]
+      }
+      get_chat_seen: {
+        Args: { p_scope_id: string; p_scope_type: string }
+        Returns: string
+      }
+      mark_chat_seen: {
+        Args: { p_scope_id: string; p_scope_type: string; p_seen_at?: string }
+        Returns: string
       }
       mcp_exec: {
         Args: { p_arg?: Json; p_op: string; p_user_id: string }

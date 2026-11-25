@@ -40,6 +40,7 @@ real reference:
   `get_user`, or `list_teams` members)
 - `[Design](team:<uuid>)` — a team
 - `[Fix login](card:<uuid>)` — a card (renders "Board › Card" across boards)
+- `[Flowdeck changes](board:<uuid>)` — a board by itself (the chip routes to it)
 
 They work in board chat, card comments, and card descriptions.
 

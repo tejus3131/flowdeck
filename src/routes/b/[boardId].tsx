@@ -35,7 +35,7 @@ import { getMe } from '../../lib/auth';
 import { renderMarkdown } from '../../lib/markdown';
 import { mentionIds, mentionTeamIds } from '../../lib/notification-text';
 import { markSeen, unseenCount } from '../../lib/seen';
-import { boardChatStamp, stampBoardChatSeen } from '../../lib/board-chat-seen';
+import { boardChatStamp, stampBoardChatSeen, hydrateBoardChatSeen } from '../../lib/board-chat-seen';
 import { openBoardChat, openCardScope } from '../../lib/open-scopes';
 import { createPanelWidth } from '../../lib/panel-width';
 import { statusOf, type PublicStatus } from '../../lib/status';
@@ -69,8 +69,12 @@ import {
   getCardEvents,
   type CardEventRow,
   chatSeq,
+  editComment,
+  deleteComment,
   moveCard as moveCardServer,
   postBoardMessage,
+  editBoardMessage,
+  deleteBoardMessage,
   type BoardMessageRow,
   updateBoard as updateBoardServer,
   updateList as updateListServer,
@@ -747,7 +751,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     }
     if (tab === 'chat' && panel() !== 'chat') {
       releaseChatScope = openBoardChat(props.params.boardId);
-      stampBoardChatSeen(props.params.boardId, Date.now());
+      // Stamp the latest message the channel has DELIVERED (server
+      // clock) — never the client's wall clock, which could run fast
+      // and permanently swallow future messages into "seen".
+      stampChatSeen(latestChatInstant());
       setChatUnread(0);
     }
     setPanel(tab);
@@ -757,30 +764,49 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     switchPanel(panel() === tab ? null : tab);
 
   // ── board chat unread: a dot on the 💬 button while the panel is shut.
-  // The panel + this counter share ONE live query channel; the stamp is
-  // per-device (a message is "new" until this device has seen it).
+  // The panel + this counter share ONE live query channel. The stamp is
+  // server-backed and, crucially, only ever advances to a KNOWN MESSAGE
+  // instant (created_at — server clock): a fast client clock can't push
+  // it into the future, where it would swallow yet-unseen messages on
+  // every device forever (the stamp is monotonic server-side).
   const chatStamp = () => boardChatStamp(props.params.boardId);
   const stampChatSeen = (latest: number) => stampBoardChatSeen(props.params.boardId, latest);
   const chatLive = liveQuery(boardChatStream, 'board-chat');
   const [chatUnread, setChatUnread] = createSignal(0);
+  /** The latest message instant the channel has delivered (server clock). */
+  const [latestChatInstant, setLatestChatInstant] = createSignal(0);
   const chatLatest = (list: { created_at: string }[]): number =>
     list.length > 0 ? +new Date(list[list.length - 1]!.created_at) : 0;
+  const applyChatList = (list: BoardMessageRow[]) => {
+    // The board-open chat channel keeps the cache warm even with the
+    // panel closed — opening the chat then paints the latest page
+    // instantly and the live value verifies it.
+    cachePut(`board-chat:${props.params.boardId}`, list);
+    setLatestChatInstant(chatLatest(list));
+    if (panel() === 'chat') {
+      stampChatSeen(chatLatest(list));
+      setChatUnread(0);
+    } else {
+      setChatUnread(
+        list.filter((row) => +new Date(row.created_at) > chatStamp()).length,
+      );
+    }
+  };
   onSettled(() => {
+    // Hydrate the server-side read state (#43) WITHOUT holding the chat
+    // channel hostage: the channel starts at once, and the count
+    // re-runs against the last list once the server stamp lands.
+    let lastChatList: BoardMessageRow[] | null = null;
+    void hydrateBoardChatSeen(props.params.boardId)
+      .then(() => {
+        if (lastChatList) applyChatList(lastChatList);
+      })
+      .catch(() => {});
     void (async () => {
       try {
         for await (const list of await chatLive(props.params.boardId)) {
-          // The board-open chat channel keeps the cache warm even with the
-          // panel closed — opening the chat then paints the latest page
-          // instantly and the live value verifies it.
-          cachePut(`board-chat:${props.params.boardId}`, list);
-          if (panel() === 'chat') {
-            stampChatSeen(chatLatest(list));
-            setChatUnread(0);
-          } else {
-            setChatUnread(
-              list.filter((row) => +new Date(row.created_at) > chatStamp()).length,
-            );
-          }
+          lastChatList = list;
+          applyChatList(list);
         }
       } catch {
         // the chat panel still works without the dot
@@ -1455,6 +1481,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                 teams={detail().teams}
                 cards={view().cards}
                 crossCards={crossCards()}
+                workspaceTags={detail().tags}
                 boardName={view().board.name}
                 canEdit={canEdit()}
                 myId={me()?.id ?? null}
@@ -2164,6 +2191,7 @@ function mentionNameOf(member: Member): string {
  * visible while typing, and the serialized markdown travels in
  * props.value/onInput exactly as before.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function SmartTextarea(props: {
   value: string;
   onInput: (value: string) => void;
@@ -2175,6 +2203,11 @@ function SmartTextarea(props: {
   workspaceTags: { id: string; name: string }[];
   /** Every card the viewer can see across boards (# offers cross-board refs). */
   crossCards: CrossCard[];
+  /** The board these cards live on — chips read "Board › Card", matching
+   *  the rendered markdown instead of a bare #N. */
+  boardName?: string;
+  /** The board itself — the # menu offers a board-only reference. */
+  board?: { id: string; name: string };
   placeholder?: string;
   rows?: number;
   class?: string;
@@ -2227,6 +2260,11 @@ function SmartTextarea(props: {
         out.push(`[${el.textContent}](card:${cross})`);
         return;
       }
+      const board = el.getAttribute('data-board');
+      if (board) {
+        out.push(`[${(el.textContent ?? '').trim()}](board:${board})`);
+        return;
+      }
       for (const child of el.childNodes) walk(child);
     };
     for (const child of root.childNodes) walk(child);
@@ -2237,7 +2275,7 @@ function SmartTextarea(props: {
   const renderValue = (value: string) => {
     if (!root) return;
     root.textContent = '';
-    const pattern = /\[([^\]\n]+)\]\((user|team|tag|card|all):([0-9a-f-]{36}|everyone)\)/g;
+    const pattern = /\[([^\]\n]+)\]\((user|team|tag|card|board|all):([0-9a-f-]{36}|everyone)\)/g;
     let last = 0;
     let match: RegExpExecArray | null;
     const appendText = (text: string) => {
@@ -2260,8 +2298,12 @@ function SmartTextarea(props: {
             : 'fd-chip fd-chip-card';
       if (kind === 'user' || kind === 'team' || kind === 'all') chip.setAttribute('data-mention', `${kind}:${id}`);
       else if (kind === 'tag') chip.setAttribute('data-tag', id);
+      else if (kind === 'board') chip.setAttribute('data-board', id);
       else chip.setAttribute('data-cross', id);
-      chip.textContent = `${kind === 'tag' ? '#' : kind === 'card' ? '' : '@'}${match[1]}`;
+      // Tag labels travel WITH their # (the serialized form is [#name]),
+      // so only prefix when it's missing — otherwise a re-edit doubles
+      // it into ##name.
+      chip.textContent = `${kind === 'tag' ? (match[1].startsWith('#') ? '' : '#') : kind === 'card' ? '' : '@'}${match[1]}`;
       root.appendChild(chip);
       last = pattern.lastIndex;
     }
@@ -2354,7 +2396,14 @@ function SmartTextarea(props: {
         key: `c:${card.id}`,
         label: `#${card.number}`,
         hint: card.title,
-        chip: makeChip('fd-chip fd-chip-card', null, String(card.number), `#${card.number}`),
+        // The chip reads like the rendered citation ("Board › Card") —
+        // not a bare #N that transforms on send.
+        chip: makeChip(
+          'fd-chip fd-chip-card',
+          null,
+          String(card.number),
+          card.title ? `${props.boardName ?? 'Board'} › ${card.title}` : `#${card.number}`,
+        ),
       }));
     const tags = props.workspaceTags
       .filter((tag) => !q || tag.name.includes(q))
@@ -2365,6 +2414,27 @@ function SmartTextarea(props: {
         hint: 'tag — links to search',
         chip: makeChip('fd-chip fd-chip-tag', ['data-tag', tag.id], null, `#${tag.name}`),
       }));
+    // The board itself — a board-only reference: the chip names the
+    // board, the click routes to it. Offered when the query matches its
+    // name (or nothing is typed yet).
+    const board =
+      props.board &&
+      UUID_RE.test(props.board.id) &&
+      (!q || props.board.name.toLowerCase().includes(q))
+        ? [
+            {
+              key: `b:${props.board.id}`,
+              label: `${props.board.name} · board`,
+              hint: 'reference this board',
+              chip: makeChip(
+                'fd-chip fd-chip-card',
+                ['data-board', props.board.id],
+                null,
+                props.board.name,
+              ),
+            },
+          ]
+        : [];
     const cross = props.crossCards
       .filter(
         (card) =>
@@ -2376,9 +2446,14 @@ function SmartTextarea(props: {
         key: `x:${card.id}`,
         label: `${card.board_name} #${card.number}`,
         hint: card.title,
-        chip: makeChip('fd-chip fd-chip-card', ['data-cross', card.id], null, `${card.board_name} #${card.number}`),
+        chip: makeChip(
+          'fd-chip fd-chip-card',
+          ['data-cross', card.id],
+          null,
+          card.title ? `${card.board_name} › ${card.title}` : `${card.board_name} #${card.number}`,
+        ),
       }));
-    return [...current, ...tags, ...cross];
+    return [...current, ...tags, ...board, ...cross];
   };
 
   /** The caret's text node + offset, when it sits in plain text. */
@@ -3317,6 +3392,7 @@ function CardDrawer(props: {
                 author_id: payload.authorId,
                 avatar_url: payload.avatarUrl,
                 created_at: payload.createdAt,
+                edited_at: null,
                 client_op: payload.clientOp,
               });
               draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
@@ -3535,6 +3611,7 @@ function CardDrawer(props: {
           author_id: payload.authorId,
           avatar_url: payload.avatarUrl,
           created_at: payload.createdAt,
+          edited_at: null,
           client_op: payload.clientOp,
         });
         draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
@@ -3548,6 +3625,100 @@ function CardDrawer(props: {
     });
     props.onPostComment(payload, relayOpId);
     checkBlocked(body);
+  };
+
+  // ── edit + delete (#21): the author always; anyone's for workspace
+  // owners/admins — the same role scoping the MCP ops run under. Older
+  // pages live outside the engine's snapshot (loadEarlier keeps them in
+  // the `older` signal), so those rows are applied + reverted there.
+  const canManageComment = (comment: CommentRow) =>
+    props.canEdit && (comment.author_id === props.myId || props.isWsAdmin);
+  const [editingCommentId, setEditingCommentId] = createSignal<string | null>(null);
+  const [commentEditDraft, setCommentEditDraft] = createSignal('');
+  const [confirmCommentId, setConfirmCommentId] = createSignal<string | null>(null);
+  let confirmCommentTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(confirmCommentTimer));
+
+  let commentEditOriginal = '';
+  const startCommentEdit = (comment: CommentRow) => {
+    setEditingCommentId(comment.id);
+    setCommentEditDraft(comment.body);
+    commentEditOriginal = comment.body;
+  };
+  /** Optimistic edit: the bubble swaps instantly, the guard holds until
+   *  the live echo carries the new body (or the older-page row shows it).
+   *  An unchanged body closes the editor without stamping an edit. */
+  const saveCommentEdit = () => {
+    const id = editingCommentId();
+    const body = commentEditDraft().trim();
+    if (!id || !body) return;
+    if (body === commentEditOriginal) {
+      setEditingCommentId(null);
+      return;
+    }
+    const editedAt = new Date().toISOString();
+    const prev = older().find((row) => row.id === id) ?? null;
+    setEditingCommentId(null);
+    setOlder((rows) =>
+      rows.map((row) => (row.id === id ? { ...row, body, edited_at: editedAt } : row)),
+    );
+    commentsEngine.mutate({
+      kind: 'comment-edited',
+      guards: [id],
+      apply: (draft) => {
+        const row = draft.list.find((entry) => entry.id === id);
+        if (row) {
+          row.body = body;
+          row.edited_at = editedAt;
+        }
+      },
+      send: () =>
+        editComment(id, body).catch((error) => {
+          if (prev) {
+            setOlder((rows) =>
+              rows.map((row) =>
+                row.id === id ? { ...row, body: prev.body, edited_at: prev.edited_at } : row,
+              ),
+            );
+          }
+          throw error;
+        }),
+      echo: (durable) =>
+        durable.list.some((row) => row.id === id && row.body === body) ||
+        (prev ? older().some((row) => row.id === id && row.body === body) : false),
+    });
+  };
+  const removeComment = (id: string) => {
+    const prevOlder = older();
+    const hadOlder = prevOlder.some((row) => row.id === id);
+    setOlder((rows) => rows.filter((row) => row.id !== id));
+    commentsEngine.mutate({
+      kind: 'comment-deleted',
+      guards: [id],
+      apply: (draft) => {
+        draft.list = draft.list.filter((row) => row.id !== id);
+      },
+      send: () =>
+        deleteComment(id).catch((error) => {
+          if (hadOlder) setOlder(prevOlder);
+          throw error;
+        }),
+      echo: (durable) =>
+        !durable.list.some((row) => row.id === id) &&
+        (!hadOlder || !older().some((row) => row.id === id)),
+    });
+  };
+  /** Two-step delete: the first click arms ("Delete?"), the second fires. */
+  const askDeleteComment = (id: string) => {
+    if (confirmCommentId() === id) {
+      clearTimeout(confirmCommentTimer);
+      setConfirmCommentId(null);
+      removeComment(id);
+    } else {
+      setConfirmCommentId(id);
+      clearTimeout(confirmCommentTimer);
+      confirmCommentTimer = setTimeout(() => setConfirmCommentId(null), 3000);
+    }
   };
 
   /** Citations ([data-card-ref="#12"]) open that card — this device knows
@@ -3595,6 +3766,12 @@ function CardDrawer(props: {
         navigate(`/w/${props.workspaceId}/t/${teamChip.getAttribute('data-team-id') ?? ''}`);
       }
       return;
+    }
+    const boardChip = target?.closest?.('[data-board-id]');
+    if (boardChip) {
+      event.preventDefault();
+      props.onHover(null);
+      navigate(`/b/${boardChip.getAttribute('data-board-id') ?? ''}`);
     }
   };
 
@@ -3938,6 +4115,8 @@ function CardDrawer(props: {
                   cards={props.cards}
                   workspaceTags={props.workspaceTags}
                   crossCards={props.crossCards}
+                  boardName={props.boardName}
+                  board={{ id: card()?.board_id ?? '', name: props.boardName }}
                   rows={8}
                   onSend={() => saveBody()}
                   placeholder={'Describe the task — **markdown**, image links, #12 references, @name mentions'}
@@ -4034,10 +4213,10 @@ function CardDrawer(props: {
                 {(comment) => {
                   const mine = () => comment.author_id !== null && comment.author_id === props.myId;
                   return (
-                    <li class={`flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
+                    <li class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
                       <Avatar src={comment.avatar_url} name={comment.author} size="sm" />
-                      <div class={`min-w-0 max-w-[85%] ${mine() ? 'items-end text-right' : ''}`}>
-                        <p class={`flex items-baseline gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
+                      <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
+                        <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
                           <span class="font-semibold text-neutral-500 dark:text-neutral-300">
                             {mine() ? 'You' : comment.author}
                           </span>
@@ -4055,18 +4234,106 @@ function CardDrawer(props: {
                               minute: '2-digit',
                             })}
                           </time>
+                          <Show when={comment.edited_at}>
+                            <span
+                              class="italic"
+                              title={`Edited ${new Date(comment.edited_at!).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}`}
+                            >
+                              (edited)
+                            </span>
+                          </Show>
+                          <Show when={canManageComment(comment)}>
+                            <span
+                              class={[
+                                'flex items-center gap-1 transition-opacity',
+                                confirmCommentId() === comment.id
+                                  ? 'opacity-100'
+                                  : 'opacity-0 group-hover:opacity-100',
+                              ]}
+                            >
+                              <button
+                                type="button"
+                                title="Edit comment"
+                                class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                                onClick={() => startCommentEdit(comment)}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                title={confirmCommentId() === comment.id ? 'Click again to delete' : 'Delete comment'}
+                                class={[
+                                  'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
+                                  { 'text-red-500': confirmCommentId() === comment.id },
+                                ]}
+                                onClick={() => askDeleteComment(comment.id)}
+                              >
+                                {confirmCommentId() === comment.id ? 'Delete?' : '🗑'}
+                              </button>
+                            </span>
+                          </Show>
                         </p>
-                        <div
-                          class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
-                            mine()
-                              ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                              : 'bg-neutral-100 dark:bg-neutral-800/60'
-                          }`}
-                          onClick={onBodyClick}
-                          onMouseOver={onBodyHover}
-                          // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
-                          innerHTML={renderMarkdown(comment.body, markdownContext())}
-                        />
+                        <Show
+                          when={editingCommentId() !== comment.id}
+                          fallback={
+                            <form
+                              class={['mt-0.5 flex w-full flex-col gap-1.5', { 'text-left': mine() }]}
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                saveCommentEdit();
+                              }}
+                            >
+                              <SmartTextarea
+                                value={commentEditDraft()}
+                                onInput={setCommentEditDraft}
+                                members={props.members}
+                                teams={props.teams}
+                                cards={props.cards}
+                                workspaceTags={props.workspaceTags}
+                                crossCards={props.crossCards}
+                                boardName={props.boardName}
+                                board={{ id: card()?.board_id ?? '', name: props.boardName }}
+                                rows={2}
+                                sendOnEnter
+                                onSend={() => saveCommentEdit()}
+                                placeholder="Edit comment…"
+                              />
+                              <div class="flex items-center justify-end gap-2 text-xs">
+                                <button
+                                  type="button"
+                                  class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                  onClick={() => setEditingCommentId(null)}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={!commentEditDraft().trim()}
+                                  class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </form>
+                          }
+                        >
+                          <div
+                            class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
+                              mine()
+                                ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                                : 'bg-neutral-100 dark:bg-neutral-800/60'
+                            }`}
+                            onClick={onBodyClick}
+                            onMouseOver={onBodyHover}
+                            // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
+                            innerHTML={renderMarkdown(comment.body, markdownContext())}
+                          />
+                        </Show>
                       </div>
                     </li>
                   );
@@ -4184,6 +4451,8 @@ function CardDrawer(props: {
                 cards={props.cards}
                 workspaceTags={props.workspaceTags}
                 crossCards={props.crossCards}
+                boardName={props.boardName}
+                board={{ id: card()?.board_id ?? '', name: props.boardName }}
                 rows={2}
                 sendOnEnter
                 onSend={() => post()}
@@ -4316,6 +4585,8 @@ function BoardChat(props: {
   /** This board's cards + cross-board cards — # citations resolve. */
   cards: CardView[];
   crossCards: CrossCard[];
+  /** The workspace's tag vocabulary — # offers tags too. */
+  workspaceTags: { id: string; name: string }[];
   boardName: string;
   canEdit: boolean;
   myId: string | null;
@@ -4509,6 +4780,7 @@ function BoardChat(props: {
           author_id: payload.authorId,
           avatar_url: payload.avatarUrl,
           created_at: payload.createdAt,
+          edited_at: null,
           client_op: payload.clientOp,
         });
         current.list = [...current.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
@@ -4517,6 +4789,73 @@ function BoardChat(props: {
       echo: (durable) => durable.list.some((row) => row.client_op === clientOp),
     });
     checkBlocked(body);
+  };
+
+  // ── edit + delete (#21): the author always; anyone's for workspace
+  // owners/admins — the same role scoping the MCP ops run under.
+  const canManage = (message: BoardMessageRow) =>
+    props.canEdit && (message.author_id === props.myId || props.isWsAdmin);
+  const [editingId, setEditingId] = createSignal<string | null>(null);
+  const [editDraft, setEditDraft] = createSignal('');
+  const [confirmId, setConfirmId] = createSignal<string | null>(null);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(confirmTimer));
+
+  let editOriginal = '';
+  const startEdit = (message: BoardMessageRow) => {
+    setEditingId(message.id);
+    setEditDraft(message.body);
+    editOriginal = message.body;
+  };
+  /** Optimistic edit: the bubble swaps instantly, the guard holds until
+   *  the live echo carries the new body. An unchanged body closes the
+   *  editor without stamping an edit. */
+  const saveEdit = () => {
+    const id = editingId();
+    const body = editDraft().trim();
+    if (!id || !body) return;
+    if (body === editOriginal) {
+      setEditingId(null);
+      return;
+    }
+    const editedAt = new Date().toISOString();
+    setEditingId(null);
+    engine.mutate({
+      kind: 'message-edited',
+      guards: [id],
+      apply: (draft) => {
+        const row = draft.list.find((entry) => entry.id === id);
+        if (row) {
+          row.body = body;
+          row.edited_at = editedAt;
+        }
+      },
+      send: () => editBoardMessage(id, body),
+      echo: (durable) => durable.list.some((row) => row.id === id && row.body === body),
+    });
+  };
+  const removeMessage = (id: string) => {
+    engine.mutate({
+      kind: 'message-deleted',
+      guards: [id],
+      apply: (draft) => {
+        draft.list = draft.list.filter((row) => row.id !== id);
+      },
+      send: () => deleteBoardMessage(id),
+      echo: (durable) => !durable.list.some((row) => row.id === id),
+    });
+  };
+  /** Two-step delete: the first click arms ("Delete?"), the second fires. */
+  const askDelete = (id: string) => {
+    if (confirmId() === id) {
+      clearTimeout(confirmTimer);
+      setConfirmId(null);
+      removeMessage(id);
+    } else {
+      setConfirmId(id);
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => setConfirmId(null), 3000);
+    }
   };
 
   const markdownContext = () => ({
@@ -4574,6 +4913,12 @@ function BoardChat(props: {
     if (cross) {
       event.preventDefault();
       props.onOpenCrossCard(cross.getAttribute('data-card-id') ?? '');
+      return;
+    }
+    const board = target?.closest?.('[data-board-id]');
+    if (board) {
+      event.preventDefault();
+      navigate(`/b/${board.getAttribute('data-board-id') ?? ''}`);
     }
   };
 
@@ -4618,10 +4963,10 @@ function BoardChat(props: {
               {(message) => {
                 const mine = () => message.author_id !== null && message.author_id === props.myId;
                 return (
-                  <li class={`flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
+                  <li class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
                     <Avatar src={message.avatar_url} name={message.author} size="sm" />
-                    <div class={`min-w-0 max-w-[85%] ${mine() ? 'items-end text-right' : ''}`}>
-                      <p class={`flex items-baseline gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
+                    <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
+                      <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
                         <span class="font-semibold text-neutral-500 dark:text-neutral-300">
                           {mine() ? 'You' : message.author}
                         </span>
@@ -4639,18 +4984,106 @@ function BoardChat(props: {
                             minute: '2-digit',
                           })}
                         </time>
+                        <Show when={message.edited_at}>
+                          <span
+                            class="italic"
+                            title={`Edited ${new Date(message.edited_at!).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}`}
+                          >
+                            (edited)
+                          </span>
+                        </Show>
+                        <Show when={canManage(message)}>
+                          <span
+                            class={[
+                              'flex items-center gap-1 transition-opacity',
+                              confirmId() === message.id
+                                ? 'opacity-100'
+                                : 'opacity-0 group-hover:opacity-100',
+                            ]}
+                          >
+                            <button
+                              type="button"
+                              title="Edit message"
+                              class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                              onClick={() => startEdit(message)}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              title={confirmId() === message.id ? 'Click again to delete' : 'Delete message'}
+                              class={[
+                                'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
+                                { 'text-red-500': confirmId() === message.id },
+                              ]}
+                              onClick={() => askDelete(message.id)}
+                            >
+                              {confirmId() === message.id ? 'Delete?' : '🗑'}
+                            </button>
+                          </span>
+                        </Show>
                       </p>
-                      <div
-                        class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
-                          mine()
-                            ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                            : 'bg-neutral-100 dark:bg-neutral-800/60'
-                        }`}
-                        // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
-                        innerHTML={renderMarkdown(message.body, markdownContext())}
-                        onClick={onBodyClick}
-                        onMouseOver={onChipHover}
-                      />
+                      <Show
+                        when={editingId() !== message.id}
+                        fallback={
+                          <form
+                            class={['mt-0.5 flex w-full flex-col gap-1.5', { 'text-left': mine() }]}
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              saveEdit();
+                            }}
+                          >
+                            <SmartTextarea
+                              value={editDraft()}
+                              onInput={setEditDraft}
+                              members={props.members}
+                              teams={props.teams}
+                              cards={props.cards}
+                              workspaceTags={props.workspaceTags}
+                              crossCards={props.crossCards}
+                              boardName={props.boardName}
+                              board={{ id: props.boardId, name: props.boardName }}
+                              rows={2}
+                              sendOnEnter
+                              onSend={() => saveEdit()}
+                              placeholder="Edit message…"
+                            />
+                            <div class="flex items-center justify-end gap-2 text-xs">
+                              <button
+                                type="button"
+                                class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                onClick={() => setEditingId(null)}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={!editDraft().trim()}
+                                class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </form>
+                        }
+                      >
+                        <div
+                          class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
+                            mine()
+                              ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                              : 'bg-neutral-100 dark:bg-neutral-800/60'
+                          }`}
+                          // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
+                          innerHTML={renderMarkdown(message.body, markdownContext())}
+                          onClick={onBodyClick}
+                          onMouseOver={onChipHover}
+                        />
+                      </Show>
                     </div>
                   </li>
                 );
@@ -4746,17 +5179,20 @@ function BoardChat(props: {
               onInput={setDraft}
               members={props.members}
               teams={props.teams}
-              cards={[]}
-              workspaceTags={[]}
-              crossCards={[]}
+              cards={props.cards}
+              workspaceTags={props.workspaceTags}
+              crossCards={props.crossCards}
+              boardName={props.boardName}
+              board={{ id: props.boardId, name: props.boardName }}
               rows={2}
               sendOnEnter
               onSend={() => post()}
-              placeholder="Message the board… @ to mention, teams too"
+              placeholder="Message the board… @ to mention, # to cite a card or tag"
             />
             <div class="flex items-center justify-between">
               <span class="text-[10px] text-neutral-400">
-                <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">Enter</kbd> to send
+                <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">Enter</kbd> to send ·
+                <span class="font-semibold">#</span> cite
               </span>
               <button
                 type="submit"

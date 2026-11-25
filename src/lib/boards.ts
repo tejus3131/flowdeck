@@ -1332,6 +1332,8 @@ export type CommentRow = {
   body: string;
   author: string;
   created_at: string;
+  /** Set when the body was edited after posting (the "(edited)" marker). */
+  edited_at: string | null;
   /** True when posted through an MCP connection (an agent). */
   agent?: boolean;
   /** Server-assigned send order (chat_seq). Absent while a provisional
@@ -1359,7 +1361,7 @@ export async function getCardComments(
   const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
   let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('card_id', resolved)
     .is('deleted_at', null)
     .order('seq', { ascending: false })
@@ -1375,6 +1377,7 @@ export async function getCardComments(
       id: row.id,
       body: row.body,
       created_at: row.created_at,
+      edited_at: row.edited_at,
       seq: row.seq,
       agent: row.agent ?? false,
       client_op: row.client_op,
@@ -1430,7 +1433,7 @@ export const cardCommentsStream = live(async function* (
     const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
-      .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+      .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
       .eq('card_id', id)
       .is('deleted_at', null)
       .order('seq', { ascending: false })
@@ -1444,6 +1447,7 @@ export const cardCommentsStream = live(async function* (
         id: row.id,
         body: row.body,
         created_at: row.created_at,
+        edited_at: row.edited_at,
         seq: row.seq,
         client_op: row.client_op,
         agent: row.agent ?? false,
@@ -1580,6 +1584,56 @@ export async function addComment(
   };
 }
 
+/**
+ * Edit a comment. RLS decides who may: the author always; anyone's for
+ * workspace owners/admins (the same policies the MCP ops run under).
+ * Edits stamp edited_at — the "(edited)" marker.
+ */
+export async function editComment(commentId: string, body: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(commentId, 'comment id');
+  const text = cleanText(body, 'Comment', 4000);
+  await requireUser(supabase);
+  // An unchanged body is a no-op — no edit marker for a save that didn't
+  // change anything.
+  const { data: current } = await supabase
+    .from('card_comments')
+    .select('body')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!current) throw new Error('Comment not found or no access');
+  if (current.body === text) return;
+  const { data, error } = await supabase
+    .from('card_comments')
+    .update({ body: text, edited_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Comment not found or no access');
+}
+
+/**
+ * Soft-delete a comment. RLS decides who may (same as edits). The row
+ * stays for history; every read filters it out.
+ */
+export async function deleteComment(commentId: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(commentId, 'comment id');
+  await requireUser(supabase);
+  const { data, error } = await supabase
+    .from('card_comments')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Comment not found or no access');
+}
+
 // ── board chat ────────────────────────────────────────────────────────────
 
 /** A board-chat row — same shape as a comment, attached to the board. */
@@ -1595,6 +1649,8 @@ export type BoardMessageRow = {
   client_op: string | null;
   /** True when posted through an MCP connection (an agent). */
   agent?: boolean;
+  /** Set when the body was edited after posting (the "(edited)" marker). */
+  edited_at: string | null;
 };
 
 /**
@@ -1613,7 +1669,7 @@ async function boardChatSnapshot(
   const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
-    .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('board_id', boardId)
     .is('deleted_at', null)
     .order('seq', { ascending: false })
@@ -1627,6 +1683,7 @@ async function boardChatSnapshot(
       id: row.id,
       body: row.body,
       created_at: row.created_at,
+      edited_at: row.edited_at,
       seq: row.seq,
       agent: row.agent ?? false,
       client_op: row.client_op,
@@ -1770,6 +1827,56 @@ export async function postBoardMessage(
     author:
       (message.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
   };
+}
+
+/**
+ * Edit a board message. RLS decides who may: the author always; anyone's
+ * for workspace owners/admins (the same policies the MCP ops run under,
+ * migration 0038). Edits stamp edited_at — the "(edited)" marker.
+ */
+export async function editBoardMessage(messageId: string, body: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(messageId, 'message id');
+  const text = cleanText(body, 'Message', 4000);
+  await requireUser(supabase);
+  // An unchanged body is a no-op — no edit marker for a save that didn't
+  // change anything.
+  const { data: current } = await supabase
+    .from('board_messages')
+    .select('body')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!current) throw new Error('Message not found or no access');
+  if (current.body === text) return;
+  const { data, error } = await supabase
+    .from('board_messages')
+    .update({ body: text, edited_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Message not found or no access');
+}
+
+/**
+ * Soft-delete a board message. RLS decides who may (same as edits). The
+ * row stays for history; every read filters it out.
+ */
+export async function deleteBoardMessage(messageId: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(messageId, 'message id');
+  await requireUser(supabase);
+  const { data, error } = await supabase
+    .from('board_messages')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Message not found or no access');
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
