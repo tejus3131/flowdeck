@@ -3342,10 +3342,13 @@ function CardDrawer(props: {
     return member?.display_name ?? member?.email?.split('@')[0] ?? 'Someone';
   };
   /** One referenced entity in an event's detail — NEW rows (0058) carry
-   *  {id, name}; OLD rows carry bare name strings (rendered as text). */
+   *  {id, name}; OLD rows carry bare name strings, normalized here to
+   *  {name} so they keep rendering with their real names, as plain text. */
   type EventRef = { id?: string; name?: string | null };
   const refItems = (value: unknown): EventRef[] =>
-    (Array.isArray(value) ? value : []).filter((item) => item != null) as EventRef[];
+    (Array.isArray(value) ? value : [])
+      .filter((item) => item != null)
+      .map((item) => (typeof item === 'string' ? { name: item } : (item as EventRef)));
 
   /** A person chip: the CURRENT display name (renames can't stale it),
    *  hover raises the profile card, click opens the profile. */

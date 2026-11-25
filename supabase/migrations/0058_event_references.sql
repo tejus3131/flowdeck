@@ -1149,25 +1149,40 @@ begin
           and not (a.user_id = any (v_prev));
         -- Timeline: who got assigned / unassigned — ids + name snapshots
         -- (0058: chips resolve the CURRENT name by id; the snapshot is
-        -- the fallback when the person is gone).
-        insert into public.card_events (card_id, board_id, actor_id, kind, detail)
-        values (v_card_id, v_board_id, p_user_id, 'assignees', jsonb_build_object(
-          'added', coalesce((
-            select jsonb_agg(jsonb_build_object('id', a.user_id, 'name', pr.display_name) order by a.user_id)
-            from public.card_assignees a
-            join public.profiles pr on pr.id = a.user_id
-            where a.card_id = v_card_id and not (a.user_id = any (v_prev))
-          ), '[]'::jsonb),
-          'removed', coalesce((
-            select jsonb_agg(jsonb_build_object('id', pr.id, 'name', pr.display_name) order by pr.id)
-            from public.profiles pr
-            where pr.id = any (v_prev)
-              and not exists (
-                select 1 from public.card_assignees a
-                where a.card_id = v_card_id and a.user_id = pr.id
-              )
-          ), '[]'::jsonb)
-        ));
+        -- the fallback when the person is gone). Only logged when the
+        -- replace actually changed the set (same noise filter as the
+        -- web writer).
+        if exists (
+             select 1 from public.card_assignees a
+             where a.card_id = v_card_id and not (a.user_id = any (v_prev))
+           )
+           or exists (
+             select 1
+             from unnest(v_prev) as x
+             where not exists (
+               select 1 from public.card_assignees a
+               where a.card_id = v_card_id and a.user_id = x
+             )
+           ) then
+          insert into public.card_events (card_id, board_id, actor_id, kind, detail)
+          values (v_card_id, v_board_id, p_user_id, 'assignees', jsonb_build_object(
+            'added', coalesce((
+              select jsonb_agg(jsonb_build_object('id', a.user_id, 'name', pr.display_name) order by a.user_id)
+              from public.card_assignees a
+              join public.profiles pr on pr.id = a.user_id
+              where a.card_id = v_card_id and not (a.user_id = any (v_prev))
+            ), '[]'::jsonb),
+            'removed', coalesce((
+              select jsonb_agg(jsonb_build_object('id', pr.id, 'name', pr.display_name) order by pr.id)
+              from public.profiles pr
+              where pr.id = any (v_prev)
+                and not exists (
+                  select 1 from public.card_assignees a
+                  where a.card_id = v_card_id and a.user_id = pr.id
+                )
+            ), '[]'::jsonb)
+          ));
+        end if;
       end if;
       return jsonb_build_object('ok', true, 'data', jsonb_build_object('card_id', v_card_id) || coalesce((select jsonb_build_object('title', c.title, 'priority', c.priority, 'description', c.description) from public.cards c where c.id = v_card_id), '{}'::jsonb));
 
