@@ -770,6 +770,19 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
   if (workspace.owner_id !== user.id) {
     throw new Error('Only the workspace owner can delete it');
   }
+  // Deletion safety (0069): other members refuse first — the cascade
+  // would delete their boards and content with the workspace. The
+  // friendly count up front; the DB trigger is the guarantee.
+  const { count: otherMembers } = await supabase
+    .from('workspace_members')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+    .neq('user_id', user.id);
+  if ((otherMembers ?? 0) > 0) {
+    throw new Error(
+      `This workspace still has ${otherMembers} other member${otherMembers === 1 ? '' : 's'} — remove them (or transfer ownership) before deleting; their boards and content would go with it`,
+    );
+  }
   // Capture the members before the cascade deletes their rows — their
   // saved MCP tokens must stop advertising the dying workspace.
   const { data: members } = await supabase
