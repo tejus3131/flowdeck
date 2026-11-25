@@ -3317,6 +3317,7 @@ function CardDrawer(props: {
                 author_id: payload.authorId,
                 avatar_url: payload.avatarUrl,
                 created_at: payload.createdAt,
+                edited_at: null,
                 client_op: payload.clientOp,
               });
               draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
@@ -3535,6 +3536,7 @@ function CardDrawer(props: {
           author_id: payload.authorId,
           avatar_url: payload.avatarUrl,
           created_at: payload.createdAt,
+          edited_at: null,
           client_op: payload.clientOp,
         });
         draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
@@ -4055,6 +4057,19 @@ function CardDrawer(props: {
                               minute: '2-digit',
                             })}
                           </time>
+                          <Show when={comment.edited_at}>
+                            <span
+                              class="italic"
+                              title={`Edited ${new Date(comment.edited_at!).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}`}
+                            >
+                              (edited)
+                            </span>
+                          </Show>
                         </p>
                         <div
                           class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
@@ -4509,6 +4524,7 @@ function BoardChat(props: {
           author_id: payload.authorId,
           avatar_url: payload.avatarUrl,
           created_at: payload.createdAt,
+          edited_at: null,
           client_op: payload.clientOp,
         });
         current.list = [...current.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
@@ -4639,6 +4655,19 @@ function BoardChat(props: {
                             minute: '2-digit',
                           })}
                         </time>
+                        <Show when={message.edited_at}>
+                          <span
+                            class="italic"
+                            title={`Edited ${new Date(message.edited_at!).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}`}
+                          >
+                            (edited)
+                          </span>
+                        </Show>
                       </p>
                       <div
                         class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${

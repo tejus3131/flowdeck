@@ -1332,6 +1332,8 @@ export type CommentRow = {
   body: string;
   author: string;
   created_at: string;
+  /** Set when the body was edited after posting (the "(edited)" marker). */
+  edited_at: string | null;
   /** True when posted through an MCP connection (an agent). */
   agent?: boolean;
   /** Server-assigned send order (chat_seq). Absent while a provisional
@@ -1359,7 +1361,7 @@ export async function getCardComments(
   const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
   let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('card_id', resolved)
     .is('deleted_at', null)
     .order('seq', { ascending: false })
@@ -1375,6 +1377,7 @@ export async function getCardComments(
       id: row.id,
       body: row.body,
       created_at: row.created_at,
+      edited_at: row.edited_at,
       seq: row.seq,
       agent: row.agent ?? false,
       client_op: row.client_op,
@@ -1430,7 +1433,7 @@ export const cardCommentsStream = live(async function* (
     const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
-      .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+      .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
       .eq('card_id', id)
       .is('deleted_at', null)
       .order('seq', { ascending: false })
@@ -1444,6 +1447,7 @@ export const cardCommentsStream = live(async function* (
         id: row.id,
         body: row.body,
         created_at: row.created_at,
+        edited_at: row.edited_at,
         seq: row.seq,
         client_op: row.client_op,
         agent: row.agent ?? false,
@@ -1595,6 +1599,8 @@ export type BoardMessageRow = {
   client_op: string | null;
   /** True when posted through an MCP connection (an agent). */
   agent?: boolean;
+  /** Set when the body was edited after posting (the "(edited)" marker). */
+  edited_at: string | null;
 };
 
 /**
@@ -1613,7 +1619,7 @@ async function boardChatSnapshot(
   const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
-    .select('id, body, created_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
+    .select('id, body, created_at, edited_at, seq, client_op, user_id, agent, profiles(display_name, avatar_url)')
     .eq('board_id', boardId)
     .is('deleted_at', null)
     .order('seq', { ascending: false })
@@ -1627,6 +1633,7 @@ async function boardChatSnapshot(
       id: row.id,
       body: row.body,
       created_at: row.created_at,
+      edited_at: row.edited_at,
       seq: row.seq,
       agent: row.agent ?? false,
       client_op: row.client_op,
