@@ -751,7 +751,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     }
     if (tab === 'chat' && panel() !== 'chat') {
       releaseChatScope = openBoardChat(props.params.boardId);
-      stampBoardChatSeen(props.params.boardId, Date.now());
+      // Stamp the latest message the channel has DELIVERED (server
+      // clock) — never the client's wall clock, which could run fast
+      // and permanently swallow future messages into "seen".
+      stampChatSeen(latestChatInstant());
       setChatUnread(0);
     }
     setPanel(tab);
@@ -761,34 +764,49 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     switchPanel(panel() === tab ? null : tab);
 
   // ── board chat unread: a dot on the 💬 button while the panel is shut.
-  // The panel + this counter share ONE live query channel; the stamp is
-  // per-device (a message is "new" until this device has seen it).
+  // The panel + this counter share ONE live query channel. The stamp is
+  // server-backed and, crucially, only ever advances to a KNOWN MESSAGE
+  // instant (created_at — server clock): a fast client clock can't push
+  // it into the future, where it would swallow yet-unseen messages on
+  // every device forever (the stamp is monotonic server-side).
   const chatStamp = () => boardChatStamp(props.params.boardId);
   const stampChatSeen = (latest: number) => stampBoardChatSeen(props.params.boardId, latest);
   const chatLive = liveQuery(boardChatStream, 'board-chat');
   const [chatUnread, setChatUnread] = createSignal(0);
+  /** The latest message instant the channel has delivered (server clock). */
+  const [latestChatInstant, setLatestChatInstant] = createSignal(0);
   const chatLatest = (list: { created_at: string }[]): number =>
     list.length > 0 ? +new Date(list[list.length - 1]!.created_at) : 0;
+  const applyChatList = (list: BoardMessageRow[]) => {
+    // The board-open chat channel keeps the cache warm even with the
+    // panel closed — opening the chat then paints the latest page
+    // instantly and the live value verifies it.
+    cachePut(`board-chat:${props.params.boardId}`, list);
+    setLatestChatInstant(chatLatest(list));
+    if (panel() === 'chat') {
+      stampChatSeen(chatLatest(list));
+      setChatUnread(0);
+    } else {
+      setChatUnread(
+        list.filter((row) => +new Date(row.created_at) > chatStamp()).length,
+      );
+    }
+  };
   onSettled(() => {
+    // Hydrate the server-side read state (#43) WITHOUT holding the chat
+    // channel hostage: the channel starts at once, and the count
+    // re-runs against the last list once the server stamp lands.
+    let lastChatList: BoardMessageRow[] | null = null;
+    void hydrateBoardChatSeen(props.params.boardId)
+      .then(() => {
+        if (lastChatList) applyChatList(lastChatList);
+      })
+      .catch(() => {});
     void (async () => {
-      // A fresh device hydrates its read state from the server (#43)
-      // BEFORE the first unread count — the dot reflects every device's
-      // history, not just this one's.
-      await hydrateBoardChatSeen(props.params.boardId);
       try {
         for await (const list of await chatLive(props.params.boardId)) {
-          // The board-open chat channel keeps the cache warm even with the
-          // panel closed — opening the chat then paints the latest page
-          // instantly and the live value verifies it.
-          cachePut(`board-chat:${props.params.boardId}`, list);
-          if (panel() === 'chat') {
-            stampChatSeen(chatLatest(list));
-            setChatUnread(0);
-          } else {
-            setChatUnread(
-              list.filter((row) => +new Date(row.created_at) > chatStamp()).length,
-            );
-          }
+          lastChatList = list;
+          applyChatList(list);
         }
       } catch {
         // the chat panel still works without the dot
@@ -3621,16 +3639,23 @@ function CardDrawer(props: {
   let confirmCommentTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(confirmCommentTimer));
 
+  let commentEditOriginal = '';
   const startCommentEdit = (comment: CommentRow) => {
     setEditingCommentId(comment.id);
     setCommentEditDraft(comment.body);
+    commentEditOriginal = comment.body;
   };
   /** Optimistic edit: the bubble swaps instantly, the guard holds until
-   *  the live echo carries the new body (or the older-page row shows it). */
+   *  the live echo carries the new body (or the older-page row shows it).
+   *  An unchanged body closes the editor without stamping an edit. */
   const saveCommentEdit = () => {
     const id = editingCommentId();
     const body = commentEditDraft().trim();
     if (!id || !body) return;
+    if (body === commentEditOriginal) {
+      setEditingCommentId(null);
+      return;
+    }
     const editedAt = new Date().toISOString();
     const prev = older().find((row) => row.id === id) ?? null;
     setEditingCommentId(null);
@@ -4776,16 +4801,23 @@ function BoardChat(props: {
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(confirmTimer));
 
+  let editOriginal = '';
   const startEdit = (message: BoardMessageRow) => {
     setEditingId(message.id);
     setEditDraft(message.body);
+    editOriginal = message.body;
   };
   /** Optimistic edit: the bubble swaps instantly, the guard holds until
-   *  the live echo carries the new body. */
+   *  the live echo carries the new body. An unchanged body closes the
+   *  editor without stamping an edit. */
   const saveEdit = () => {
     const id = editingId();
     const body = editDraft().trim();
     if (!id || !body) return;
+    if (body === editOriginal) {
+      setEditingId(null);
+      return;
+    }
     const editedAt = new Date().toISOString();
     setEditingId(null);
     engine.mutate({

@@ -18,7 +18,6 @@ create table public.chat_seen (
   seen_at    timestamptz not null default now(),
   primary key (user_id, scope_type, scope_id)
 );
-create index chat_seen_scope_idx on public.chat_seen (scope_type, scope_id);
 alter table public.chat_seen enable row level security;
 
 create policy chat_seen_select_own on public.chat_seen

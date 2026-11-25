@@ -1595,6 +1595,16 @@ export async function editComment(commentId: string, body: string): Promise<void
   const id = assertId(commentId, 'comment id');
   const text = cleanText(body, 'Comment', 4000);
   await requireUser(supabase);
+  // An unchanged body is a no-op — no edit marker for a save that didn't
+  // change anything.
+  const { data: current } = await supabase
+    .from('card_comments')
+    .select('body')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!current) throw new Error('Comment not found or no access');
+  if (current.body === text) return;
   const { data, error } = await supabase
     .from('card_comments')
     .update({ body: text, edited_at: new Date().toISOString() })
@@ -1830,6 +1840,16 @@ export async function editBoardMessage(messageId: string, body: string): Promise
   const id = assertId(messageId, 'message id');
   const text = cleanText(body, 'Message', 4000);
   await requireUser(supabase);
+  // An unchanged body is a no-op — no edit marker for a save that didn't
+  // change anything.
+  const { data: current } = await supabase
+    .from('board_messages')
+    .select('body')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!current) throw new Error('Message not found or no access');
+  if (current.body === text) return;
   const { data, error } = await supabase
     .from('board_messages')
     .update({ body: text, edited_at: new Date().toISOString() })

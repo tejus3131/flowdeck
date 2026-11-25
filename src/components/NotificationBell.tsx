@@ -84,7 +84,10 @@ export function NotificationBell() {
   const clearIndicators = (row: NotificationRow) => {
     if (row.kind !== 'chat' && row.kind !== 'mention' && row.kind !== 'comment') return;
     if (row.card_id) markSeen(row.card_id, Number.MAX_SAFE_INTEGER);
-    else if (row.board_id) stampBoardChatSeen(row.board_id, Date.now());
+    // The board stamp advances to the notification's instant (server
+    // clock) — never the client's wall clock, which could run fast and
+    // permanently swallow future messages into "seen".
+    else if (row.board_id) stampBoardChatSeen(row.board_id, +new Date(row.created_at));
   };
 
   const readOne = (row: NotificationRow) => {

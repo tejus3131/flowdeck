@@ -8,6 +8,10 @@ import DOMPurify from 'dompurify';
 
 marked.setOptions({ gfm: true, breaks: true });
 
+/** Only real UUIDs may become board references — anything else stays
+ *  plain text (a board:<junk> href must never flow into routing). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const VIDEO_HOSTS: Record<string, (id: string) => string> = {
   'youtube.com': (id) => `https://www.youtube.com/embed/${id}`,
   'youtu.be': (id) => `https://www.youtube.com/embed/${id}`,
@@ -94,6 +98,7 @@ const renderer = {
     if (href.startsWith('board:')) {
       const boardId = href.replace('board:', '');
       const label = (tokens ?? []).map((t) => t.raw ?? t.text ?? '').join('') || 'board';
+      if (!UUID.test(boardId)) return label;
       return `<a href="#board-${boardId}" data-board-id="${boardId}">${label}</a>`;
     }
     // Cross-board card references travel as card:<uuid> — the label reads
