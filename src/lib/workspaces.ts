@@ -776,6 +776,21 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
     .from('workspace_members')
     .select('user_id')
     .eq('workspace_id', workspaceId);
+  // The capsule (0060/0061): a workspace cascades its boards, and boards
+  // refuse to delete while they hold cards. Say it BEFORE the cascade
+  // throws — the owner needs the actionable message, not the raw trigger
+  // error: boards delete one at a time, each with its own explicit
+  // confirmation when cards are involved.
+  const { count: cardsInWorkspace, error: cardCountError } = await supabase
+    .from('cards')
+    .select('id, boards!inner(id)', { count: 'exact', head: true })
+    .eq('boards.workspace_id', workspaceId);
+  if (cardCountError) throw new Error(cardCountError.message);
+  if ((cardsInWorkspace ?? 0) > 0) {
+    throw new Error(
+      `Boards here still hold ${cardsInWorkspace} card${cardsInWorkspace === 1 ? '' : 's'} — delete or purge those boards first (a board with cards deletes only after you confirm it explicitly)`,
+    );
+  }
   const { error } = await supabase.from('workspaces').delete().eq('id', workspaceId);
   if (error) throw new Error(error.message);
   await recapTokensForUsers((members ?? []).map((row) => row.user_id as string));

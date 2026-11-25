@@ -1033,11 +1033,13 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const isGrantable = (_member: Member) => true;
 
   const [deleting, setDeleting] = createSignal(false);
-  const removeBoard = async () => {
+  /** purge = the deliberate end-of-life (0061): only the settings drawer
+   *  passes it, after a typed confirmation when cards are involved. */
+  const removeBoard = async (purge = false) => {
     setSettingsError(null);
     setDeleting(true);
     try {
-      await deleteBoard(props.params.boardId);
+      await deleteBoard(props.params.boardId, purge || undefined);
       // Relay-after-ack (server-minted identity): open dashboards drop the
       // board instantly; the durable echo covers everyone else.
       wsRelay.broadcastOp({
@@ -1560,8 +1562,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           onEffectiveAccess={effectiveAccess}
           onIsGrantable={isGrantable}
           onChangeAccess={changeAccess}
-          onDelete={() => void removeBoard()}
+          onDelete={(purge) => void removeBoard(purge)}
           onClose={() => setPanel(null)}
+          cardCount={view().cards.length}
           resolvedCards={view().cards.filter((c) => c.resolved_at)}
           lists={view().lists}
           onUnresolve={(cardId) => toggleResolve(cardId, false)}
@@ -5580,8 +5583,11 @@ function BoardSettings(props: {
   onEffectiveAccess: (member: Member) => 'edit' | 'view' | null;
   onIsGrantable: (member: Member) => boolean;
   onChangeAccess: (userId: string, access: 'edit' | 'view' | null) => void;
-  onDelete: () => void;
+  /** Deletes the board; purge=true takes the destructive path (0061). */
+  onDelete: (purge: boolean) => void;
   onClose: () => void;
+  /** Every card on the board (resolved too) — the purge confirm's stakes. */
+  cardCount: number;
   /** The board's resolved (hidden) cards — the time capsule's view (0059). */
   resolvedCards: CardView[];
   /** List names for the resolved rows (the frozen list each came from). */
@@ -5594,6 +5600,8 @@ function BoardSettings(props: {
   const [confirmingDelete, setConfirmingDelete] = createSignal(false);
   /** How many resolved rows show at once — "Show more" grows the slice. */
   const [resolvedShown, setResolvedShown] = createSignal(20);
+  /** The purge confirm's typed board name (0061's deliberate path). */
+  const [typedConfirm, setTypedConfirm] = createSignal('');
 
   // Escape closes (same affordance as the card drawer).
   const onKey = (event: KeyboardEvent) => {
@@ -6022,6 +6030,10 @@ function BoardSettings(props: {
             </h3>
             <p class="mt-1 text-xs text-neutral-400">
               Deleting removes the board, its lists, cards, and comments for everyone.
+              <Show when={props.cardCount > 0}>
+                {' '}Cards can never be deleted on their own — a board that holds
+                them deletes only through this deliberate, typed confirmation.
+              </Show>
             </p>
             <Show
               when={confirmingDelete()}
@@ -6029,29 +6041,69 @@ function BoardSettings(props: {
                 <button
                   type="button"
                   class="mt-2 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-                  onClick={() => setConfirmingDelete(true)}
+                  onClick={() => {
+                    setTypedConfirm('');
+                    setConfirmingDelete(true);
+                  }}
                 >
-                  Delete this board…
+                  Delete this board{props.cardCount > 0 ? ` (${props.cardCount} cards)` : ''}…
                 </button>
               }
             >
-              <span class="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={props.deleting}
-                  class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                  onClick={() => props.onDelete()}
-                >
-                  {props.deleting ? 'Deleting…' : 'Really delete everything?'}
-                </button>
-                <button
-                  type="button"
-                  class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                  onClick={() => setConfirmingDelete(false)}
-                >
-                  Cancel
-                </button>
-              </span>
+              <Show
+                when={props.cardCount === 0}
+                fallback={
+                  <span class="mt-2 flex flex-col gap-2">
+                    <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                      Type <span class="font-semibold">{props.board.name}</span> to
+                      permanently delete this board and its {props.cardCount} card
+                      {props.cardCount === 1 ? '' : 's'} (cards included — this is
+                      the capsule's one sanctioned purge):
+                    </span>
+                    <input
+                      class="max-w-xs"
+                      value={typedConfirm()}
+                      onInput={(event) => setTypedConfirm(event.currentTarget.value)}
+                      placeholder={props.board.name}
+                    />
+                    <span class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={props.deleting || typedConfirm() !== props.board.name}
+                        class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                        onClick={() => props.onDelete(true)}
+                      >
+                        {props.deleting ? 'Deleting…' : 'Purge everything permanently'}
+                      </button>
+                      <button
+                        type="button"
+                        class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                        onClick={() => setConfirmingDelete(false)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  </span>
+                }
+              >
+                <span class="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={props.deleting}
+                    class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                    onClick={() => props.onDelete(false)}
+                  >
+                    {props.deleting ? 'Deleting…' : 'Really delete everything?'}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    Cancel
+                  </button>
+                </span>
+              </Show>
             </Show>
           </section>
         </Show>

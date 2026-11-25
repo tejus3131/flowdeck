@@ -1269,6 +1269,7 @@ export type Database = {
       }
       delete_board_message: { Args: { p_id: string }; Returns: Json }
       delete_comment: { Args: { p_id: string }; Returns: Json }
+      purge_board: { Args: { p_board_id: string }; Returns: Json }
       resolve_card: { Args: { p_card_id: string }; Returns: Json }
       unresolve_card: { Args: { p_card_id: string }; Returns: Json }
       get_chat_seen: {

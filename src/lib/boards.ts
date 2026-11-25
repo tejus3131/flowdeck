@@ -811,20 +811,34 @@ export async function updateBoard(
   }
 }
 
-export async function deleteBoard(boardId: string) {
+/**
+ * Delete a board. Without `purge` this refuses while the board holds any
+ * card (the capsule's accidental-loss guard). With `purge` it takes the
+ * sanctioned end-of-life path (0061's purge_board RPC): the whole board —
+ * cards, comments, every event — goes permanently. The UI only passes
+ * purge after an explicit typed confirmation; owners / workspace
+ * owners+admins only (the RPC re-checks).
+ */
+export async function deleteBoard(boardId: string, purge?: boolean): Promise<void> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
   await requireUser(supabase);
-  // The time capsule (0059): a board is content — it refuses to delete
-  // while it holds ANY card (resolved or not). Empty it first.
+  if (purge) {
+    const { error } = await supabase.rpc('purge_board', { p_board_id: id });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  // The friendly pre-check — the DB trigger (0060) is the guarantee.
   const { count, error: countError } = await supabase
     .from('cards')
     .select('id', { count: 'exact', head: true })
     .eq('board_id', id);
   if (countError) throw new Error(countError.message);
   if ((count ?? 0) > 0) {
-    throw new Error(`This board still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`);
+    throw new Error(
+      `This board still holds ${count} card${count === 1 ? '' : 's'} — deleting it would remove them permanently. Confirm the delete to proceed.`,
+    );
   }
   const { error } = await supabase.from('boards').delete().eq('id', id);
   if (error) throw new Error(error.message);
