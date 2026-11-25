@@ -621,6 +621,8 @@ export type Database = {
           number: number | null
           position: number
           priority: string | null
+          resolved_at: string | null
+          resolved_by: string | null
           title: string
           updated_at: string
         }
@@ -635,6 +637,8 @@ export type Database = {
           number?: number | null
           position?: number
           priority?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
           title: string
           updated_at?: string
         }
@@ -649,6 +653,8 @@ export type Database = {
           number?: number | null
           position?: number
           priority?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
           title?: string
           updated_at?: string
         }
@@ -663,6 +669,13 @@ export type Database = {
           {
             foreignKeyName: "cards_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cards_resolved_by_fkey"
+            columns: ["resolved_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1256,6 +1269,8 @@ export type Database = {
       }
       delete_board_message: { Args: { p_id: string }; Returns: Json }
       delete_comment: { Args: { p_id: string }; Returns: Json }
+      resolve_card: { Args: { p_card_id: string }; Returns: Json }
+      unresolve_card: { Args: { p_card_id: string }; Returns: Json }
       get_chat_seen: {
         Args: { p_scope_id: string; p_scope_type: string }
         Returns: string

@@ -34,6 +34,8 @@ const card = (id: string, listId: string, position: number, title = id): CardVie
   created_at: '',
   updated_at: '',
   client_op: null,
+  resolved_at: null,
+  resolved_by: null,
   comment_count: 0,
   last_comment_at: null,
   assignees: [],

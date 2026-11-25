@@ -170,6 +170,8 @@ export function applyBoardOp(draft: BoardSnapshot, payload: BoardOpPayload, now:
         updated_at: now,
         client_op: payload.clientOp,
         number: null,
+        resolved_at: null,
+        resolved_by: null,
         comment_count: 0,
         last_comment_at: null,
         priority: null,
