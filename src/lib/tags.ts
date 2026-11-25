@@ -59,16 +59,26 @@ export async function getTagEvents(
 ): Promise<TagEventRow[]> {
   'use server';
   const supabase = createSupabaseRequestClient();
+  // LIKE wildcards in the user's query must match literally: % and _ are
+  // escaped (Postgres's default LIKE escape is the backslash).
+  const escaped = (options.query ?? '').replace(/[\\%_]/g, (m) => `\\${m}`);
   // The server-fn codec rejects undefined values — only send what's set.
-  const args: Record<string, unknown> = {
+  const args: {
+    p_tag_id: string;
+    p_query: string;
+    p_limit: number;
+    p_offset: number;
+    p_from?: string;
+    p_to?: string;
+  } = {
     p_tag_id: assertId(tagId, 'tag id'),
-    p_query: options.query ?? '',
+    p_query: escaped,
     p_limit: options.limit ?? 30,
     p_offset: options.offset ?? 0,
   };
   if (options.from) args.p_from = options.from;
   if (options.to) args.p_to = options.to;
-  const { data, error } = await supabase.rpc('tag_event_rows', args as never);
+  const { data, error } = await supabase.rpc('tag_event_rows', args);
   if (error) throw new Error(error.message);
   return (data ?? []) as TagEventRow[];
 }

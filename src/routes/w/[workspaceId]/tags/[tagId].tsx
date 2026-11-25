@@ -84,7 +84,17 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
 
   // ── filters: search through the entries + a time window ─────────────
+  // The input is debounced: the feed resets on the settled value, not on
+  // every keystroke — typing 'design' is one fetch, not six.
+  const [queryInput, setQueryInput] = createSignal('');
   const [query, setQuery] = createSignal('');
+  let queryTimer: ReturnType<typeof setTimeout> | undefined;
+  const onQueryInput = (value: string) => {
+    setQueryInput(value);
+    clearTimeout(queryTimer);
+    queryTimer = setTimeout(() => setQuery(value), 300);
+  };
+  onCleanup(() => clearTimeout(queryTimer));
   const [windowDays, setWindowDays] = createSignal<number | null>(null);
   const windowFrom = () => {
     const days = windowDays();
@@ -452,8 +462,8 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                   <input
                     class="w-44 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs shadow-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-neutral-700 dark:bg-neutral-900 dark:focus:border-indigo-700 dark:focus:ring-indigo-900"
                     placeholder="Search these entries…"
-                    value={query()}
-                    onInput={(event) => setQuery(event.currentTarget.value)}
+                    value={queryInput()}
+                    onInput={(event) => onQueryInput(event.currentTarget.value)}
                   />
                   <select
                     class="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs shadow-sm outline-none focus:border-indigo-300 dark:border-neutral-700 dark:bg-neutral-900"
