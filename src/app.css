@@ -140,6 +140,18 @@ textarea {
 .prose-card .fd-board-ref {
   @apply inline-flex items-center rounded-md bg-indigo-100 px-1.5 py-0.5 text-[0.85em] font-semibold text-indigo-700 no-underline hover:bg-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300;
 }
+/* ── The card timeline's chips (people, tags, priority) ─────────────
+   Same visual language as the markdown chips, tuned for the trail's
+   small text: hover raises the detail card, click routes. */
+.fd-timeline .fd-mention {
+  @apply inline cursor-pointer rounded-md bg-amber-100 px-1 py-0.5 font-semibold text-amber-800 hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/30;
+}
+.fd-timeline .fd-tag-ref {
+  @apply inline cursor-pointer rounded-md bg-sky-100 px-1 py-0.5 font-semibold text-sky-700 hover:bg-sky-200 dark:bg-sky-500/20 dark:text-sky-300 dark:hover:bg-sky-500/30;
+}
+.fd-timeline .fd-prio-ref {
+  @apply inline cursor-pointer rounded-md bg-neutral-100 px-1 py-0.5 font-semibold uppercase tracking-wide text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700;
+}
 
 /* ── The smart composer's chips (SmartTextarea backdrop tokens) ──────────
    The textarea's own text is transparent; this layer renders mentions
