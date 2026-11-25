@@ -237,6 +237,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "board_messages_deleted_as_team_id_fkey"
+            columns: ["deleted_as_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "board_messages_deleted_by_fkey"
+            columns: ["deleted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "board_messages_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -486,6 +500,20 @@ export type Database = {
             columns: ["card_id"]
             isOneToOne: false
             referencedRelation: "cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "card_comments_deleted_as_team_id_fkey"
+            columns: ["deleted_as_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "card_comments_deleted_by_fkey"
+            columns: ["deleted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
