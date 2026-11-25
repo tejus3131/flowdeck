@@ -1024,7 +1024,9 @@ export async function updateCard(
         console.error('assignment notifications failed:', notifyError);
       }
     }
-    // Timeline: who got assigned / unassigned, by display name.
+    // Timeline: who got assigned / unassigned — ids + name snapshots
+    // (0058: chips resolve the CURRENT name by id; the snapshot is the
+    // fallback when the person is gone).
     if (card?.board_id) {
       const removed = [...before].filter((userId) => !next.includes(userId));
       if (added.length > 0 || removed.length > 0) {
@@ -1043,8 +1045,8 @@ export async function updateCard(
           actorId: user.id,
           kind: 'assignees',
           detail: {
-            added: added.map(nameOf),
-            removed: removed.map(nameOf),
+            added: added.map((userId) => ({ id: userId, name: nameOf(userId) })),
+            removed: removed.map((userId) => ({ id: userId, name: nameOf(userId) })),
           },
         });
       }
@@ -1091,15 +1093,13 @@ export async function updateCard(
   // Tags: replace the linked set (tags themselves are shared rows).
   if (patch.tagIds !== undefined) {
     const next = [...new Set(patch.tagIds)].filter((tagId) => /^[0-9a-f-]{36}$/i.test(tagId));
-    // Timeline: the BEFORE names must be read before the replace lands.
+    // Timeline: the BEFORE set must be read before the replace lands.
     const { data: beforeRows } = await supabase
       .from('card_tags')
-      .select('tags(name)')
+      .select('tag_id')
       .eq('card_id', resolved);
-    const beforeNames = new Set(
-      ((beforeRows ?? []) as { tags: { name: string } | null }[])
-        .map((row) => row.tags?.name)
-        .filter((name): name is string => Boolean(name)),
+    const beforeIds = new Set(
+      ((beforeRows ?? []) as { tag_id: string }[]).map((row) => row.tag_id),
     );
     const { error: delError } = await supabase.from('card_tags').delete().eq('card_id', resolved);
     if (delError) throw new Error(delError.message);
@@ -1109,24 +1109,28 @@ export async function updateCard(
         .insert(next.map((tagId) => ({ card_id: resolved, tag_id: tagId })));
       if (insError) throw new Error(insError.message);
     }
-    // Timeline: tags added / removed, by name.
+    // Timeline: tags added / removed — ids + name snapshots (0058: chips
+    // resolve the CURRENT name by id; the snapshot is the fallback).
     if (card?.board_id) {
       try {
-        const { data: tagRows } = await supabase
-          .from('tags')
-          .select('id, name')
-          .in('id', next);
-        const namesById = new Map((tagRows ?? []).map((row) => [row.id, row.name]));
-        const afterNames = next.map((tagId) => namesById.get(tagId)).filter(Boolean) as string[];
-        const addedNames = afterNames.filter((name) => !beforeNames.has(name));
-        const removedNames = [...beforeNames].filter((name) => !afterNames.includes(name));
-        if (addedNames.length > 0 || removedNames.length > 0) {
+        const addedIds = next.filter((tagId) => !beforeIds.has(tagId));
+        const removedIds = [...beforeIds].filter((tagId) => !next.includes(tagId));
+        if (addedIds.length > 0 || removedIds.length > 0) {
+          const { data: tagRows } = await supabase
+            .from('tags')
+            .select('id, name')
+            .in('id', [...new Set([...addedIds, ...removedIds])]);
+          const nameOf = (tagId: string) =>
+            (tagRows ?? []).find((row) => row.id === tagId)?.name ?? 'a tag';
           await logCardEvent(supabase, {
             cardId: resolved,
             boardId: card.board_id,
             actorId: user.id,
             kind: 'tags',
-            detail: { added: addedNames, removed: removedNames },
+            detail: {
+              added: addedIds.map((tagId) => ({ id: tagId, name: nameOf(tagId) })),
+              removed: removedIds.map((tagId) => ({ id: tagId, name: nameOf(tagId) })),
+            },
           });
         }
       } catch (cause) {
