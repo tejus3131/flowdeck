@@ -20,6 +20,18 @@ function cleanText(value: unknown, what: string, max: number): string {
   return trimmed.slice(0, max);
 }
 
+/** Page plan for refreshing a loaded feed window without collapsing it:
+ *  the RPC caps any single call at `max` rows, so a live refresh of N
+ *  loaded rows walks consecutive slices. Trailing slices past the feed's
+ *  end simply come back empty — the caller stops at the first short one. */
+export function pageSlices(target: number, max = 100): Array<{ offset: number; limit: number }> {
+  const plan: Array<{ offset: number; limit: number }> = [];
+  for (let offset = 0; offset < target; offset += max) {
+    plan.push({ offset, limit: Math.min(max, target - offset) });
+  }
+  return plan;
+}
+
 /** One row of a tag's mention feed: a chat message, a comment, or a
  *  card description that cites the tag — display-ready (the RPC flattens
  *  chips and clips the text). */

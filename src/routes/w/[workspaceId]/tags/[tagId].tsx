@@ -12,6 +12,7 @@ import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';
 import {
   getTagMentions,
   getTaggedCards,
+  pageSlices,
   updateTag,
   type TagMentionRow,
   type TaggedCard,
@@ -164,15 +165,23 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
         return;
       }
       const tagId = props.params.tagId;
-      // Keep the loaded depth (infinite scroll keeps its place); cap at
-      // the RPC's page ceiling.
-      const size = Math.min(Math.max(PAGE, mentions().length), 100);
+      // New mentions land at the TOP (newest first): refreshing the
+      // loaded depth plus one page keeps the tail row from dropping
+      // off. The RPC caps a single call at 100, so the window walks
+      // consecutive slices — an infinite-scrolled feed keeps its depth
+      // instead of snapping back.
+      const target = mentions().length + PAGE;
       try {
-        const rows = await getTagMentions(tagId, 0, size);
+        const rows: TagMentionRow[] = [];
+        for (const { offset, limit } of pageSlices(target)) {
+          const slice = await getTagMentions(tagId, offset, limit);
+          rows.push(...slice);
+          if (slice.length < limit) break; // the feed ran out
+        }
         // A tag switch raced this fetch: the reset's own load wins.
         if (tagId !== props.params.tagId) return;
         setMentions(rows);
-        if (rows.length < size) setDone(true);
+        if (rows.length < target) setDone(true);
       } catch {
         // Best-effort live refresh — the next event (or a reload) retries.
       }
@@ -181,11 +190,15 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
   onSettled(() => {
     const client = browserClient();
     if (!client) return () => undefined;
+    // chat + comments are the hot mention surfaces. cards is
+    // deliberately NOT watched: its UPDATE events fire on every drag and
+    // priority change workspace-wide — a colleague rearranging a board
+    // would keep resetting the debounce. A description mentioning the
+    // tag surfaces on the next chat/comment event or a manual reload.
     const channel = client
       .channel(`tag-mentions:${props.params.workspaceId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'board_messages' }, refreshWindow)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'card_comments' }, refreshWindow)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards' }, refreshWindow)
       .subscribe();
     return () => {
       clearTimeout(refreshTimer);

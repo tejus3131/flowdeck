@@ -271,7 +271,8 @@ function styleReferences(
     chip.setAttribute('data-tag-id', anchor.getAttribute('data-tag-id') ?? '');
     chip.textContent = `#${tag?.name ?? anchor.textContent?.replace(/^#/, '') ?? 'tag'}`;
     anchor.replaceWith(chip);
-  }  // Team chips: the team's CURRENT name (renames update everywhere).
+  }
+  // Team chips: the team's CURRENT name (renames update everywhere).
   const teamsById = new Map((teams ?? []).map((team) => [team.id, team]));
   for (const anchor of [...doc.querySelectorAll('a[data-all]')]) {
     const chip = doc.createElement('span');
