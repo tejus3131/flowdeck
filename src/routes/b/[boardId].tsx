@@ -5949,8 +5949,15 @@ function BoardSettings(props: {
 
         {/* ── resolved cards: the time capsule's shelf (0059) ───────────── */}
         <section class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Resolved cards · {props.resolvedCards.length}
+          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+            <span>Resolved cards · {props.resolvedCards.length}</span>
+            <a
+              href={`/search?board=${props.boardId}&resolved=resolved`}
+              class="rounded-md px-1.5 py-0.5 font-medium normal-case tracking-normal text-indigo-500 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+              title="Search this board's resolved cards — the search page's resolved view, board pre-filtered"
+            >
+              🔍 Search these
+            </a>
           </h3>
           <p class="mt-1 text-xs text-neutral-400">
             Nothing is ever deleted — resolved cards hide from the board and stay

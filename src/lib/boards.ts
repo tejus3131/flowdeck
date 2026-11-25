@@ -2044,6 +2044,8 @@ export type SearchHit = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Set when the card is resolved (hidden from its board — 0059). */
+  resolved_at: string | null;
   assignees: string[];
   tags: { id: string; name: string }[];
   comment_count: number;
@@ -2064,6 +2066,10 @@ export async function searchCards(filters: {
   assigneeIds?: string[];
   creatorIds?: string[];
   boardId?: string;
+  /** Multi-board facet (a superset of boardId). */
+  boardIds?: string[];
+  /** Resolved state (0059): unresolved (the default) / resolved / both. */
+  resolved?: 'unresolved' | 'resolved' | 'both';
   /** Cardinality filters: cards missing the thing. */
   unassigned?: boolean;
   noPriority?: boolean;
@@ -2076,10 +2082,21 @@ export async function searchCards(filters: {
   let query = supabase
     .from('cards')
     .select(
-      'id, number, title, priority, created_by, created_at, updated_at, boards!inner(id, name), card_assignees(user_id), card_tags(tags(id, name))',
+      'id, number, title, priority, resolved_at, created_by, created_at, updated_at, boards!inner(id, name), card_assignees(user_id), card_tags(tags(id, name))',
     )
     .order('updated_at', { ascending: false })
     .limit(200);
+  // The time capsule (0059): the default view is unresolved cards only;
+  // the resolved shelf and the "both" view opt in explicitly.
+  if (filters.resolved !== 'both') {
+    query =
+      filters.resolved === 'resolved'
+        ? query.not('resolved_at', 'is', null)
+        : query.is('resolved_at', null);
+  }
+  if (filters.boardIds && filters.boardIds.length > 0) {
+    query = query.in('board_id', filters.boardIds);
+  }
 
   const text = filters.query?.trim();
   if (text) {
@@ -2149,6 +2166,7 @@ export async function searchCards(filters: {
         created_by: row.created_by,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        resolved_at: row.resolved_at,
         assignees: ((row.card_assignees ?? []) as { user_id: string }[]).map((a) => a.user_id),
         tags,
         comment_count: 0,
