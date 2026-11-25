@@ -4,6 +4,7 @@
 // a board can belong to many teams. Team admins may also grant their
 // team's access to boards they can edit.
 import { createSupabaseRequestClient } from '../server/supabase';
+import { friendlyError } from '../server/friendly';
 import { filterInaccessible, insertNotifications } from '../server/notify';
 import { recapTokensForUsers } from './tokens';
 
@@ -30,7 +31,7 @@ async function requireWsRole(
     .eq('user_id', user.id)
     .maybeSingle();
   if (!data || !roles.includes(data.role)) {
-    throw new Error('Only workspace owners and admins can do that');
+    throw friendlyError('Only workspace owners and admins can do that');
   }
 }
 
@@ -40,7 +41,7 @@ async function teamWorkspaceId(supabase: Client, teamId: string): Promise<string
     .select('workspace_id, deactivated_at')
     .eq('id', teamId)
     .maybeSingle();
-  if (!data?.workspace_id) throw new Error('Team not found');
+  if (!data?.workspace_id) throw friendlyError('Team not found');
   return data.workspace_id;
 }
 
@@ -140,7 +141,7 @@ export async function deleteTeam(teamId: string): Promise<boolean> {
     .select('user_id', { count: 'exact', head: true })
     .eq('team_id', teamId);
   if ((members ?? 0) > 0) {
-    throw new Error(
+    throw friendlyError(
       `This team still has ${members} member${members === 1 ? '' : 's'} — remove them first (or deactivate the team once it's empty)`,
     );
   }

@@ -14,6 +14,7 @@ import { live } from '@solidjs/web/server-functions';
 
 import { applyFold, planFold, type FoldEvent } from './board-fold';
 import { createSupabaseRequestClient } from '../server/supabase';
+import { friendlyError } from '../server/friendly';
 import {
   filterInaccessible,
   mentionedTeams,
@@ -247,6 +248,24 @@ export async function getBoardsSnapshot(): Promise<BoardsSnapshot> {
   'use server';
   const supabase = createSupabaseRequestClient();
   return boardsSnapshot(supabase);
+}
+
+/** The workspace's boards a board page can offer for cross-board
+ *  citation: id + name, RLS-filtered to what the viewer can see. The
+ *  # menu uses this so board backlinks are reachable from the composer
+ *  (a board chip serializes as [name](board:<uuid>)). */
+export async function getWorkspaceBoardList(
+  workspaceId: string,
+): Promise<{ id: string; name: string }[]> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const { data, error } = await supabase
+    .from('boards')
+    .select('id, name')
+    .eq('workspace_id', assertId(workspaceId, 'workspace id'))
+    .order('name');
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => ({ id: row.id, name: row.name }));
 }
 
 /** One board snapshot, for tests and one-off reads. */
@@ -836,7 +855,7 @@ export async function deleteBoard(boardId: string, purge?: boolean): Promise<voi
     .eq('board_id', id);
   if (countError) throw new Error(countError.message);
   if ((count ?? 0) > 0) {
-    throw new Error(
+    throw friendlyError(
       `This board still holds ${count} card${count === 1 ? '' : 's'} — deleting it would remove them permanently. Confirm the delete to proceed.`,
     );
   }
@@ -899,7 +918,7 @@ export async function deleteList(listId: string) {
     .eq('list_id', id);
   if (countError) throw new Error(countError.message);
   if ((count ?? 0) > 0) {
-    throw new Error(`This list still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`);
+    throw friendlyError(`This list still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`);
   }
   const { error } = await supabase.from('lists').delete().eq('id', id);
   if (error) throw new Error(error.message);
@@ -1398,7 +1417,7 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
     .select('resolved_at')
     .eq('id', id)
     .maybeSingle();
-  if (resolved?.resolved_at) throw new Error('This card is resolved — unresolve it first');
+  if (resolved?.resolved_at) throw friendlyError('This card is resolved — unresolve it first');
   const fromName =
     ((cardBefore?.lists as { name: string | null } | null | undefined)?.name as string | undefined) ?? null;
   const { error } = await supabase

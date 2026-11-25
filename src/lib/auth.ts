@@ -8,6 +8,7 @@ import { getRequestEvent, redirect } from '@solidjs/web';
 import { parseCookie, stringifySetCookie } from 'cookie';
 
 import { createSupabaseRequestClient, createSupabaseServiceClient } from '../server/supabase';
+import { friendlyError } from '../server/friendly';
 import type { Database } from '../types/database.generated';
 
 export type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -128,7 +129,7 @@ export async function deleteAccount(): Promise<boolean> {
     if ((count ?? 0) > 0) shared.push(ws.name);
   }
   if (shared.length > 0) {
-    throw new Error(
+    throw friendlyError(
       `Transfer ownership of ${shared.map((n) => `“${n}”`).join(', ')} first — deleting your account would remove it for everyone`,
     );
   }
@@ -147,7 +148,7 @@ export async function deleteAccount(): Promise<boolean> {
       .select('id, boards!inner(id)', { count: 'exact', head: true })
       .in('boards.workspace_id', ownedIds);
     if ((ownedCards ?? 0) > 0) {
-      throw new Error(
+      throw friendlyError(
         `Your workspaces still hold ${ownedCards} card${ownedCards === 1 ? '' : 's'} — purge those boards (workspace settings → Danger zone) or delete the workspaces first; deleting your account would destroy them`,
       );
     }
