@@ -35,7 +35,7 @@ import { getMe } from '../../lib/auth';
 import { renderMarkdown } from '../../lib/markdown';
 import { mentionIds, mentionTeamIds } from '../../lib/notification-text';
 import { markSeen, unseenCount } from '../../lib/seen';
-import { boardChatStamp, stampBoardChatSeen } from '../../lib/board-chat-seen';
+import { boardChatStamp, stampBoardChatSeen, hydrateBoardChatSeen } from '../../lib/board-chat-seen';
 import { openBoardChat, openCardScope } from '../../lib/open-scopes';
 import { createPanelWidth } from '../../lib/panel-width';
 import { statusOf, type PublicStatus } from '../../lib/status';
@@ -771,6 +771,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     list.length > 0 ? +new Date(list[list.length - 1]!.created_at) : 0;
   onSettled(() => {
     void (async () => {
+      // A fresh device hydrates its read state from the server (#43)
+      // BEFORE the first unread count — the dot reflects every device's
+      // history, not just this one's.
+      await hydrateBoardChatSeen(props.params.boardId);
       try {
         for await (const list of await chatLive(props.params.boardId)) {
           // The board-open chat channel keeps the cache warm even with the
