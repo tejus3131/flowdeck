@@ -1779,6 +1779,46 @@ export async function postBoardMessage(
   };
 }
 
+/**
+ * Edit a board message. RLS decides who may: the author always; anyone's
+ * for workspace owners/admins (the same policies the MCP ops run under,
+ * migration 0038). Edits stamp edited_at — the "(edited)" marker.
+ */
+export async function editBoardMessage(messageId: string, body: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(messageId, 'message id');
+  const text = cleanText(body, 'Message', 4000);
+  await requireUser(supabase);
+  const { data, error } = await supabase
+    .from('board_messages')
+    .update({ body: text, edited_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Message not found or no access');
+}
+
+/**
+ * Soft-delete a board message. RLS decides who may (same as edits). The
+ * row stays for history; every read filters it out.
+ */
+export async function deleteBoardMessage(messageId: string): Promise<void> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(messageId, 'message id');
+  await requireUser(supabase);
+  const { data, error } = await supabase
+    .from('board_messages')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error('Message not found or no access');
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────
 
 async function requireUser(supabase: ReturnType<typeof createSupabaseRequestClient>) {

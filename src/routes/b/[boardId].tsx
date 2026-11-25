@@ -71,6 +71,8 @@ import {
   chatSeq,
   moveCard as moveCardServer,
   postBoardMessage,
+  editBoardMessage,
+  deleteBoardMessage,
   type BoardMessageRow,
   updateBoard as updateBoardServer,
   updateList as updateListServer,
@@ -4596,6 +4598,66 @@ function BoardChat(props: {
     checkBlocked(body);
   };
 
+  // ── edit + delete (#21): the author always; anyone's for workspace
+  // owners/admins — the same role scoping the MCP ops run under.
+  const canManage = (message: BoardMessageRow) =>
+    props.canEdit && (message.author_id === props.myId || props.isWsAdmin);
+  const [editingId, setEditingId] = createSignal<string | null>(null);
+  const [editDraft, setEditDraft] = createSignal('');
+  const [confirmId, setConfirmId] = createSignal<string | null>(null);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(confirmTimer));
+
+  const startEdit = (message: BoardMessageRow) => {
+    setEditingId(message.id);
+    setEditDraft(message.body);
+  };
+  /** Optimistic edit: the bubble swaps instantly, the guard holds until
+   *  the live echo carries the new body. */
+  const saveEdit = () => {
+    const id = editingId();
+    const body = editDraft().trim();
+    if (!id || !body) return;
+    const editedAt = new Date().toISOString();
+    setEditingId(null);
+    engine.mutate({
+      kind: 'message-edited',
+      guards: [id],
+      apply: (draft) => {
+        const row = draft.list.find((entry) => entry.id === id);
+        if (row) {
+          row.body = body;
+          row.edited_at = editedAt;
+        }
+      },
+      send: () => editBoardMessage(id, body),
+      echo: (durable) => durable.list.some((row) => row.id === id && row.body === body),
+    });
+  };
+  const removeMessage = (id: string) => {
+    engine.mutate({
+      kind: 'message-deleted',
+      guards: [id],
+      apply: (draft) => {
+        draft.list = draft.list.filter((row) => row.id !== id);
+      },
+      send: () => deleteBoardMessage(id),
+      echo: (durable) => !durable.list.some((row) => row.id === id),
+    });
+  };
+  /** Two-step delete: the first click arms ("Delete?"), the second fires. */
+  const askDelete = (id: string) => {
+    if (confirmId() === id) {
+      clearTimeout(confirmTimer);
+      setConfirmId(null);
+      removeMessage(id);
+    } else {
+      setConfirmId(id);
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => setConfirmId(null), 3000);
+    }
+  };
+
   const markdownContext = () => ({
     members: props.members,
     teams: props.teams,
@@ -4701,10 +4763,10 @@ function BoardChat(props: {
               {(message) => {
                 const mine = () => message.author_id !== null && message.author_id === props.myId;
                 return (
-                  <li class={`flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
+                  <li class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
                     <Avatar src={message.avatar_url} name={message.author} size="sm" />
-                    <div class={`min-w-0 max-w-[85%] ${mine() ? 'items-end text-right' : ''}`}>
-                      <p class={`flex items-baseline gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
+                    <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
+                      <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
                         <span class="font-semibold text-neutral-500 dark:text-neutral-300">
                           {mine() ? 'You' : message.author}
                         </span>
@@ -4735,18 +4797,93 @@ function BoardChat(props: {
                             (edited)
                           </span>
                         </Show>
+                        <Show when={canManage(message)}>
+                          <span
+                            class={[
+                              'flex items-center gap-1 transition-opacity',
+                              confirmId() === message.id
+                                ? 'opacity-100'
+                                : 'opacity-0 group-hover:opacity-100',
+                            ]}
+                          >
+                            <button
+                              type="button"
+                              title="Edit message"
+                              class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                              onClick={() => startEdit(message)}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              title={confirmId() === message.id ? 'Click again to delete' : 'Delete message'}
+                              class={[
+                                'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
+                                { 'text-red-500': confirmId() === message.id },
+                              ]}
+                              onClick={() => askDelete(message.id)}
+                            >
+                              {confirmId() === message.id ? 'Delete?' : '🗑'}
+                            </button>
+                          </span>
+                        </Show>
                       </p>
-                      <div
-                        class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
-                          mine()
-                            ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                            : 'bg-neutral-100 dark:bg-neutral-800/60'
-                        }`}
-                        // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
-                        innerHTML={renderMarkdown(message.body, markdownContext())}
-                        onClick={onBodyClick}
-                        onMouseOver={onChipHover}
-                      />
+                      <Show
+                        when={editingId() !== message.id}
+                        fallback={
+                          <form
+                            class={['mt-0.5 flex w-full flex-col gap-1.5', { 'text-left': mine() }]}
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              saveEdit();
+                            }}
+                          >
+                            <SmartTextarea
+                              value={editDraft()}
+                              onInput={setEditDraft}
+                              members={props.members}
+                              teams={props.teams}
+                              cards={props.cards}
+                              workspaceTags={props.workspaceTags}
+                              crossCards={props.crossCards}
+                              boardName={props.boardName}
+                              board={{ id: props.boardId, name: props.boardName }}
+                              rows={2}
+                              sendOnEnter
+                              onSend={() => saveEdit()}
+                              placeholder="Edit message…"
+                            />
+                            <div class="flex items-center justify-end gap-2 text-xs">
+                              <button
+                                type="button"
+                                class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                onClick={() => setEditingId(null)}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={!editDraft().trim()}
+                                class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </form>
+                        }
+                      >
+                        <div
+                          class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
+                            mine()
+                              ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                              : 'bg-neutral-100 dark:bg-neutral-800/60'
+                          }`}
+                          // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
+                          innerHTML={renderMarkdown(message.body, markdownContext())}
+                          onClick={onBodyClick}
+                          onMouseOver={onChipHover}
+                        />
+                      </Show>
                     </div>
                   </li>
                 );

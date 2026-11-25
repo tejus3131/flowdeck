@@ -214,6 +214,8 @@ export type Database = {
           body?: string
           client_op?: string | null
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
           user_id?: string
         }
@@ -455,6 +457,8 @@ export type Database = {
           card_id?: string
           client_op?: string | null
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
           user_id?: string
         }
