@@ -113,7 +113,7 @@ export async function deleteAccount(): Promise<boolean> {
   // would delete THEIR boards and content with the account.
   const { data: owned } = await supabase
     .from('workspace_members')
-    .select('workspace_id, workspaces(name)')
+    .select('workspace_id, workspaces(id, name)')
     .eq('user_id', user.id)
     .eq('role', 'owner');
   const shared: string[] = [];
@@ -131,6 +131,26 @@ export async function deleteAccount(): Promise<boolean> {
     throw new Error(
       `Transfer ownership of ${shared.map((n) => `“${n}”`).join(', ')} first — deleting your account would remove it for everyone`,
     );
+  }
+
+  // Content check (the other half of the safety rule): a SOLE owner
+  // deleting their account cascades every owned workspace — boards and
+  // cards included. Content must be handled deliberately first: purge
+  // those boards (workspace settings → Danger zone) or delete the
+  // workspaces outright.
+  const ownedIds = (owned ?? [])
+    .map((row) => (row.workspaces as { id: string } | null)?.id)
+    .filter((id): id is string => Boolean(id));
+  if (ownedIds.length > 0) {
+    const { count: ownedCards } = await supabase
+      .from('cards')
+      .select('id, boards!inner(id)', { count: 'exact', head: true })
+      .in('boards.workspace_id', ownedIds);
+    if ((ownedCards ?? 0) > 0) {
+      throw new Error(
+        `Your workspaces still hold ${ownedCards} card${ownedCards === 1 ? '' : 's'} — purge those boards (workspace settings → Danger zone) or delete the workspaces first; deleting your account would destroy them`,
+      );
+    }
   }
 
   const service = createSupabaseServiceClient();
