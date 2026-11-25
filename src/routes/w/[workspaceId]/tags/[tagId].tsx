@@ -1,0 +1,329 @@
+// One tag's page — where a #tag chip lands. The vocabulary entry itself,
+// the cards carrying it, and every mention of it across the workspace
+// (board chat, card comments, descriptions) as one infinite-scroll feed.
+import { Title } from '@solidjs/meta';
+import { type RouteProps, liveQuery } from '@solidjs/router';
+import { For, Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
+
+import { Avatar } from '../../../../components/Avatar';
+import { createEngine } from '../../../../lib/sync';
+import { mergeWorkspaceDetail } from '../../../../lib/workspace-ops';import { getTagMentions, getTaggedCards, type TagMentionRow, type TaggedCard } from '../../../../lib/tags';
+import { renameTag } from '../../../../lib/tags';
+import {
+  getWorkspaceSnapshot,
+  workspaceStream,
+  type WorkspaceDetail,
+} from '../../../../lib/workspaces';
+import { errorMessage } from '../../../../lib/error-message';
+import { cachedStream, cachePut } from '../../../../lib/cache';
+import { perfFirstValue } from '../../../../lib/perf';
+
+const EMPTY_DETAIL: WorkspaceDetail = {
+  workspace: { id: '', name: '', invite_domains: [], board_creation: 'team_admins' },
+  myRole: null,
+  members: [],
+  invites: [],
+  boards: [],
+  access: {},
+  tags: [],
+  teams: [],
+  deactivatedTeams: [],
+  teamAccess: {},
+};
+
+const PAGE = 30;
+
+export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>) {
+  const workspaceLive = liveQuery(workspaceStream, 'workspace');
+  const engine = createEngine<WorkspaceDetail>({
+    streamSource: (key) =>
+      perfFirstValue(
+        cachedStream(`ws-detail:${key}`, () => workspaceLive(key), 'ws-detail-revalidate'),
+        'ws-detail-open',
+      ),
+    key: () => props.params.workspaceId,
+    empty: EMPTY_DETAIL,
+    clone: (snapshot) => ({
+      workspace: { ...snapshot.workspace },
+      myRole: snapshot.myRole,
+      members: snapshot.members.slice(),
+      invites: snapshot.invites.slice(),
+      boards: snapshot.boards.slice(),
+      access: { ...snapshot.access },
+      tags: snapshot.tags.slice(),
+      teams: snapshot.teams.map((team) => ({ ...team, members: team.members.slice() })),
+      deactivatedTeams: snapshot.deactivatedTeams.slice(),
+      teamAccess: Object.fromEntries(
+        Object.entries(snapshot.teamAccess).map(([key, value]) => [key, value.slice()]),
+      ),
+    }),
+    merge: mergeWorkspaceDetail,
+    status: () => workspaceLive.status(props.params.workspaceId),
+    refresh: async () => {
+      const snapshot = await getWorkspaceSnapshot(props.params.workspaceId);
+      if (snapshot) cachePut(`ws-detail:${props.params.workspaceId}`, snapshot);
+      return snapshot ?? EMPTY_DETAIL;
+    },
+  });
+  const detail = createMemo(() => {
+    const view = engine.view();
+    return view.workspace.id ? view : null;
+  });
+  const tag = createMemo(() => (detail()?.tags ?? []).find((t) => t.id === props.params.tagId) ?? null);
+  const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
+
+  // Cards carrying the tag (RLS: visible boards only).
+  const [cards, setCards] = createSignal<TaggedCard[]>([]);
+  onSettled(() => {
+    getTaggedCards(props.params.tagId).then(setCards).catch(() => {});
+    return () => undefined;
+  });
+
+  // ── the mention feed: infinite scroll over the RPC's pages ───────────
+  const [mentions, setMentions] = createSignal<TagMentionRow[]>([]);
+  const [busy, setBusy] = createSignal(false);
+  const [done, setDone] = createSignal(false);
+  const [feedError, setFeedError] = createSignal<string | null>(null);
+  const loadMore = async () => {
+    if (busy() || done() || !tag()) return;
+    setBusy(true);
+    try {
+      const page = await getTagMentions(props.params.tagId, mentions().length, PAGE);
+      setMentions([...mentions(), ...page]);
+      if (page.length < PAGE) setDone(true);
+    } catch (err) {
+      setFeedError(errorMessage(err));
+      setDone(true);
+    }
+    setBusy(false);
+  };
+  // The tag row arrives async (the workspace snapshot); the feed starts
+  // the moment it resolves, then the sentinel pages in the rest.
+  createEffect(
+    () => tag()?.id,
+    (id) => {
+      if (id && mentions().length === 0) void loadMore();
+    },
+  );
+  let sentinel: HTMLDivElement | undefined;
+  let observer: IntersectionObserver | undefined;
+  onSettled(() => {
+    observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+    });
+    if (sentinel) observer.observe(sentinel);
+    return () => observer?.disconnect();
+  });
+
+  // ── rename (admins) ───────────────────────────────────────────────────
+  const [renaming, setRenaming] = createSignal(false);
+  const [renameDraft, setRenameDraft] = createSignal('');
+  const [renameError, setRenameError] = createSignal<string | null>(null);
+  const rename = async () => {
+    if (!renameDraft().trim()) return;
+    setRenameError(null);
+    try {
+      await renameTag(props.params.tagId, renameDraft());
+      setRenaming(false);
+      await engine.refresh();
+    } catch (err) {
+      setRenameError(errorMessage(err));
+    }
+  };
+
+  const mentionHref = (row: TagMentionRow) =>
+    row.kind === 'chat'
+      ? `/b/${row.board_id}?chat=${row.message_id ?? ''}`
+      : `/b/${row.board_id}?card=${row.card_id ?? ''}`;
+
+  return (
+    <main class="mx-auto max-w-3xl px-4 py-10">
+      <Title>{tag() ? `#${tag()?.name} - Flowdeck` : 'Tag - Flowdeck'}</Title>
+      <Show when={detail()} fallback={<p class="mt-8 text-sm text-neutral-400">Loading…</p>}>
+        {(data) => (
+          <>
+            <div class="flex items-center justify-between">
+              <div class="min-w-0">
+                <Show
+                  when={tag()}
+                  fallback={<h1 class="text-2xl font-semibold tracking-tight">Tag not found</h1>}
+                >
+                  {(t) => (
+                    <Show
+                      when={!renaming()}
+                      fallback={
+                        <form
+                          class="flex items-center gap-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void rename();
+                          }}
+                        >
+                          <input
+                            class="text-2xl font-semibold tracking-tight"
+                            value={renameDraft()}
+                            maxlength={24}
+                            autofocus
+                            onInput={(event) => setRenameDraft(event.currentTarget.value)}
+                          />
+                          <button
+                            type="submit"
+                            class="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            class="text-xs font-medium text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                            onClick={() => setRenaming(false)}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      }
+                    >
+                      <h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+                        <span class="rounded-md bg-sky-100 px-2 py-0.5 text-xl font-semibold text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">
+                          #{t().name}
+                        </span>
+                        <Show when={isAdmin()}>
+                          <button
+                            type="button"
+                            title="Rename tag"
+                            class="rounded-md px-1.5 py-0.5 text-sm text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                            onClick={() => {
+                              setRenameDraft(t().name);
+                              setRenaming(true);
+                            }}
+                          >
+                            ✎
+                          </button>
+                        </Show>
+                      </h1>
+                    </Show>
+                  )}
+                </Show>
+                <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                  {data().workspace.name}
+                  <Show when={tag()?.description}> · {tag()?.description}</Show>
+                </p>
+              </div>
+              <a
+                href={`/w/${props.params.workspaceId}/tags`}
+                class="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                All tags →
+              </a>
+            </div>
+            <Show when={renameError()}>
+              <p class="mt-1 text-xs text-rose-600 dark:text-rose-400">{renameError()}</p>
+            </Show>
+
+            {/* Cards carrying the tag. */}
+            <section class="mt-6">
+              <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                Cards ({cards().length})
+              </h2>
+              <Show
+                when={cards().length > 0}
+                fallback={<p class="mt-2 text-sm text-neutral-400">No cards carry this tag.</p>}
+              >
+                <ul class="mt-2 flex flex-wrap gap-1.5">
+                  <For each={cards()}>
+                    {(card) => (
+                      <li>
+                        <a
+                          href={`/b/${card.board_id}?card=${card.card_id}`}
+                          class="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-xs hover:border-indigo-300 hover:bg-indigo-50 dark:border-neutral-700 dark:hover:border-indigo-700 dark:hover:bg-indigo-950"
+                        >
+                          <span class="font-medium">{card.card_title}</span>
+                          <span class="text-neutral-400">#{card.card_number ?? '—'}</span>
+                          <span class="text-neutral-400">· {card.board_name}</span>
+                        </a>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </section>
+
+            {/* The mention feed: chat, comments, descriptions — newest first. */}
+            <section class="mt-8">
+              <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                Mentions
+              </h2>
+              <Show
+                when={mentions().length > 0 || done()}
+                fallback={<p class="mt-2 text-sm text-neutral-400">Loading…</p>}
+              >
+                <ul class="mt-2 flex flex-col gap-2">
+                  <For each={mentions()}>
+                    {(row) => (
+                      <li>
+                        <a
+                          href={mentionHref(row)}
+                          class="flex items-start gap-2.5 rounded-xl px-2 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                        >
+                          <Avatar src={row.avatar_url} name={row.author} size="sm" />
+                          <span class="min-w-0 flex-1">
+                            <span class="flex items-center gap-2 text-[11px] text-neutral-400">
+                              <span class="font-semibold text-neutral-500 dark:text-neutral-300">
+                                {row.author}
+                              </span>
+                              <span class="rounded bg-neutral-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                {row.kind === 'chat'
+                                  ? 'chat'
+                                  : row.kind === 'comment'
+                                    ? 'comment'
+                                    : 'description'}
+                              </span>
+                              <time>
+                                {new Date(row.created_at).toLocaleString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })}
+                              </time>
+                            </span>
+                            <span class="mt-0.5 block text-sm text-neutral-700 dark:text-neutral-300">
+                              {row.kind === 'chat' ? (
+                                <>in #{row.board_name}</>
+                              ) : (
+                                <>on #{row.card_title} · {row.board_name}</>
+                              )}
+                            </span>
+                            <span class="mt-0.5 block truncate text-xs text-neutral-400">
+                              {row.snippet}
+                            </span>
+                          </span>
+                        </a>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+                <Show when={feedError()}>
+                  <p class="mt-2 text-xs text-rose-600 dark:text-rose-400">{feedError()}</p>
+                </Show>
+                <Show
+                  when={!done() && !feedError()}
+                  fallback={
+                    <Show when={done() && mentions().length === 0}>
+                      <p class="mt-3 text-sm text-neutral-400">
+                        Nothing cites this tag yet — no chat messages, comments, or descriptions.
+                      </p>
+                    </Show>
+                  }
+                >
+                  <div ref={sentinel} class="py-3 text-center text-xs text-neutral-400">
+                    {busy() ? 'Loading…' : ''}
+                  </div>
+                </Show>
+              </Show>
+            </section>
+          </>
+        )}
+      </Show>
+    </main>
+  );
+}

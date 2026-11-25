@@ -1443,9 +1443,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
               if (target) navigate(`/b/${target.board_id}?card=${target.id}`);
             }}
             onOpenTag={(tagId) => {
-              const tag = detail().tags.find((t) => t.id === tagId);
               setHover(null);
-              navigate(tag ? `/search?tag=${encodeURIComponent(tag.name)}` : '/search');
+              navigate(`/w/${view().board.workspace_id ?? ''}/tags/${tagId}`);
             }}
           />
         )}
@@ -5323,6 +5322,12 @@ function BoardChat(props: {
     if (chip && props.workspaceId) {
       event.preventDefault();
       navigate(`/w/${props.workspaceId}/t/${chip.getAttribute('data-team-id') ?? ''}`);
+      return;
+    }
+    const tag = target?.closest?.('[data-tag-id]');
+    if (tag && props.workspaceId) {
+      event.preventDefault();
+      navigate(`/w/${props.workspaceId}/tags/${tag.getAttribute('data-tag-id') ?? ''}`);
       return;
     }
     const ref = target?.closest?.('[data-card-ref]');
