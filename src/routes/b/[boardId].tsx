@@ -2165,6 +2165,7 @@ function mentionNameOf(member: Member): string {
  * visible while typing, and the serialized markdown travels in
  * props.value/onInput exactly as before.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function SmartTextarea(props: {
   value: string;
   onInput: (value: string) => void;
@@ -2179,6 +2180,8 @@ function SmartTextarea(props: {
   /** The board these cards live on — chips read "Board › Card", matching
    *  the rendered markdown instead of a bare #N. */
   boardName?: string;
+  /** The board itself — the # menu offers a board-only reference. */
+  board?: { id: string; name: string };
   placeholder?: string;
   rows?: number;
   class?: string;
@@ -2231,6 +2234,11 @@ function SmartTextarea(props: {
         out.push(`[${el.textContent}](card:${cross})`);
         return;
       }
+      const board = el.getAttribute('data-board');
+      if (board) {
+        out.push(`[${(el.textContent ?? '').trim()}](board:${board})`);
+        return;
+      }
       for (const child of el.childNodes) walk(child);
     };
     for (const child of root.childNodes) walk(child);
@@ -2241,7 +2249,7 @@ function SmartTextarea(props: {
   const renderValue = (value: string) => {
     if (!root) return;
     root.textContent = '';
-    const pattern = /\[([^\]\n]+)\]\((user|team|tag|card|all):([0-9a-f-]{36}|everyone)\)/g;
+    const pattern = /\[([^\]\n]+)\]\((user|team|tag|card|board|all):([0-9a-f-]{36}|everyone)\)/g;
     let last = 0;
     let match: RegExpExecArray | null;
     const appendText = (text: string) => {
@@ -2264,6 +2272,7 @@ function SmartTextarea(props: {
             : 'fd-chip fd-chip-card';
       if (kind === 'user' || kind === 'team' || kind === 'all') chip.setAttribute('data-mention', `${kind}:${id}`);
       else if (kind === 'tag') chip.setAttribute('data-tag', id);
+      else if (kind === 'board') chip.setAttribute('data-board', id);
       else chip.setAttribute('data-cross', id);
       // Tag labels travel WITH their # (the serialized form is [#name]),
       // so only prefix when it's missing — otherwise a re-edit doubles
@@ -2379,6 +2388,27 @@ function SmartTextarea(props: {
         hint: 'tag — links to search',
         chip: makeChip('fd-chip fd-chip-tag', ['data-tag', tag.id], null, `#${tag.name}`),
       }));
+    // The board itself — a board-only reference: the chip names the
+    // board, the click routes to it. Offered when the query matches its
+    // name (or nothing is typed yet).
+    const board =
+      props.board &&
+      UUID_RE.test(props.board.id) &&
+      (!q || props.board.name.toLowerCase().includes(q))
+        ? [
+            {
+              key: `b:${props.board.id}`,
+              label: `${props.board.name} · board`,
+              hint: 'reference this board',
+              chip: makeChip(
+                'fd-chip fd-chip-card',
+                ['data-board', props.board.id],
+                null,
+                props.board.name,
+              ),
+            },
+          ]
+        : [];
     const cross = props.crossCards
       .filter(
         (card) =>
@@ -2397,7 +2427,7 @@ function SmartTextarea(props: {
           card.title ? `${card.board_name} › ${card.title}` : `${card.board_name} #${card.number}`,
         ),
       }));
-    return [...current, ...tags, ...cross];
+    return [...current, ...tags, ...board, ...cross];
   };
 
   /** The caret's text node + offset, when it sits in plain text. */
@@ -3617,6 +3647,12 @@ function CardDrawer(props: {
       }
       return;
     }
+    const boardChip = target?.closest?.('[data-board-id]');
+    if (boardChip) {
+      event.preventDefault();
+      props.onHover(null);
+      navigate(`/b/${boardChip.getAttribute('data-board-id') ?? ''}`);
+    }
   };
 
   /** Hovering a mention, citation, cross-board ref, tag, or TEAM chip
@@ -3960,6 +3996,7 @@ function CardDrawer(props: {
                   workspaceTags={props.workspaceTags}
                   crossCards={props.crossCards}
                   boardName={props.boardName}
+                  board={{ id: card()?.board_id ?? '', name: props.boardName }}
                   rows={8}
                   onSend={() => saveBody()}
                   placeholder={'Describe the task — **markdown**, image links, #12 references, @name mentions'}
@@ -4220,6 +4257,7 @@ function CardDrawer(props: {
                 workspaceTags={props.workspaceTags}
                 crossCards={props.crossCards}
                 boardName={props.boardName}
+                board={{ id: card()?.board_id ?? '', name: props.boardName }}
                 rows={2}
                 sendOnEnter
                 onSend={() => post()}
@@ -4613,6 +4651,12 @@ function BoardChat(props: {
     if (cross) {
       event.preventDefault();
       props.onOpenCrossCard(cross.getAttribute('data-card-id') ?? '');
+      return;
+    }
+    const board = target?.closest?.('[data-board-id]');
+    if (board) {
+      event.preventDefault();
+      navigate(`/b/${board.getAttribute('data-board-id') ?? ''}`);
     }
   };
 
@@ -4802,6 +4846,7 @@ function BoardChat(props: {
               workspaceTags={props.workspaceTags}
               crossCards={props.crossCards}
               boardName={props.boardName}
+              board={{ id: props.boardId, name: props.boardName }}
               rows={2}
               sendOnEnter
               onSend={() => post()}

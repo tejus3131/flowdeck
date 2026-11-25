@@ -89,6 +89,13 @@ const renderer = {
       const label = (tokens ?? []).map((t) => t.raw ?? t.text ?? '').join('') || 'member';
       return `<a href="#user-${userId}" data-user-id="${userId}">${label}</a>`;
     }
+    // Board-only references travel as board:<uuid> — the chip names the
+    // board itself; the click routes to it.
+    if (href.startsWith('board:')) {
+      const boardId = href.replace('board:', '');
+      const label = (tokens ?? []).map((t) => t.raw ?? t.text ?? '').join('') || 'board';
+      return `<a href="#board-${boardId}" data-board-id="${boardId}">${label}</a>`;
+    }
     // Cross-board card references travel as card:<uuid> — the label reads
     // "Board #12"; the click routes to that board.
     if (href.startsWith('card:')) {
@@ -164,6 +171,7 @@ export function renderMarkdown(source: string, context?: MarkdownContext): strin
       'data-tag-id',
       'data-team-id',
       'data-all',
+      'data-board-id',
     ],
     ADD_TAGS: ['iframe'],
   });
@@ -234,6 +242,14 @@ function styleReferences(
     const cross = crossCards?.get(cardId);
     // "Board › Card title" — same shape as # citations.
     chip.textContent = cross ? (cross.title ? `${cross.board} › ${cross.title}` : cross.board) : (anchor.textContent ?? 'card');
+    anchor.replaceWith(chip);
+  }
+  // Board chips: the board's name as written (the click routes to it).
+  for (const anchor of Array.from(doc.querySelectorAll('a[data-board-id]'))) {
+    const chip = doc.createElement('span');
+    chip.className = 'fd-board-ref';
+    chip.setAttribute('data-board-id', anchor.getAttribute('data-board-id') ?? '');
+    chip.textContent = anchor.textContent ?? 'board';
     anchor.replaceWith(chip);
   }
   for (const anchor of [...doc.querySelectorAll('a[data-tag-id]')]) {
