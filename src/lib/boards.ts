@@ -1024,6 +1024,20 @@ export async function updateCard(
         // text must survive even after the card changes again.
         detail: { from: card.description ?? '', to: update.description },
       });
+      // Mention backlinks: cards cited in the new description get a
+      // 'mentioned' row in their own trail (best-effort, idempotent on
+      // the host card pair).
+      try {
+        await supabase.rpc('log_card_mentions', {
+          p_body: update.description,
+          p_where: 'description',
+          p_board_id: card.board_id,
+          p_card_id: resolved,
+          p_source_id: resolved,
+        });
+      } catch (backlinkError) {
+        console.error('description mention backlinks failed:', backlinkError);
+      }
     }
   }
   // Assignments: replace the set (the assignees live in a join table).

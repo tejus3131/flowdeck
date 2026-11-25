@@ -3545,6 +3545,20 @@ function CardDrawer(props: {
             </>
           );
         }
+        if (String(detail.where ?? '') === 'description') {
+          return (
+            <>
+              mentioned this in{' '}
+              <a
+                class="fd-backlink"
+                href={`/b/${String(detail.board_id ?? '')}?card=${String(detail.card_id ?? '')}`}
+                title={snippet}
+              >
+                #{String(detail.card_title ?? 'a card')}'s description
+              </a>
+            </>
+          );
+        }
         return (
           <>
             mentioned this in a comment on{' '}
