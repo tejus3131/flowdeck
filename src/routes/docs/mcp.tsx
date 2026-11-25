@@ -30,7 +30,7 @@ const TOOLS: { name: string; args: string; returns: string; note?: string }[] = 
 
   { name: 'merge_tags', args: 'source_tag_id, target_tag_id', returns: '—', note: 'moves every link to the target and removes the source (the one deliberate removal); owners/admins only. Tags are otherwise never deleted — rename instead' },
   { name: 'move_card', args: 'card_id, list_id, position?', returns: '—', note: 'position omitted = append at the end (atomic, concurrency-safe); explicit position is absolute (whole numbers)' },
-  { name: 'delete_card', args: 'card_id', returns: '—' },
+  { name: 'delete_card', args: 'card_id', returns: '—', note: 'refuses — cards are never deleted (the time capsule); resolve_card instead' },
   { name: 'add_comment', args: 'card_id, body', returns: 'comment_id' },
   { name: 'edit_comment', args: 'comment_id, body', returns: '—', note: 'own comments only' },
   { name: 'delete_comment', args: 'comment_id', returns: '—', note: 'soft delete + tombstone; own, ws owners/admins, team admins on their team\'s boards' },

@@ -17,6 +17,16 @@
 -- client_op is a per-message identity by construction (the sync engine
 -- treats it as unique); the index makes the database agree. Partial:
 -- agent rows and legacy rows may leave it null.
+-- Deploy safety FIRST: a retry race in the wild could have double-posted
+-- two rows carrying the same client_op — exactly the class of bug this
+-- index exists to stop. Keep the earliest of each set so the index can
+-- never fail on real data.
+delete from public.board_messages m
+using public.board_messages keep
+where m.client_op is not null
+  and m.client_op = keep.client_op
+  and (m.created_at, m.id) > (keep.created_at, keep.id);
+
 create unique index if not exists board_messages_client_op_key
   on public.board_messages (client_op)
   where client_op is not null;
@@ -30,7 +40,7 @@ alter table public.notifications
       'access_request', 'access_provided', 'access_denied', 'access_granted',
       'access_revoked', 'role_changed',
       'chat', 'team_added', 'team_removed',
-      'workspace_purged'
+      'workspace_purged', 'invite'
     )
   );
 
