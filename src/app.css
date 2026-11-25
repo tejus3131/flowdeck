@@ -152,8 +152,51 @@ textarea {
 .fd-timeline .fd-prio-ref {
   @apply inline cursor-pointer rounded-md bg-neutral-100 px-1 py-0.5 font-semibold uppercase tracking-wide text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700;
 }
-
-/* ── The smart composer's chips (SmartTextarea backdrop tokens) ──────────
+/* A mention backlink ("mentioned this in the #Board chat") — the trail's
+   click-through to the citing message or comment. The message's text
+   rides along as the hover tooltip. */
+.fd-timeline .fd-backlink {
+  @apply inline cursor-pointer rounded-md bg-indigo-100 px-1 py-0.5 font-semibold text-indigo-700 no-underline hover:bg-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:hover:bg-indigo-500/30;
+}
+/* The deep-linked chat message (?chat=<message-id>) flashes briefly so
+   the click-through lands on something visible. */
+.fd-chat-anchor {
+  @apply rounded-lg bg-indigo-50 ring-1 ring-indigo-300 transition-colors duration-500 dark:bg-indigo-500/10 dark:ring-indigo-500/40;
+}
+/* ── The trail's collapsed description diff (GitHub-style from/to) ────── */
+.fd-diff-toggle {
+  @apply cursor-pointer rounded-md bg-neutral-100 px-1 py-0.5 font-semibold text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700;
+}
+.fd-diff-row {
+  @apply flex gap-2 whitespace-pre-wrap break-words px-2 py-0.5 font-mono;
+}
+.fd-diff-same {
+  @apply text-neutral-500 dark:text-neutral-400;
+}
+.fd-diff-del {
+  @apply bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-200;
+}
+.fd-diff-del .fd-diff-sign {
+  @apply text-rose-500;
+}
+.fd-diff-add {
+  @apply bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200;
+}
+.fd-diff-add .fd-diff-sign {
+  @apply text-emerald-500;
+}
+.fd-diff-empty {
+  @apply italic opacity-60;
+}
+.fd-diff-fold {
+  @apply px-2 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 bg-neutral-50 dark:bg-neutral-800/50;
+}
+.fd-diff-sign {
+  @apply select-none;
+}
+.fd-diff-text {
+  @apply min-w-0 flex-1;
+}/* ── The smart composer's chips (SmartTextarea backdrop tokens) ──────────
    The textarea's own text is transparent; this layer renders mentions
    and citations as colored tokens so the box reads like Slack. */
 .fd-tok-user {

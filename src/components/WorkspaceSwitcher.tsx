@@ -142,6 +142,14 @@ export function WorkspaceSwitcher() {
                   >
                     View members
                   </a>
+                  <a
+                    role="menuitem"
+                    href={`/w/${current()?.id}/tags`}
+                    class="mt-1 block rounded-xl px-2 py-2 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    onClick={() => setOpen(false)}
+                  >
+                    Tags
+                  </a>
                 </Show>
               }
             >
@@ -153,6 +161,14 @@ export function WorkspaceSwitcher() {
                 onClick={() => setOpen(false)}
               >
                 Members &amp; invites
+              </a>
+              <a
+                role="menuitem"
+                href={`/w/${current()?.id}/tags`}
+                class="block rounded-xl px-2 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+                onClick={() => setOpen(false)}
+              >
+                Tags
               </a>
             </Show>
             <div class="my-1 h-px bg-neutral-200 dark:bg-neutral-800" />
