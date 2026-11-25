@@ -1038,6 +1038,19 @@ export async function updateCard(
       } catch (backlinkError) {
         console.error('description mention backlinks failed:', backlinkError);
       }
+      // Board backlinks: boards cited in the description get a message
+      // in their own chat (same best-effort contract).
+      try {
+        await supabase.rpc('log_board_mentions', {
+          p_body: update.description,
+          p_where: 'description',
+          p_board_id: card.board_id,
+          p_card_id: resolved,
+          p_source_id: resolved,
+        });
+      } catch (boardBacklinkError) {
+        console.error('description board backlinks failed:', boardBacklinkError);
+      }
     }
   }
   // Assignments: replace the set (the assignees live in a join table).
@@ -1682,6 +1695,19 @@ export async function addComment(
   } catch (backlinkError) {
     console.error('comment mention backlinks failed:', backlinkError);
   }
+  // Board backlinks: boards cited in the comment get a message in their
+  // own chat (best-effort — never blocks the comment).
+  try {
+    await supabase.rpc('log_board_mentions', {
+      p_body: text,
+      p_where: 'comment',
+      p_board_id: card.board_id,
+      p_card_id: resolved,
+      p_source_id: comment.id,
+    });
+  } catch (boardBacklinkError) {
+    console.error('comment board backlinks failed:', boardBacklinkError);
+  }
   return {
     id: comment.id,
     createdAt: comment.created_at,
@@ -1942,6 +1968,18 @@ export async function postBoardMessage(
     });
   } catch (backlinkError) {
     console.error('chat mention backlinks failed:', backlinkError);
+  }
+  // Board backlinks: boards cited in the message get a message in their
+  // own chat (best-effort — never blocks the message).
+  try {
+    await supabase.rpc('log_board_mentions', {
+      p_body: text,
+      p_where: 'chat',
+      p_board_id: id,
+      p_source_id: message.id,
+    });
+  } catch (boardBacklinkError) {
+    console.error('chat board backlinks failed:', boardBacklinkError);
   }
   return {
     id: message.id,

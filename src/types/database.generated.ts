@@ -1269,6 +1269,16 @@ export type Database = {
       }
       delete_board_message: { Args: { p_id: string }; Returns: Json }
       delete_comment: { Args: { p_id: string }; Returns: Json }
+      log_board_mentions: {
+        Args: {
+          p_body: string
+          p_where: string
+          p_board_id: string
+          p_card_id?: string
+          p_source_id?: string
+        }
+        Returns: number
+      }
       log_card_mentions: {
         Args: {
           p_body: string
