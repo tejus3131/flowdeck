@@ -1732,7 +1732,7 @@ export async function editComment(commentId: string, body: string): Promise<void
   // change anything.
   const { data: current } = await supabase
     .from('card_comments')
-    .select('body')
+    .select('body, card_id, cards(board_id)')
     .eq('id', id)
     .is('deleted_at', null)
     .maybeSingle();
@@ -1746,6 +1746,30 @@ export async function editComment(commentId: string, body: string): Promise<void
     .select('id');
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) throw new Error('Comment not found or no access');
+  // The EDIT writes backlinks too — idempotent on the comment anchor.
+  const hostBoardId = (current.cards as { board_id: string } | null)?.board_id;
+  if (hostBoardId) {
+    const { error: cardBacklinkError } = await supabase.rpc('log_card_mentions', {
+      p_body: text,
+      p_where: 'comment',
+      p_board_id: hostBoardId,
+      p_card_id: current.card_id,
+      p_source_id: id,
+    });
+    if (cardBacklinkError) {
+      console.error('edit comment backlinks failed:', cardBacklinkError.message);
+    }
+    const { error: boardBacklinkError } = await supabase.rpc('log_board_mentions', {
+      p_body: text,
+      p_where: 'comment',
+      p_board_id: hostBoardId,
+      p_card_id: current.card_id,
+      p_source_id: id,
+    });
+    if (boardBacklinkError) {
+      console.error('edit comment board backlinks failed:', boardBacklinkError.message);
+    }
+  }
 }
 
 /**
@@ -2004,7 +2028,7 @@ export async function editBoardMessage(messageId: string, body: string): Promise
   // change anything.
   const { data: current } = await supabase
     .from('board_messages')
-    .select('body')
+    .select('body, board_id')
     .eq('id', id)
     .is('deleted_at', null)
     .maybeSingle();
@@ -2018,6 +2042,27 @@ export async function editBoardMessage(messageId: string, body: string): Promise
     .select('id');
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) throw new Error('Message not found or no access');
+  // The EDIT writes backlinks too: a citation added by editing is a
+  // live chip — its trail row and board message must exist behind it.
+  // Both are idempotent on the message anchor.
+  const { error: cardBacklinkError } = await supabase.rpc('log_card_mentions', {
+    p_body: text,
+    p_where: 'chat',
+    p_board_id: current.board_id,
+    p_source_id: id,
+  });
+  if (cardBacklinkError) {
+    console.error('edit mention backlinks failed:', cardBacklinkError.message);
+  }
+  const { error: boardBacklinkError } = await supabase.rpc('log_board_mentions', {
+    p_body: text,
+    p_where: 'chat',
+    p_board_id: current.board_id,
+    p_source_id: id,
+  });
+  if (boardBacklinkError) {
+    console.error('edit board backlinks failed:', boardBacklinkError.message);
+  }
 }
 
 /**
