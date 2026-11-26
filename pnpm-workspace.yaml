@@ -4,6 +4,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  simple-git-hooks: true
   workerd: true
 
 # pnpm settings for this project (honored even for a single-package project —

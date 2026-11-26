@@ -113,10 +113,18 @@ function idbBackend(): Promise<Backend> {
         );
       },
       put(key, entry) {
-        return withStore<void>('readwrite', (store) => store.put(entry, key), () => {});
+        return withStore<void>(
+          'readwrite',
+          (store) => store.put(entry, key),
+          () => {},
+        );
       },
       delete(key) {
-        return withStore<void>('readwrite', (store) => store.delete(key), () => {});
+        return withStore<void>(
+          'readwrite',
+          (store) => store.delete(key),
+          () => {},
+        );
       },
       all() {
         // The LRU sweep's walk: every key with its write time. Capped at
@@ -137,7 +145,11 @@ function idbBackend(): Promise<Backend> {
         });
       },
       clear() {
-        return withStore<void>('readwrite', (store) => store.clear(), () => {});
+        return withStore<void>(
+          'readwrite',
+          (store) => store.clear(),
+          () => {},
+        );
       },
     };
   });

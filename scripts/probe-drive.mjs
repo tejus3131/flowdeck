@@ -36,7 +36,9 @@ const shot = async (name) => {
 const wsId = () => process.env.PROBE_WS_ID ?? '';
 
 // 1. Sign in through the magic-link route.
-await page.goto(`${BASE}/auth/confirm?token_hash=${tokenHash}&type=${linkType}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`${BASE}/auth/confirm?token_hash=${tokenHash}&type=${linkType}`, {
+  waitUntil: 'domcontentloaded',
+});
 await page.waitForTimeout(1500);
 console.log('after-confirm url:', page.url());
 
@@ -75,7 +77,9 @@ if (scenario === 'invite-flow') {
     await sendBtn.click();
     await page.waitForTimeout(2500);
     const bodyText = (await page.locator('body').innerText()).slice(0, 3000);
-    const lines = bodyText.split('\n').filter((l) => /already in this workspace|Only addresses|error|Error|✓|could not/i.test(l));
+    const lines = bodyText
+      .split('\n')
+      .filter((l) => /already in this workspace|Only addresses|error|Error|✓|could not/i.test(l));
     console.log(`invite ${email} →`, lines.length ? lines.join(' | ') : '(no visible feedback)');
     await shot('invite-result');
   };

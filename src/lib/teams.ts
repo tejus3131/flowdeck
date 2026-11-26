@@ -70,7 +70,9 @@ export async function createTeam(input: {
   const supabase = createSupabaseRequestClient();
   if (!UUID.test(input.workspaceId)) throw new Error('Invalid workspace');
   await requireWsRole(supabase, input.workspaceId, ['owner', 'admin']);
-  const name = String(input.name ?? '').trim().slice(0, 60);
+  const name = String(input.name ?? '')
+    .trim()
+    .slice(0, 60);
   if (!name) throw new Error('Team name cannot be empty');
   const { data, error } = await supabase
     .from('teams')
@@ -111,7 +113,9 @@ export async function updateTeam(input: {
   await requireUser(supabase);
   const patch: { name?: string; description?: string } = {};
   if (input.name !== undefined) {
-    const name = String(input.name ?? '').trim().slice(0, 60);
+    const name = String(input.name ?? '')
+      .trim()
+      .slice(0, 60);
     if (!name) throw new Error('Team name cannot be empty');
     patch.name = name;
   }

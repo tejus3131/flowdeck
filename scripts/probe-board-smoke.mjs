@@ -9,20 +9,32 @@ const browser = await chromium.launch({
 });
 const page = await (await browser.newContext()).newPage();
 const errors = [];
-page.on('console', (m) => { const t = m.text(); if (m.type() === 'error' || t.includes('timeline-debug')) errors.push('[console] ' + t.slice(0, 250)); });
+page.on('console', (m) => {
+  const t = m.text();
+  if (m.type() === 'error' || t.includes('timeline-debug'))
+    errors.push('[console] ' + t.slice(0, 250));
+});
 page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
 page.on('response', (res) => {
-  if (res.status() >= 400) errors.push(`[${res.status()}] ${res.request().method()} ${res.url().replace(BASE, '').slice(0, 80)}`);
+  if (res.status() >= 400)
+    errors.push(
+      `[${res.status()}] ${res.request().method()} ${res.url().replace(BASE, '').slice(0, 80)}`,
+    );
 });
 
-await page.goto(`${BASE}/auth/confirm?token_hash=${process.argv[2]}&type=${process.argv[3]}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`${BASE}/auth/confirm?token_hash=${process.argv[2]}&type=${process.argv[3]}`, {
+  waitUntil: 'domcontentloaded',
+});
 await page.waitForTimeout(1500);
 
 const boardId = process.env.PROBE_BOARD_ID;
 await page.goto(`${BASE}/b/${boardId}`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(3000);
 let text = await page.locator('body').innerText();
-console.log('board renders:', /To do|In progress|Done/.test(text) ? 'YES' : 'NO —\n' + text.slice(0, 300));
+console.log(
+  'board renders:',
+  /To do|In progress|Done/.test(text) ? 'YES' : 'NO —\n' + text.slice(0, 300),
+);
 
 // Dismiss the one-time push prompt when it shows (fresh browser context).
 const notNow = page.getByRole('button', { name: /not now/i }).first();
@@ -72,7 +84,9 @@ if (await card.count()) {
 {
   await page.close();
   const page2 = await browser.newPage();
-  await page2.goto(`${BASE}/b/${boardId}?chat=1`, { waitUntil: 'domcontentloaded' }).catch(() => {});
+  await page2
+    .goto(`${BASE}/b/${boardId}?chat=1`, { waitUntil: 'domcontentloaded' })
+    .catch(() => {});
   await page2.waitForTimeout(3000);
   const composer = page2.locator('[contenteditable]').last();
   if (await composer.count()) {

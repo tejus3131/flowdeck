@@ -75,7 +75,11 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     label: 'Boards',
     description: 'The boards of this workspace.',
     actions: [
-      R('Read boards', ['list_boards', 'get_board', 'get_board_full'], 'See boards and their lists'),
+      R(
+        'Read boards',
+        ['list_boards', 'get_board', 'get_board_full'],
+        'See boards and their lists',
+      ),
       write('create', 'Create boards', ['create_board'], {
         gate: 'board_create',
         requires: 'boards.read',
@@ -96,7 +100,13 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     label: 'Cards',
     description: 'Cards on this workspace\u2019s boards.',
     actions: [
-      { id: 'read', label: 'Read cards', ops: ['get_cards', 'get_card_events'], hint: 'See cards and their activity', requires: 'boards.read' },
+      {
+        id: 'read',
+        label: 'Read cards',
+        ops: ['get_cards', 'get_card_events'],
+        hint: 'See cards and their activity',
+        requires: 'boards.read',
+      },
       write('create', 'Create cards', ['create_card'], {
         implies: 'read',
         requires: 'boards.read',
@@ -120,7 +130,9 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     description: 'The lists on this workspace\u2019s boards.',
     actions: [
       write('create', 'Create lists', ['create_list'], { requires: 'boards.read' }),
-      write('edit', 'Rename & edit lists', ['rename_list', 'update_list'], { requires: 'boards.read' }),
+      write('edit', 'Rename & edit lists', ['rename_list', 'update_list'], {
+        requires: 'boards.read',
+      }),
       write('delete', 'Delete lists', ['delete_list'], { requires: 'boards.read', role: 'admin' }),
     ],
   },
@@ -129,7 +141,13 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     label: 'Chat & comments',
     description: 'Board chat messages and card comments.',
     actions: [
-      { id: 'read', label: 'Read chat', ops: ['list_comments', 'list_board_messages'], hint: 'See messages and comments', requires: 'boards.read' },
+      {
+        id: 'read',
+        label: 'Read chat',
+        ops: ['list_comments', 'list_board_messages'],
+        hint: 'See messages and comments',
+        requires: 'boards.read',
+      },
       write('post', 'Post messages & comments', ['post_board_message', 'add_comment'], {
         implies: 'read',
         requires: 'boards.read',
@@ -148,7 +166,15 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     id: 'search',
     label: 'Search',
     description: 'Search across this workspace\u2019s boards.',
-    actions: [{ id: 'read', label: 'Search this workspace', ops: ['search'], hint: 'Find cards, comments, messages', requires: 'boards.read' }],
+    actions: [
+      {
+        id: 'read',
+        label: 'Search this workspace',
+        ops: ['search'],
+        hint: 'Find cards, comments, messages',
+        requires: 'boards.read',
+      },
+    ],
   },
   {
     id: 'tags',
@@ -172,12 +198,12 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     description: 'Teams and their members.',
     actions: [
       read('read', 'Read teams', ['list_teams'], 'See teams and their members'),
-      write('manage', 'Create & manage teams', [
-        'create_team',
-        'update_team',
-        'add_team_member',
-        'remove_team_member',
-      ], { implies: 'read', role: 'admin' }),
+      write(
+        'manage',
+        'Create & manage teams',
+        ['create_team', 'update_team', 'add_team_member', 'remove_team_member'],
+        { implies: 'read', role: 'admin' },
+      ),
     ],
   },
   {
@@ -185,7 +211,12 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     label: 'People & invites',
     description: 'The workspace roster and invites.',
     actions: [
-      read('read', 'Read members', ['list_workspace_members', 'get_user'], 'See who is in the workspace'),
+      read(
+        'read',
+        'Read members',
+        ['list_workspace_members', 'get_user'],
+        'See who is in the workspace',
+      ),
       write('invite', 'Invite & manage people', ['invite_member', 'list_pending_invites'], {
         implies: 'read',
         role: 'admin',
@@ -197,7 +228,13 @@ export const WORKSPACE_ENTITIES: PermissionEntity[] = [
     label: 'Board access & mentions',
     description: 'Granting board access so mentions reach people.',
     actions: [
-      { id: 'check', label: 'Check mention reach', ops: ['check_mention_access'], hint: 'See who a mention reaches', requires: 'boards.read' },
+      {
+        id: 'check',
+        label: 'Check mention reach',
+        ops: ['check_mention_access'],
+        hint: 'See who a mention reaches',
+        requires: 'boards.read',
+      },
       write('request', 'Ask admins for access', ['request_board_access'], {
         implies: 'check',
         requires: 'boards.read',
@@ -233,11 +270,12 @@ export const ACCOUNT_ENTITIES: PermissionEntity[] = [
     description: 'The notification inbox.',
     actions: [
       read('read', 'Read notifications', ['list_notifications'], 'See your notifications'),
-      write('mark', 'Mark as read', [
-        'mark_notification_read',
-        'mark_notification_unread',
-        'mark_all_notifications_read',
-      ], { implies: 'read' }),
+      write(
+        'mark',
+        'Mark as read',
+        ['mark_notification_read', 'mark_notification_unread', 'mark_all_notifications_read'],
+        { implies: 'read' },
+      ),
     ],
   },
   {
@@ -319,7 +357,10 @@ export function actionOffered(action: PermissionAction, cap: WorkspaceCap | null
 }
 
 /** The actions of an entity a user can be offered, in display order. */
-export function offeredActions(entity: PermissionEntity, cap: WorkspaceCap | null): PermissionAction[] {
+export function offeredActions(
+  entity: PermissionEntity,
+  cap: WorkspaceCap | null,
+): PermissionAction[] {
   return entity.actions.filter((action) => actionOffered(action, cap));
 }
 
@@ -379,12 +420,7 @@ export function toggleActionInSelection(
   const action = entity?.actions.find((a) => a.id === actionId);
   if (!entity || !action) return selection;
 
-  const setAction = (
-    sel: WorkspaceSelection,
-    entityId: string,
-    actionId: string,
-    on: boolean,
-  ) => {
+  const setAction = (sel: WorkspaceSelection, entityId: string, actionId: string, on: boolean) => {
     const ids = new Set(sel[entityId] ?? []);
     if (on) ids.add(actionId);
     else ids.delete(actionId);
@@ -394,9 +430,7 @@ export function toggleActionInSelection(
 
   const next: PermissionSelection = { ...selection };
   const sel: WorkspaceSelection =
-    bucket === 'workspaces'
-      ? { ...next.workspaces[bucketId ?? ''] }
-      : { ...next.account };
+    bucket === 'workspaces' ? { ...next.workspaces[bucketId ?? ''] } : { ...next.account };
   const sameBucketSel = sel;
 
   if (on) {
@@ -455,17 +489,18 @@ export function toggleEntityInSelection(
   const entities = bucket === 'workspaces' ? WORKSPACE_ENTITIES : ACCOUNT_ENTITIES;
   const entity = entities.find((e) => e.id === entityId);
   if (!entity) return selection;
-  const current = bucket === 'workspaces'
-    ? selection.workspaces[bucketId ?? '']?.[entityId] ?? []
-    : selection.account[entityId] ?? [];
+  const current =
+    bucket === 'workspaces'
+      ? (selection.workspaces[bucketId ?? '']?.[entityId] ?? [])
+      : (selection.account[entityId] ?? []);
   const offered = offeredActions(entity, cap).map((a) => a.id);
   const reads = offered.filter((id) => id === 'read' || id === 'check');
   const target =
     current.length === 0
       ? // empty: reads first when the entity has them (lists has none → all)
         reads.length > 0
-          ? reads
-          : offered
+        ? reads
+        : offered
       : offered.every((id) => current.includes(id))
         ? []
         : offered;
@@ -524,7 +559,9 @@ export function toggleWorkspaceInSelection(
     const sel: WorkspaceSelection = {};
     next.workspaces[wsId] = sel;
     for (const entity of WORKSPACE_ENTITIES) {
-      const reads = entity.actions.filter((a) => (a.id === 'read' || a.id === 'check') && actionOffered(a, cap));
+      const reads = entity.actions.filter(
+        (a) => (a.id === 'read' || a.id === 'check') && actionOffered(a, cap),
+      );
       for (const r of reads) {
         next = toggleActionInSelection(next, 'workspaces', wsId, entity.id, r.id, true);
       }
@@ -545,15 +582,11 @@ export function toggleWorkspaceInSelection(
   return next;
 }
 
-
 /** Enforce cross-entity requirements across a whole bucket: any selected
  *  action pulls its `requires` chain in (same bucket). Iterates to a
  *  fixed point; unknown requirements are ignored (they'd be dropped by
  *  the entity loop anyway). */
-function enforceRequirements(
-  bucketSel: WorkspaceSelection,
-  entities: PermissionEntity[],
-): void {
+function enforceRequirements(bucketSel: WorkspaceSelection, entities: PermissionEntity[]): void {
   let grew = true;
   while (grew) {
     grew = false;
@@ -576,7 +609,11 @@ function enforceRequirements(
 
 /** Normalize one entity's action list: unknown ids dropped, writes imply
  *  reads (missing implies pulled in). */
-function normalizeEntity(entity: PermissionEntity, actionIds: string[], cap: WorkspaceCap | null): string[] {
+function normalizeEntity(
+  entity: PermissionEntity,
+  actionIds: string[],
+  cap: WorkspaceCap | null,
+): string[] {
   const offered = offeredActions(entity, cap);
   const known = new Set(actionIds.filter((id) => offered.some((a) => a.id === id)));
   let grew = true;
@@ -620,11 +657,12 @@ export function normalizeSelection(selection: PermissionSelection): PermissionSe
 /** The default per-workspace selection: every entity's read actions. */
 export const defaultWorkspaceSelection = (): WorkspaceSelection =>
   Object.fromEntries(
-    WORKSPACE_ENTITIES.filter((entity) => entity.actions.some((a) => a.id === 'read' || a.id === 'check'))
-      .map((entity) => [
-        entity.id,
-        entity.actions.filter((a) => a.id === 'read' || a.id === 'check').map((a) => a.id),
-      ]),
+    WORKSPACE_ENTITIES.filter((entity) =>
+      entity.actions.some((a) => a.id === 'read' || a.id === 'check'),
+    ).map((entity) => [
+      entity.id,
+      entity.actions.filter((a) => a.id === 'read' || a.id === 'check').map((a) => a.id),
+    ]),
   );
 
 /** Selection → flat op list for ONE workspace (baseline included). */
@@ -673,7 +711,9 @@ export function capWorkspaceOps(ops: string[], cap: WorkspaceCap): string[] {
  * Selection → the workspace_ops jsonb stored on the token:
  * { "<ws_id>": [ops], "*": [account ops] } — null when nothing is granted.
  */
-export function selectionToWorkspaceOps(selection: PermissionSelection): Record<string, string[]> | null {
+export function selectionToWorkspaceOps(
+  selection: PermissionSelection,
+): Record<string, string[]> | null {
   const normalized = normalizeSelection(selection);
   const map: Record<string, string[]> = {};
   for (const [wsId, entities] of Object.entries(normalized.workspaces)) {

@@ -199,7 +199,8 @@ export default function ProfilePage() {
   };
 
   // ── passkey ────────────────────────────────────────────────────────────
-  const [passkeyBusy, setPasskeyBusy] = createSignal(false);  const [passkeyError, setPasskeyError] = createSignal<string | null>(null);
+  const [passkeyBusy, setPasskeyBusy] = createSignal(false);
+  const [passkeyError, setPasskeyError] = createSignal<string | null>(null);
 
   // ── API tokens (MCP) ──────────────────────────────────────────────────────
   const tokens = createMemo(() => getMyTokens());
@@ -259,7 +260,12 @@ export default function ProfilePage() {
             <Section title="Picture &amp; name">
               <div class="flex flex-col gap-5 sm:flex-row sm:items-center">
                 <div class="relative shrink-0">
-                  <Avatar src={profile().avatar_url} name={profile().display_name} email={profile().email} size="lg" />
+                  <Avatar
+                    src={profile().avatar_url}
+                    name={profile().display_name}
+                    email={profile().email}
+                    size="lg"
+                  />
                   <Show when={avatarBusy()}>
                     <span class="absolute inset-0 flex items-center justify-center rounded-full bg-neutral-950/40 text-xs font-medium text-white">
                       …
@@ -294,7 +300,9 @@ export default function ProfilePage() {
                     class="hidden"
                     onChange={(event) => void onFile(event)}
                   />
-                  <p class="text-xs text-neutral-400">PNG, JPG or WebP — cropped to a square automatically.</p>
+                  <p class="text-xs text-neutral-400">
+                    PNG, JPG or WebP — cropped to a square automatically.
+                  </p>
                   <Show when={avatarError()}>
                     <p role="alert" class="text-sm text-red-600 dark:text-red-400">
                       {avatarError()}
@@ -348,9 +356,9 @@ export default function ProfilePage() {
 
             <Section title="MCP connections">
               <p class="-mt-1 mb-3 text-sm text-neutral-500 dark:text-neutral-400">
-                AI agents connected through the sign-in flow. Connections act as your account —
-                only with the permissions you granted. Tap one to change its name or access, or to
-                revoke it.
+                AI agents connected through the sign-in flow. Connections act as your account — only
+                with the permissions you granted. Tap one to change its name or access, or to revoke
+                it.
               </p>
               <Show
                 when={tokens().length > 0}
@@ -413,8 +421,8 @@ export default function ProfilePage() {
                 }
               >
                 <p class="text-sm text-emerald-600 dark:text-emerald-400">
-                  ✓ A passkey is set up — you can sign in with it on this device and any you add
-                  it to.
+                  ✓ A passkey is set up — you can sign in with it on this device and any you add it
+                  to.
                 </p>
               </Show>
             </Section>
@@ -456,8 +464,8 @@ export default function ProfilePage() {
                   <p class="text-sm font-medium">Delete your account</p>
                   <p class="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">
                     Removes the account, your profile, boards you own and any workspace you're the
-                    only member of. Workspaces you own with other people must be transferred
-                    first. This cannot be undone.
+                    only member of. Workspaces you own with other people must be transferred first.
+                    This cannot be undone.
                   </p>
                 </div>
                 <Show

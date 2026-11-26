@@ -140,7 +140,10 @@ describe('applyFold', () => {
     );
     fold(
       draft,
-      [{ kind: 'card-touch', id: 'c1' }, { kind: 'card-touch', id: 'c3' }],
+      [
+        { kind: 'card-touch', id: 'c1' },
+        { kind: 'card-touch', id: 'c3' },
+      ],
       [card('c1', 'l2', 2, 'moved'), card('c3', 'l1', 0, 'new')],
     );
     // List order first (l1 before l2), position within the list: c3 (l1),

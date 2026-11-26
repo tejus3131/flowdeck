@@ -5,13 +5,13 @@ are locked in [ADR-11..14](./adr.md); this is the operating manual.
 
 ## Environments
 
-| | Local | Preview | Prod |
-| --- | --- | --- | --- |
-| Supabase | CLI stack (`supabase start`, :54321) | free project #2 | free project #1 |
-| Worker | `pnpm dev:node` (:3000) | `flowdeck-preview` + Access domain | `flowdeck` |
-| MCP | `supabase functions serve mcp` | deployed to preview project | deployed to prod |
-| Data | disposable (`db reset`) | CI-owned test data | real |
-| Auth gate | none | Cloudflare Access (email allowlist) | public |
+|           | Local                                | Preview                             | Prod             |
+| --------- | ------------------------------------ | ----------------------------------- | ---------------- |
+| Supabase  | CLI stack (`supabase start`, :54321) | free project #2                     | free project #1  |
+| Worker    | `pnpm dev:node` (:3000)              | `flowdeck-preview` + Access domain  | `flowdeck`       |
+| MCP       | `supabase functions serve mcp`       | deployed to preview project         | deployed to prod |
+| Data      | disposable (`db reset`)              | CI-owned test data                  | real             |
+| Auth gate | none                                 | Cloudflare Access (email allowlist) | public           |
 
 ## Branch flow
 
@@ -41,12 +41,14 @@ flowchart LR
 Path-classified (the Docker stack is ~60% of a run and only matters when
 server/DB code moved):
 
-| Job | Runs when | What |
-| --- | --- | --- |
-| `classify` | always | paths-filter → ui / server / functions outputs |
-| `lint` | always | oxlint + tsc (drafts included) |
-| `client` | UI paths, non-draft | build (repo-level public `PREVIEW_*` vars — PR runs have no environment context) + jsdom tests |
-| `server` | server/DB paths, non-draft | local `supabase start && db reset` + node tests (db-guards self-seeds) |
+| Job         | Runs when                          | What                                                                                                                                                              |
+| ----------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `classify`  | always                             | paths-filter → ui / server / functions outputs                                                                                                                    |
+| `lint`      | always                             | oxlint + tsc (drafts included)                                                                                                                                    |
+| `format`    | always                             | prettier --check (drafts included) — the commit hooks' backstop: a `--no-verify` commit still cannot merge                                                        |
+| `knip`      | always                             | knip (drafts included) — unused files/dependencies fail the PR; export-level findings are scoped out for now (cleanup follow-up)                                  |
+| `client`    | UI paths, non-draft                | build (repo-level public `PREVIEW_*` vars — PR runs have no environment context) + jsdom tests                                                                    |
+| `server`    | server/DB paths, non-draft         | local `supabase start && db reset` + node tests (db-guards self-seeds)                                                                                            |
 | `functions` | `supabase/functions/**`, non-draft | `deno check` on the MCP function — the only place it's compiled; nothing in the test projects exercises edge functions. Review coverage is pr-intel's tool report |
 
 **Zero provider credentials in this workflow** (ADR-15). Docs-only PRs
@@ -81,11 +83,11 @@ pr-intel.yml's label regexes — keep them in sync when paths move.
 
 Path matrix (dorny/paths-filter), **in order**, environment `preview`:
 
-| Changed | Action |
-| --- | --- |
-| `supabase/migrations/**`, `supabase/config.toml` | `supabase db push --db-url` (preview) |
-| `supabase/functions/**` | `supabase functions deploy mcp --no-verify-jwt` (preview) |
-| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy` |
+| Changed                                                                                               | Action                                                    |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --db-url` (preview)                     |
+| `supabase/functions/**`                                                                               | `supabase functions deploy mcp --no-verify-jwt` (preview) |
+| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy`    |
 
 `concurrency: deploy-preview` queues deploys (never cancels a mid-deploy).
 
@@ -101,7 +103,7 @@ Every deploy is a visible release — no deploy happens without a record:
 - **Tag + GitHub Release**: `preview-rN` / `release-rN` (N = workflow run
   number). Notes = a header (environment, legs deployed, commit link)
   plus **auto-generated notes**: every PR merged since the previous
-  release *of the same environment*, with contributor credits — the
+  release _of the same environment_, with contributor credits — the
   changelog is the release history, assembled by GitHub.
 - **Deployment record**: one success `Deployment` on the `preview` /
   `production` environment per deploy — the Environments tab is the
@@ -138,13 +140,13 @@ Same name, different value per environment — the workflow declares
 `environment:` and GitHub injects the right set; no env-branching in
 workflow code.
 
-| Name | Type | `preview` env | `production` env |
-| --- | --- | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Secret | preview CF token | prod CF token |
-| `SUPABASE_ACCESS_TOKEN` | Secret | same (both-project token) | same |
-| `SUPABASE_DB_PASSWORD` | Secret | preview DB password | prod DB password |
-| `CF_ACCESS_CLIENT_ID` | Secret | Access service token ID | — |
-| `CF_ACCESS_CLIENT_SECRET` | Secret | Access service token secret | — |
+| Name                      | Type   | `preview` env               | `production` env |
+| ------------------------- | ------ | --------------------------- | ---------------- |
+| `CLOUDFLARE_API_TOKEN`    | Secret | preview CF token            | prod CF token    |
+| `SUPABASE_ACCESS_TOKEN`   | Secret | same (both-project token)   | same             |
+| `SUPABASE_DB_PASSWORD`    | Secret | preview DB password         | prod DB password |
+| `CF_ACCESS_CLIENT_ID`     | Secret | Access service token ID     | —                |
+| `CF_ACCESS_CLIENT_SECRET` | Secret | Access service token secret | —                |
 
 The CF Access pair is for probe scripts hitting human-gated preview paths
 (UI smoke tests) — the MCP surface itself is Access-bypassed (see the
@@ -198,8 +200,12 @@ not GitHub.
      unauthenticated by design, rate-limited), token, protocol, resource
      metadata. The PAT (`Bearer fd_…`) is its security model — identical
      to prod, which has no Access on the app domain.
-   The rule: bypass paths are protocol plumbing, never app surfaces. The
-   UI and `/mcp/authorize` (the human consent page) stay behind Access.
+     The rule: bypass paths are protocol plumbing, never app surfaces. All
+     MCP endpoints are open — the entire machine surface lives under
+     `/api/mcp*` (the PAT, `Bearer fd_…`, is its security model, identical
+     to prod, which has no Access on the app domain). Only human-facing
+     pages stay behind Access: the UI routes, plus `/mcp/authorize` (the
+     browser consent page — a UI surface, not a protocol endpoint).
 4. Preview Supabase: auth site URL + redirect URLs = preview domain;
    signups invite-only.
 5. Create one preview PAT (in the preview DB) for probe-mcp; store as a

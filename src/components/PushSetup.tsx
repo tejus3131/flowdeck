@@ -86,10 +86,7 @@ export function PushSetup() {
         if (typeof Notification !== 'undefined') {
           if (Notification.permission === 'granted') {
             await syncSubscription(registration);
-          } else if (
-            Notification.permission === 'default' &&
-            !localStorage.getItem(PROMPT_KEY)
-          ) {
+          } else if (Notification.permission === 'default' && !localStorage.getItem(PROMPT_KEY)) {
             setPrompting(true);
           }
         }
@@ -105,8 +102,8 @@ export function PushSetup() {
       <div class="fixed bottom-4 left-4 z-[60] flex w-72 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-xs shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
         <p class="font-semibold">🔔 Stay in the loop</p>
         <p class="text-neutral-500 dark:text-neutral-400">
-          Turn on notifications — mentions, assignments, and access requests find you even
-          when Flowdeck is closed.
+          Turn on notifications — mentions, assignments, and access requests find you even when
+          Flowdeck is closed.
         </p>
         <div class="flex gap-2">
           <button

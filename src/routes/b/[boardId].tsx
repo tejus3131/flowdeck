@@ -36,14 +36,15 @@ import { renderMarkdown } from '../../lib/markdown';
 import { foldContext, lineDiff } from '../../lib/diff';
 import { mentionIds, mentionTeamIds } from '../../lib/notification-text';
 import { markSeen, unseenCount } from '../../lib/seen';
-import { boardChatStamp, stampBoardChatSeen, hydrateBoardChatSeen } from '../../lib/board-chat-seen';
+import {
+  boardChatStamp,
+  stampBoardChatSeen,
+  hydrateBoardChatSeen,
+} from '../../lib/board-chat-seen';
 import { openBoardChat, openCardScope } from '../../lib/open-scopes';
 import { createPanelWidth } from '../../lib/panel-width';
 import { statusOf, type PublicStatus } from '../../lib/status';
-import {
-  markBoardNotificationsSeen,
-  markCardNotificationsSeen,
-} from '../../lib/notifications';
+import { markBoardNotificationsSeen, markCardNotificationsSeen } from '../../lib/notifications';
 import {
   checkMentionAccess,
   grantMentionAccess,
@@ -108,7 +109,17 @@ import {
 } from '../../lib/access';
 import { errorMessage } from '../../lib/error-message';
 const EMPTY: BoardSnapshot = {
-  board: { id: '', name: '', owner_id: '', workspace_id: null, created_at: '', updated_at: '', client_op: null, description: '', access_delegation: false },
+  board: {
+    id: '',
+    name: '',
+    owner_id: '',
+    workspace_id: null,
+    created_at: '',
+    updated_at: '',
+    client_op: null,
+    description: '',
+    access_delegation: false,
+  },
   lists: [],
   cards: [],
   revision: 0,
@@ -150,8 +161,7 @@ type CommentOp = Extract<BoardOpPayload, { kind: 'comment-created' }>;
 /** What the open drawer hears from the board relay: a comment op, or the
  *  failure of one (both engines' predictions drop under the same id). */
 type CommentBusEvent =
-  | { type: 'op'; payload: CommentOp; opId: string }
-  | { type: 'fail'; opId: string };
+  { type: 'op'; payload: CommentOp; opId: string } | { type: 'fail'; opId: string };
 
 export default function Board(props: RouteProps<'/b/:boardId'>) {
   // liveQuery: one shared channel per board, request-scoped on the server
@@ -224,8 +234,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   /** What the open drawer hears from the board relay: a comment op, or the
    *  failure of one (both engines' predictions drop under the same id). */
   type CommentBusEvent =
-    | { type: 'op'; payload: CommentOp; opId: string }
-    | { type: 'fail'; opId: string };
+    { type: 'op'; payload: CommentOp; opId: string } | { type: 'fail'; opId: string };
 
   /** Live feed from the board relay into the open drawer's comment engine:
    *  received comment-created ops also append the row there. */
@@ -250,10 +259,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // relay (or the TTL) drops a prediction that never landed.
 
   /** Author path: outbox op + relay to the other viewers. */
-  const runOp = (
-    payload: BoardOpPayload,
-    send: () => Promise<unknown>,
-  ) => {
+  const runOp = (payload: BoardOpPayload, send: () => Promise<unknown>) => {
     const opId = crypto.randomUUID();
     engine.mutate({
       kind: payload.kind,
@@ -271,33 +277,37 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     presence.broadcastOp({ opId, payload });
   };
 
-  const presence = createBoardPresence(props.params.boardId, () => me(), (op) => {
-    // Receiver path: apply the relay as a provisional prediction. Unknown
-    // payload shapes (older/newer clients) are ignored — the echo covers.
-    if ('payload' in op && op.payload && typeof op.payload === 'object') {
-      const payload = op.payload as BoardOpPayload;
-      if (typeof payload.kind === 'string' && OPS_KNOWN.has(payload.kind)) {
-        engine.applyRemote(
-          {
-            kind: payload.kind,
-            guards: guardsFor(payload),
-            tempIds: tempIdsFor(payload),
-            apply: (draft) => applyBoardOp(draft, payload, new Date().toISOString()),
-            echo: (durable) => echoBoardOp(durable, payload),
-          },
-          op.opId,
-        );
-        // A comment lands in the open drawer's own engine as well.
-        if (payload.kind === 'comment-created') {
-          commentBus.emit(payload, op.opId);
+  const presence = createBoardPresence(
+    props.params.boardId,
+    () => me(),
+    (op) => {
+      // Receiver path: apply the relay as a provisional prediction. Unknown
+      // payload shapes (older/newer clients) are ignored — the echo covers.
+      if ('payload' in op && op.payload && typeof op.payload === 'object') {
+        const payload = op.payload as BoardOpPayload;
+        if (typeof payload.kind === 'string' && OPS_KNOWN.has(payload.kind)) {
+          engine.applyRemote(
+            {
+              kind: payload.kind,
+              guards: guardsFor(payload),
+              tempIds: tempIdsFor(payload),
+              apply: (draft) => applyBoardOp(draft, payload, new Date().toISOString()),
+              echo: (durable) => echoBoardOp(durable, payload),
+            },
+            op.opId,
+          );
+          // A comment lands in the open drawer's own engine as well.
+          if (payload.kind === 'comment-created') {
+            commentBus.emit(payload, op.opId);
+          }
         }
+      } else if ('opId' in op) {
+        engine.failRemote(op.opId);
+        // The open drawer's copy of that op drops too (same op id).
+        commentBus.emitFail(op.opId);
       }
-    } else if ('opId' in op) {
-      engine.failRemote(op.opId);
-      // The open drawer's copy of that op drops too (same op id).
-      commentBus.emitFail(op.opId);
-    }
-  });
+    },
+  );
 
   // ── workspace detail: members, roles, and per-board access overrides ──
   // Powers the settings drawer's grant UI. Durable snapshots arrive on the
@@ -338,7 +348,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     status: () => workspaceLive.status(view().board.workspace_id ?? ''),
     refresh: async () => {
       const wsId = view().board.workspace_id;
-      return wsId ? (await getWorkspaceSnapshot(wsId)) ?? EMPTY_WORKSPACE : EMPTY_WORKSPACE;
+      return wsId ? ((await getWorkspaceSnapshot(wsId)) ?? EMPTY_WORKSPACE) : EMPTY_WORKSPACE;
     },
   });
 
@@ -481,7 +491,6 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     },
   );
 
-
   // Opening the board = seeing its board-level rows (access notes): they
   // auto-mark read the moment the page renders.
   createEffect(
@@ -601,9 +610,11 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
 
   const [openCardId, setOpenCardId] = createSignal<string | null>(null);
   // Detail hover cards over @mentions and #citations.
-  const [hover, setHover] = createSignal<
-    { kind: 'user' | 'card' | 'tag' | 'team'; id: string; rect: DOMRect } | null
-  >(null);
+  const [hover, setHover] = createSignal<{
+    kind: 'user' | 'card' | 'tag' | 'team';
+    id: string;
+    rect: DOMRect;
+  } | null>(null);
   // Cross-board reference targets — every card the viewer can reach
   // outside this board. Feeds the # menu's cross-card chips AND the
   // accessibleCardIds privacy gate, so it must be loaded with the BOARD,
@@ -611,7 +622,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // drawer would see every cross-board chip as "private card").
   // Keyed by workspace id (a stale list would gate the wrong cards);
   // a failed load retries (capped), like the board list.
-  const [crossCardsFor, setCrossCardsFor] = createSignal<{ wsId: string | null; cards: CrossCard[] }>({ wsId: null, cards: [] });
+  const [crossCardsFor, setCrossCardsFor] = createSignal<{
+    wsId: string | null;
+    cards: CrossCard[];
+  }>({ wsId: null, cards: [] });
   const crossCards = () => crossCardsFor().cards;
   const [crossCardsRetry, setCrossCardsRetry] = createSignal(0);
   createEffect(
@@ -628,7 +642,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           if (alive && view().board.workspace_id === wsId) setCrossCardsFor({ wsId, cards });
         })
         .catch(() => {
-          if (alive && crossCardsRetry() < 3) setTimeout(() => setCrossCardsRetry((n) => n + 1), 2000);
+          if (alive && crossCardsRetry() < 3)
+            setTimeout(() => setCrossCardsRetry((n) => n + 1), 2000);
         });
     },
   );
@@ -637,7 +652,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // Keyed by workspace id: navigating to another workspace's board in
   // the same session must not serve the OLD workspace's list — and a
   // failed load retries on the next effect run instead of caching empty.
-  const [workspaceBoardsFor, setWorkspaceBoardsFor] = createSignal<{ wsId: string | null; boards: { id: string; name: string }[] }>({
+  const [workspaceBoardsFor, setWorkspaceBoardsFor] = createSignal<{
+    wsId: string | null;
+    boards: { id: string; name: string }[];
+  }>({
     wsId: null,
     boards: [],
   });
@@ -725,7 +743,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // ── engine ops: instant local apply, server ACK, echo retirement ──────
   const addCard = (listId: string, title: string) => {
     const position =
-      (view().cards.filter((c) => c.list_id === listId).reduce((max, c) => Math.max(max, c.position), 0) || 0) + 1;
+      (view()
+        .cards.filter((c) => c.list_id === listId)
+        .reduce((max, c) => Math.max(max, c.position), 0) || 0) + 1;
     const clientOp = crypto.randomUUID();
     runOp(
       { kind: 'create-card', tempId: crypto.randomUUID(), listId, title, position, clientOp },
@@ -750,9 +770,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         () => moveCardServer(heal.cardId, toListId, heal.position),
       );
     }
-    runOp(
-      { kind: 'move-card', cardId, listId: toListId, position: drop.position },
-      () => moveCardServer(cardId, toListId, drop.position),
+    runOp({ kind: 'move-card', cardId, listId: toListId, position: drop.position }, () =>
+      moveCardServer(cardId, toListId, drop.position),
     );
   };
 
@@ -775,9 +794,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const addList = (name: string) => {
     const position = (view().lists.reduce((max, l) => Math.max(max, l.position), 0) || 0) + 1;
     const clientOp = crypto.randomUUID();
-    runOp(
-      { kind: 'create-list', tempId: crypto.randomUUID(), name, position, clientOp },
-      () => createList(props.params.boardId, name, clientOp),
+    runOp({ kind: 'create-list', tempId: crypto.randomUUID(), name, position, clientOp }, () =>
+      createList(props.params.boardId, name, clientOp),
     );
   };
 
@@ -801,9 +819,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
    *  Drives the mention flow — ON lets mentioners grant directly, OFF
    *  routes them through an ask-the-admins request. */
   const toggleDelegation = (on: boolean) => {
-    runOp(
-      { kind: 'update-board', accessDelegation: on },
-      () => updateBoardServer(props.params.boardId, { accessDelegation: on }),
+    runOp({ kind: 'update-board', accessDelegation: on }, () =>
+      updateBoardServer(props.params.boardId, { accessDelegation: on }),
     );
   };
 
@@ -835,8 +852,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     setPanel(tab);
   };
   onCleanup(() => releaseChatScope?.());
-  const openPanel = (tab: 'chat' | 'settings') =>
-    switchPanel(panel() === tab ? null : tab);
+  const openPanel = (tab: 'chat' | 'settings') => switchPanel(panel() === tab ? null : tab);
 
   // ── board chat unread: a dot on the 💬 button while the panel is shut.
   // The panel + this counter share ONE live query channel. The stamp is
@@ -863,8 +879,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       setChatUnread(0);
     } else {
       setChatUnread(
-        list.filter((row) => !row.deleted_at && +new Date(row.created_at) > chatStamp())
-          .length,
+        list.filter((row) => !row.deleted_at && +new Date(row.created_at) > chatStamp()).length,
       );
     }
   };
@@ -1187,8 +1202,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           <main class="flex h-[calc(100vh-3rem)] flex-col items-center justify-center gap-3 px-4 text-center">
             <h1 class="text-lg font-semibold">No access to this board</h1>
             <p class="max-w-sm text-sm text-neutral-500 dark:text-neutral-400">
-              A workspace admin hasn't granted you view or write access here yet. This page
-              updates on its own the moment you're added.
+              A workspace admin hasn't granted you view or write access here yet. This page updates
+              on its own the moment you're added.
             </p>
             <a href="/" class="text-sm font-medium text-indigo-600 underline dark:text-indigo-400">
               Back to your boards
@@ -1196,259 +1211,279 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           </main>
         }
       >
-      <main class="flex h-[calc(100vh-3rem)] flex-col overflow-hidden">
-        <header class="flex items-center gap-3 border-b border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
-          <a
-            href="/"
-            class="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-            title="All boards"
-          >
-            ←
-          </a>
-
-          <Show
-            when={!renamingBoard()}
-            fallback={
-              <form
-                class="flex items-center gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const name = String(new FormData(event.currentTarget).get('name') ?? '').trim();
-                  if (name) renameBoard(name);
-                  setRenamingBoard(false);
-                }}
-              >
-                <input
-                  name="name"
-                  value={view().board.name}
-                  class="max-w-64 py-1 text-base font-semibold"
-                  autofocus
-                  onBlur={() => setRenamingBoard(false)}
-                />
-              </form>
-            }
-          >
-            <Show
-              when={canEdit()}
-              fallback={<span class="rounded-md px-2 py-1 text-base font-semibold tracking-tight">{view().board.name || '…'}</span>}
+        <main class="flex h-[calc(100vh-3rem)] flex-col overflow-hidden">
+          <header class="flex items-center gap-3 border-b border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
+            <a
+              href="/"
+              class="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+              title="All boards"
             >
-              <button
-                type="button"
-                class="rounded-md px-2 py-1 text-base font-semibold tracking-tight hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                title="Rename board"
-                onClick={() => setRenamingBoard(true)}
+              ←
+            </a>
+
+            <Show
+              when={!renamingBoard()}
+              fallback={
+                <form
+                  class="flex items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = String(new FormData(event.currentTarget).get('name') ?? '').trim();
+                    if (name) renameBoard(name);
+                    setRenamingBoard(false);
+                  }}
+                >
+                  <input
+                    name="name"
+                    value={view().board.name}
+                    class="max-w-64 py-1 text-base font-semibold"
+                    autofocus
+                    onBlur={() => setRenamingBoard(false)}
+                  />
+                </form>
+              }
+            >
+              <Show
+                when={canEdit()}
+                fallback={
+                  <span class="rounded-md px-2 py-1 text-base font-semibold tracking-tight">
+                    {view().board.name || '…'}
+                  </span>
+                }
               >
-                {view().board.name || '…'}
-              </button>
+                <button
+                  type="button"
+                  class="rounded-md px-2 py-1 text-base font-semibold tracking-tight hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  title="Rename board"
+                  onClick={() => setRenamingBoard(true)}
+                >
+                  {view().board.name || '…'}
+                </button>
+              </Show>
             </Show>
-          </Show>
 
-          <Show when={!canEdit()}>
-            <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300" title="An admin limited your access on this board">
-              👁 View only
-            </span>
-          </Show>
-
-          <button
-            type="button"
-            title="Board chat"
-            class={`relative rounded-md px-2 py-1 text-sm hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white ${
-              panel() === 'chat' ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'
-            }`}
-            onClick={() => {
-              openPanel('chat');
-              setChatUnread(0);
-            }}
-          >
-            💬
-            <Show when={chatUnread() > 0}>
-              <span class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-bold text-white">
-                {chatUnread() > 9 ? '9+' : chatUnread()}
+            <Show when={!canEdit()}>
+              <span
+                class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-300"
+                title="An admin limited your access on this board"
+              >
+                👁 View only
               </span>
             </Show>
-          </button>
-          <button
-            type="button"
-            title="Board settings — name, description, member access"
-            class={`rounded-md px-2 py-1 text-sm hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white ${
-              panel() === 'settings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'
-            }`}
-            onClick={() => openPanel('settings')}
-          >
-            ⚙
-          </button>
 
-          <span class="ml-auto flex items-center gap-2 text-xs text-neutral-400">
-            <Show when={presence.others().length > 0}>
-              <span class="flex -space-x-2">
-                <For each={presence.others()}>
-                  {(other) => (
-                    <span
-                      title={other.name}
-                      class="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-white text-[10px] font-semibold text-white dark:border-neutral-950"
-                      style={{ 'background-color': presenceColor(other.userId) }}
-                    >
-                      <Show when={other.avatarUrl} fallback={other.name.slice(0, 2).toUpperCase()}>
-                        {/* crossorigin as in Avatar.tsx: cors mode makes the
+            <button
+              type="button"
+              title="Board chat"
+              class={`relative rounded-md px-2 py-1 text-sm hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white ${
+                panel() === 'chat' ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'
+              }`}
+              onClick={() => {
+                openPanel('chat');
+                setChatUnread(0);
+              }}
+            >
+              💬
+              <Show when={chatUnread() > 0}>
+                <span class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-bold text-white">
+                  {chatUnread() > 9 ? '9+' : chatUnread()}
+                </span>
+              </Show>
+            </button>
+            <button
+              type="button"
+              title="Board settings — name, description, member access"
+              class={`rounded-md px-2 py-1 text-sm hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white ${
+                panel() === 'settings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'
+              }`}
+              onClick={() => openPanel('settings')}
+            >
+              ⚙
+            </button>
+
+            <span class="ml-auto flex items-center gap-2 text-xs text-neutral-400">
+              <Show when={presence.others().length > 0}>
+                <span class="flex -space-x-2">
+                  <For each={presence.others()}>
+                    {(other) => (
+                      <span
+                        title={other.name}
+                        class="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-white text-[10px] font-semibold text-white dark:border-neutral-950"
+                        style={{ 'background-color': presenceColor(other.userId) }}
+                      >
+                        <Show
+                          when={other.avatarUrl}
+                          fallback={other.name.slice(0, 2).toUpperCase()}
+                        >
+                          {/* crossorigin as in Avatar.tsx: cors mode makes the
                             fetch cacheable by the service worker. */}
-                        <img
-                          src={other.avatarUrl!}
-                          alt={other.name}
-                          crossorigin="anonymous"
-                          class="h-full w-full object-cover"
-                        />
-                      </Show>
-                    </span>
+                          <img
+                            src={other.avatarUrl!}
+                            alt={other.name}
+                            crossorigin="anonymous"
+                            class="h-full w-full object-cover"
+                          />
+                        </Show>
+                      </span>
+                    )}
+                  </For>
+                </span>
+              </Show>
+              <Show when={syncing()}>
+                <span class="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">
+                  <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />
+                  Syncing
+                </span>
+              </Show>
+              <Show when={engine.status() === 'reconnecting'}>
+                <span class="flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+                  <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                  Reconnecting…
+                </span>
+              </Show>
+              <Show when={engine.status() === 'offline'}>
+                <span class="rounded-full bg-red-50 px-2 py-0.5 text-red-600 dark:bg-red-950 dark:text-red-400">
+                  Offline
+                </span>
+              </Show>
+              <Show when={view().lists.length > 0 || view().cards.length > 0}>
+                <span>
+                  {view().lists.length} lists · {view().cards.filter((c) => !c.resolved_at).length}{' '}
+                  cards
+                </span>
+              </Show>
+            </span>
+          </header>
+
+          <div data-board-scroll class="flex flex-1 gap-4 overflow-x-auto p-4">
+            <For each={view().lists}>
+              {(list) => (
+                <BoardColumn
+                  list={list}
+                  cards={view().cards.filter(
+                    (card) => card.list_id === list.id && !card.resolved_at,
                   )}
-                </For>
-              </span>
-            </Show>
-            <Show when={syncing()}>
-              <span class="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">
-                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />
-                Syncing
-              </span>
-            </Show>
-            <Show when={engine.status() === 'reconnecting'}>
-              <span class="flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                Reconnecting…
-              </span>
-            </Show>
-            <Show when={engine.status() === 'offline'}>
-              <span class="rounded-full bg-red-50 px-2 py-0.5 text-red-600 dark:bg-red-950 dark:text-red-400">
-                Offline
-              </span>
-            </Show>
-            <Show when={view().lists.length > 0 || view().cards.length > 0}>
-              <span>
-                {view().lists.length} lists · {view().cards.filter((c) => !c.resolved_at).length} cards
-              </span>
-            </Show>
-          </span>
-        </header>
-
-        <div data-board-scroll class="flex flex-1 gap-4 overflow-x-auto p-4">
-          <For each={view().lists}>
-            {(list) => (
-              <BoardColumn
-                list={list}
-                cards={view().cards.filter((card) => card.list_id === list.id && !card.resolved_at)}
-                members={detail().members}
-                dragging={dragging()}
-                remoteDrag={presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()}
-                dropHint={dropHint()?.listId === list.id ? dropHint()!.index : null}
-                dragHeight={dragHeight()}
-                // The peer ghost: another viewer's hover slot in THIS
-                // column, in the same full-list index space every column
-                // renders (the mover broadcasts the slot their own column
-                // measured — both sides count the same cards).
-                remoteDropHint={
-                  presence.remoteDrag()?.listId === list.id
-                    ? presence.remoteDrag()!.index ?? null
-                    : null
-                }
-                // The preview renders the actual card data — the ghost is
-                // the card, not a placeholder shape.
-                draggedCard={dragging() ? view().cards.find((c) => c.id === dragging()) ?? null : null}
-                remoteDragCard={
-                  presence.remoteDrag()?.cardId
-                    ? view().cards.find((c) => c.id === presence.remoteDrag()!.cardId) ?? null
-                    : null
-                }
-                isTemp={engine.isTemp(list.id)}
-                canEdit={canEdit()}
-                onDragStart={(cardId, height) => {
-                  setDragHeight(height);
-                  // Broadcast the card's home slot immediately — peers see
-                  // the preview at the card's original spot from the first
-                  // message, so the source can hide for the entire drag
-                  // without a vanish gap.
-                  const source = view().cards.find((c) => c.id === cardId);
-                  const homeIndex = source
-                    ? view()
-                        .cards.filter((c) => c.list_id === source.list_id)
-                        .findIndex((c) => c.id === cardId)
-                    : -1;
-                  dragHomeSlot =
-                    source && homeIndex >= 0 ? { listId: source.list_id, index: homeIndex } : null;
-                  const name = me()?.display_name || 'Someone';
-                  if (dragHomeSlot) {
-                    presence.broadcastDragHover(
-                      cardId,
-                      name,
-                      height,
-                      dragHomeSlot.listId,
-                      dragHomeSlot.index,
-                    );
-                  } else {
-                    presence.broadcastDrag(cardId, name, height);
+                  members={detail().members}
+                  dragging={dragging()}
+                  remoteDrag={
+                    presence.remoteDrag()?.cardId === undefined ? null : presence.remoteDrag()
                   }
-                  // The browser snapshots the drag image as dragstart
-                  // completes — hiding the source in the same tick yields
-                  // a blank preview, so the hide lands one frame late.
-                  pendingDragCard = cardId;
-                  setTimeout(() => {
-                    if (pendingDragCard === cardId) setDragging(cardId);
-                  }, 0);
-                  startHeartbeat();
-                }}
-                onDragEnd={() => {
-                  stopHeartbeat();
-                  pendingDragCard = null;
-                  dragHomeSlot = null;
-                  setDragging(null);
-                  setDropHint(null);
-                  setDragHeight(null);
-                  presence.broadcastDrag(null, '', null);
-                }}
-                onDrop={(index, cardId) => {
-                  // No end broadcast here by design: the spec guarantees a
-                  // dragend on the source right after drop, and onDragEnd
-                  // is the single place that clears peers' ghost state.
-                  stopHeartbeat();
-                  pendingDragCard = null;
-                  dragHomeSlot = null;
-                  setDragging(null);
-                  setDropHint(null);
-                  setDragHeight(null);
-                  // Cards still materializing can't be dragged yet (their
-                  // real id hasn't been echoed) — the drop is a no-op.
-                  if (cardId && canEdit() && !engine.isTemp(cardId)) moveCard(cardId, list.id, index);
-                }}
-                onHover={(index) =>
-                  // Identical index → identical value: dragover fires per
-                  // mouse-move, and a fresh object per event re-renders and
-                  // re-runs the FLIP pass constantly (the glitch storm).
-                  setDropHint((prev) =>
-                    prev?.listId === list.id && prev.index === index
-                      ? prev
-                      : { listId: list.id, index },
-                  )
-                }
-                adding={addingIn() === list.id}
-                onAdd={() => setAddingIn(list.id)}
-                onCancelAdd={() => setAddingIn(null)}
-                onSubmitAdd={(title) => {
-                  setAddingIn(null);
-                  addCard(list.id, title);
-                }}
-                onAddAnother={() => setAddingIn(list.id)}
-                onRemove={() => removeList(list.id)}
-                onRename={(name) => renameList(list.id, name)}
-                onOpenCard={(cardId, clientOp) => openCard(cardId, clientOp)}
-                onResolveCard={(cardId) => toggleResolve(cardId, true)}
-                collapsed={collapsedLists().has(list.id)}
-                onToggleCollapse={() => toggleListCollapse(list.id)}
-              />
-            )}
-          </For>
+                  dropHint={dropHint()?.listId === list.id ? dropHint()!.index : null}
+                  dragHeight={dragHeight()}
+                  // The peer ghost: another viewer's hover slot in THIS
+                  // column, in the same full-list index space every column
+                  // renders (the mover broadcasts the slot their own column
+                  // measured — both sides count the same cards).
+                  remoteDropHint={
+                    presence.remoteDrag()?.listId === list.id
+                      ? (presence.remoteDrag()!.index ?? null)
+                      : null
+                  }
+                  // The preview renders the actual card data — the ghost is
+                  // the card, not a placeholder shape.
+                  draggedCard={
+                    dragging() ? (view().cards.find((c) => c.id === dragging()) ?? null) : null
+                  }
+                  remoteDragCard={
+                    presence.remoteDrag()?.cardId
+                      ? (view().cards.find((c) => c.id === presence.remoteDrag()!.cardId) ?? null)
+                      : null
+                  }
+                  isTemp={engine.isTemp(list.id)}
+                  canEdit={canEdit()}
+                  onDragStart={(cardId, height) => {
+                    setDragHeight(height);
+                    // Broadcast the card's home slot immediately — peers see
+                    // the preview at the card's original spot from the first
+                    // message, so the source can hide for the entire drag
+                    // without a vanish gap.
+                    const source = view().cards.find((c) => c.id === cardId);
+                    const homeIndex = source
+                      ? view()
+                          .cards.filter((c) => c.list_id === source.list_id)
+                          .findIndex((c) => c.id === cardId)
+                      : -1;
+                    dragHomeSlot =
+                      source && homeIndex >= 0
+                        ? { listId: source.list_id, index: homeIndex }
+                        : null;
+                    const name = me()?.display_name || 'Someone';
+                    if (dragHomeSlot) {
+                      presence.broadcastDragHover(
+                        cardId,
+                        name,
+                        height,
+                        dragHomeSlot.listId,
+                        dragHomeSlot.index,
+                      );
+                    } else {
+                      presence.broadcastDrag(cardId, name, height);
+                    }
+                    // The browser snapshots the drag image as dragstart
+                    // completes — hiding the source in the same tick yields
+                    // a blank preview, so the hide lands one frame late.
+                    pendingDragCard = cardId;
+                    setTimeout(() => {
+                      if (pendingDragCard === cardId) setDragging(cardId);
+                    }, 0);
+                    startHeartbeat();
+                  }}
+                  onDragEnd={() => {
+                    stopHeartbeat();
+                    pendingDragCard = null;
+                    dragHomeSlot = null;
+                    setDragging(null);
+                    setDropHint(null);
+                    setDragHeight(null);
+                    presence.broadcastDrag(null, '', null);
+                  }}
+                  onDrop={(index, cardId) => {
+                    // No end broadcast here by design: the spec guarantees a
+                    // dragend on the source right after drop, and onDragEnd
+                    // is the single place that clears peers' ghost state.
+                    stopHeartbeat();
+                    pendingDragCard = null;
+                    dragHomeSlot = null;
+                    setDragging(null);
+                    setDropHint(null);
+                    setDragHeight(null);
+                    // Cards still materializing can't be dragged yet (their
+                    // real id hasn't been echoed) — the drop is a no-op.
+                    if (cardId && canEdit() && !engine.isTemp(cardId))
+                      moveCard(cardId, list.id, index);
+                  }}
+                  onHover={(index) =>
+                    // Identical index → identical value: dragover fires per
+                    // mouse-move, and a fresh object per event re-renders and
+                    // re-runs the FLIP pass constantly (the glitch storm).
+                    setDropHint((prev) =>
+                      prev?.listId === list.id && prev.index === index
+                        ? prev
+                        : { listId: list.id, index },
+                    )
+                  }
+                  adding={addingIn() === list.id}
+                  onAdd={() => setAddingIn(list.id)}
+                  onCancelAdd={() => setAddingIn(null)}
+                  onSubmitAdd={(title) => {
+                    setAddingIn(null);
+                    addCard(list.id, title);
+                  }}
+                  onAddAnother={() => setAddingIn(list.id)}
+                  onRemove={() => removeList(list.id)}
+                  onRename={(name) => renameList(list.id, name)}
+                  onOpenCard={(cardId, clientOp) => openCard(cardId, clientOp)}
+                  onResolveCard={(cardId) => toggleResolve(cardId, true)}
+                  collapsed={collapsedLists().has(list.id)}
+                  onToggleCollapse={() => toggleListCollapse(list.id)}
+                />
+              )}
+            </For>
 
-          <Show when={canEdit()}>
-            <AddList onAdd={addList} />
-          </Show>
-        </div>
-      </main>
+            <Show when={canEdit()}>
+              <AddList onAdd={addList} />
+            </Show>
+          </div>
+        </main>
       </Show>
 
       <Show when={openCardId()}>
@@ -1494,7 +1529,11 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
               setHover(null);
               // Land on the citing comment / description event when the
               // chip carried its anchor (board backlinks).
-              const extra = anchor?.commentId ? `&comment=${anchor.commentId}` : anchor?.event ? `&event=${anchor.event}` : '';
+              const extra = anchor?.commentId
+                ? `&comment=${anchor.commentId}`
+                : anchor?.event
+                  ? `&event=${anchor.event}`
+                  : '';
               if (target) navigate(`/b/${target.board_id}?card=${target.id}${extra}`);
             }}
             onOpenTag={(tagId) => {
@@ -1512,7 +1551,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         cards={view().cards}
         lists={view().lists}
         crossCards={crossCards()}
-            workspaceBoards={workspaceBoards()}
+        workspaceBoards={workspaceBoards()}
         workspaceTags={detail().tags}
         teams={detail().teams}
         onOpenCard={(cardId, clientOp) => {
@@ -1605,7 +1644,11 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   const target = crossCards().find((c) => c.id === cardId);
                   // Land on the citing comment / description event when the
                   // chip carried its anchor (board backlinks).
-                  const extra = anchor?.commentId ? `&comment=${anchor.commentId}` : anchor?.event ? `&event=${anchor.event}` : '';
+                  const extra = anchor?.commentId
+                    ? `&comment=${anchor.commentId}`
+                    : anchor?.event
+                      ? `&event=${anchor.event}`
+                      : '';
                   if (target) navigate(`/b/${target.board_id}?card=${target.id}${extra}`);
                 }}
                 anchorMessageId={chatAnchor}
@@ -1613,41 +1656,37 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
             </Show>
             <Show when={panel() === 'settings'}>
               <BoardSettings
-          boardId={props.params.boardId}
-          board={view().board}
-          canEdit={canEdit()}
-          isWsAdmin={isWsAdmin()}
-          canDelete={canDeleteBoard()}
-          accessDelegation={view().board.access_delegation}
-          onToggleDelegation={toggleDelegation}
-          detail={detail()}
-          meId={me()?.id ?? null}
-          deleting={deleting()}
-          error={settingsError()}
-          onError={setSettingsError}
-          onTeamAccessChanged={relayTeamAccess}
-          onRename={renameBoard}
-          onDescribe={describeBoard}
-          onEffectiveAccess={effectiveAccess}
-          onIsGrantable={isGrantable}
-          onChangeAccess={changeAccess}
-          onDelete={(purge) => void removeBoard(purge)}
-          onClose={() => setPanel(null)}
-          cardCount={view().cards.length}
-          resolvedCards={view().cards.filter((c) => c.resolved_at)}
-          lists={view().lists}
-          onUnresolve={(cardId) => toggleResolve(cardId, false)}
-        />
+                boardId={props.params.boardId}
+                board={view().board}
+                canEdit={canEdit()}
+                isWsAdmin={isWsAdmin()}
+                canDelete={canDeleteBoard()}
+                accessDelegation={view().board.access_delegation}
+                onToggleDelegation={toggleDelegation}
+                detail={detail()}
+                meId={me()?.id ?? null}
+                deleting={deleting()}
+                error={settingsError()}
+                onError={setSettingsError}
+                onTeamAccessChanged={relayTeamAccess}
+                onRename={renameBoard}
+                onDescribe={describeBoard}
+                onEffectiveAccess={effectiveAccess}
+                onIsGrantable={isGrantable}
+                onChangeAccess={changeAccess}
+                onDelete={(purge) => void removeBoard(purge)}
+                onClose={() => setPanel(null)}
+                cardCount={view().cards.length}
+                resolvedCards={view().cards.filter((c) => c.resolved_at)}
+                lists={view().lists}
+                onUnresolve={(cardId) => toggleResolve(cardId, false)}
+              />
             </Show>
           </aside>
         </div>
       </Show>
 
-      <FailureToasts
-        failures={engine.failed()}
-        onRetry={engine.retry}
-        onDismiss={engine.dismiss}
-      />
+      <FailureToasts failures={engine.failed()} onRetry={engine.retry} onDismiss={engine.dismiss} />
     </>
   );
 }
@@ -1871,7 +1910,8 @@ function BoardColumn(props: {
         'flex shrink-0 flex-col rounded-2xl border border-neutral-200/80 bg-neutral-100/60 dark:border-neutral-800 dark:bg-neutral-900/70',
         props.collapsed ? 'w-56' : 'w-72',
         { 'animate-pulse': props.isTemp },
-      ]}      onDragOver={(event) => {
+      ]}
+      onDragOver={(event) => {
         if (!props.dragging) return;
         event.preventDefault();
         props.onHover(indexAt(event.clientY));
@@ -1958,12 +1998,12 @@ function BoardColumn(props: {
       </header>
 
       <Show when={!props.collapsed}>
-      <div data-cards-scroll class="flex flex-1 flex-col gap-2 overflow-y-auto p-2.5">
-        <For each={props.cards}>
-          {(card, index) => (
-            <>
-              <Show when={props.dropHint === index()}>
-                {/* The ghost is the card itself: a faded, inert clone of
+        <div data-cards-scroll class="flex flex-1 flex-col gap-2 overflow-y-auto p-2.5">
+          <For each={props.cards}>
+            {(card, index) => (
+              <>
+                <Show when={props.dropHint === index()}>
+                  {/* The ghost is the card itself: a faded, inert clone of
                     the dragged card (Trello's placeholder) gliding where
                     the drop would land — hover the original spot and the
                     card appears to never have left. Fixed height = the
@@ -1971,256 +2011,252 @@ function BoardColumn(props: {
                     1:1 swap. shrink-0: a scrolling column is over-full
                     and flex compresses contentless children to their
                     border — without it the ghost collapses to a line. */}
-                <Show
-                  when={props.draggedCard}
-                  fallback={
-                    <div
-                      data-drop-placeholder
-                      class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
-                      style={{ height: `${props.dragHeight ?? 72}px` }}
-                    />
-                  }
-                >
-                  {(card) => (
-                    <div
-                      data-drop-placeholder
-                      class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-70 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
-                      style={{ height: `${props.dragHeight ?? 72}px` }}
-                    >
-                      <CardFace card={card()} members={props.members} />
-                    </div>
-                  )}
+                  <Show
+                    when={props.draggedCard}
+                    fallback={
+                      <div
+                        data-drop-placeholder
+                        class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                        style={{ height: `${props.dragHeight ?? 72}px` }}
+                      />
+                    }
+                  >
+                    {(card) => (
+                      <div
+                        data-drop-placeholder
+                        class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-70 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
+                        style={{ height: `${props.dragHeight ?? 72}px` }}
+                      >
+                        <CardFace card={card()} members={props.members} />
+                      </div>
+                    )}
+                  </Show>
                 </Show>
-              </Show>
-              <Show
-                when={
-                  props.remoteDropHint === index() && props.remoteDropHint !== props.dropHint
-                }
-              >
-                {/* A peer's card in flight: their live preview clone —
+                <Show
+                  when={props.remoteDropHint === index() && props.remoteDropHint !== props.dropHint}
+                >
+                  {/* A peer's card in flight: their live preview clone —
                     amber-ringed with the mover's name, so viewers watch
                     the card itself move. Dashed fallback when this view
                     can't see the card (e.g. a still-materializing temp).
                     Skipped when the local ghost already occupies the slot. */}
-                <Show
-                  when={props.remoteDragCard}
-                  fallback={
-                    <div
-                      data-drop-placeholder
-                      class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
-                      style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
-                    >
-                      <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                        {props.remoteDrag?.name} moving…
-                      </span>
-                    </div>
-                  }
-                >
-                  {(card) => (
-                    <div
-                      data-drop-placeholder
-                      class="pointer-events-none relative shrink-0 rounded-xl border-2 border-amber-400/80 bg-white p-3 text-sm shadow-xs dark:border-amber-500/70 dark:bg-neutral-900"
-                      style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
-                    >
-                      <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
-                        {props.remoteDrag?.name} moving…
-                      </span>
-                      <CardFace card={card()} members={props.members} />
-                    </div>
-                  )}
-                </Show>
-              </Show>
-              <article
-                data-card
-                data-card-id={card.id}
-                draggable={props.canEdit ? 'true' : undefined}
-                onDragStart={(event) => {
-                  if (!props.canEdit) return;
-                  const transfer = event.dataTransfer;
-                  if (transfer) {
-                    transfer.effectAllowed = 'move';
-                    transfer.setData('text/plain', card.id);
-                  }
-                  props.onDragStart(card.id, event.currentTarget.getBoundingClientRect().height);
-                }}
-                onDragEnd={props.onDragEnd}
-                onClick={() => props.onOpenCard(card.id, card.client_op)}
-                class={[
-                  'group relative cursor-pointer rounded-xl border border-neutral-200/80 bg-white p-3 text-sm shadow-xs transition hover:border-indigo-300 hover:shadow-sm active:cursor-grabbing dark:border-neutral-700/80 dark:bg-neutral-900 dark:hover:border-indigo-700',
-                  // Trello model: while dragged, the source card leaves the
-                  // list (display:none — zero space) so the ghost is its ONLY
-                  // representation; hover the original spot and the ghost is
-                  // the one placeholder there, never shadow + ghost both.
-                  // The element stays in the DOM so dragend always fires,
-                  // and indexAt/planDrop keep their shared full-list index
-                  // space (the hidden card's degenerate midpoint can never
-                  // win a comparison for a pointer inside the column).
-                  // …and for peers the whole drag through: the dragstart
-                  // broadcast carries the card's home slot, so its preview
-                  // appears at the original spot from the first message —
-                  // the card hides for the ENTIRE drag, never reappearing
-                  // "at home" while the hover travels other lists.
-                  {
-                    hidden:
-                      props.dragging === card.id || props.remoteDrag?.cardId === card.id,
-                  },
-                ]}
-              >
-                <CardFace
-                  card={card}
-                  members={props.members}
-                  onOpenDetails={() => props.onOpenCard(card.id, card.client_op)}
-                />
-                <Show when={props.canEdit}>
-                  <button
-                    type="button"
-                    title="Resolve card — hides it from the board, nothing is deleted"
-                    class="absolute right-2 top-2 hidden rounded px-1 text-neutral-300 hover:text-neutral-600 group-hover:block dark:text-neutral-600 dark:hover:text-neutral-300"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      props.onResolveCard(card.id);
-                    }}
+                  <Show
+                    when={props.remoteDragCard}
+                    fallback={
+                      <div
+                        data-drop-placeholder
+                        class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
+                        style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                      >
+                        <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                          {props.remoteDrag?.name} moving…
+                        </span>
+                      </div>
+                    }
                   >
-                    ✓
-                  </button>
+                    {(card) => (
+                      <div
+                        data-drop-placeholder
+                        class="pointer-events-none relative shrink-0 rounded-xl border-2 border-amber-400/80 bg-white p-3 text-sm shadow-xs dark:border-amber-500/70 dark:bg-neutral-900"
+                        style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                      >
+                        <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                          {props.remoteDrag?.name} moving…
+                        </span>
+                        <CardFace card={card()} members={props.members} />
+                      </div>
+                    )}
+                  </Show>
                 </Show>
-              </article>
-            </>
-          )}
-        </For>
-        <Show when={props.dropHint === props.cards.length && props.cards.length > 0}>
+                <article
+                  data-card
+                  data-card-id={card.id}
+                  draggable={props.canEdit ? 'true' : undefined}
+                  onDragStart={(event) => {
+                    if (!props.canEdit) return;
+                    const transfer = event.dataTransfer;
+                    if (transfer) {
+                      transfer.effectAllowed = 'move';
+                      transfer.setData('text/plain', card.id);
+                    }
+                    props.onDragStart(card.id, event.currentTarget.getBoundingClientRect().height);
+                  }}
+                  onDragEnd={props.onDragEnd}
+                  onClick={() => props.onOpenCard(card.id, card.client_op)}
+                  class={[
+                    'group relative cursor-pointer rounded-xl border border-neutral-200/80 bg-white p-3 text-sm shadow-xs transition hover:border-indigo-300 hover:shadow-sm active:cursor-grabbing dark:border-neutral-700/80 dark:bg-neutral-900 dark:hover:border-indigo-700',
+                    // Trello model: while dragged, the source card leaves the
+                    // list (display:none — zero space) so the ghost is its ONLY
+                    // representation; hover the original spot and the ghost is
+                    // the one placeholder there, never shadow + ghost both.
+                    // The element stays in the DOM so dragend always fires,
+                    // and indexAt/planDrop keep their shared full-list index
+                    // space (the hidden card's degenerate midpoint can never
+                    // win a comparison for a pointer inside the column).
+                    // …and for peers the whole drag through: the dragstart
+                    // broadcast carries the card's home slot, so its preview
+                    // appears at the original spot from the first message —
+                    // the card hides for the ENTIRE drag, never reappearing
+                    // "at home" while the hover travels other lists.
+                    {
+                      hidden: props.dragging === card.id || props.remoteDrag?.cardId === card.id,
+                    },
+                  ]}
+                >
+                  <CardFace
+                    card={card}
+                    members={props.members}
+                    onOpenDetails={() => props.onOpenCard(card.id, card.client_op)}
+                  />
+                  <Show when={props.canEdit}>
+                    <button
+                      type="button"
+                      title="Resolve card — hides it from the board, nothing is deleted"
+                      class="absolute right-2 top-2 hidden rounded px-1 text-neutral-300 hover:text-neutral-600 group-hover:block dark:text-neutral-600 dark:hover:text-neutral-300"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        props.onResolveCard(card.id);
+                      }}
+                    >
+                      ✓
+                    </button>
+                  </Show>
+                </article>
+              </>
+            )}
+          </For>
+          <Show when={props.dropHint === props.cards.length && props.cards.length > 0}>
+            <Show
+              when={props.draggedCard}
+              fallback={
+                <div
+                  data-drop-placeholder
+                  class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                  style={{ height: `${props.dragHeight ?? 72}px` }}
+                />
+              }
+            >
+              {(card) => (
+                <div
+                  data-drop-placeholder
+                  class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-70 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
+                  style={{ height: `${props.dragHeight ?? 72}px` }}
+                >
+                  <CardFace card={card()} members={props.members} />
+                </div>
+              )}
+            </Show>
+          </Show>
           <Show
-            when={props.draggedCard}
-            fallback={
-              <div
-                data-drop-placeholder
-                class="shrink-0 rounded-xl border-2 border-dashed border-indigo-400/70 bg-indigo-50/60 dark:border-indigo-500/50 dark:bg-indigo-500/10"
-                style={{ height: `${props.dragHeight ?? 72}px` }}
-              />
+            when={
+              props.remoteDropHint === props.cards.length && props.remoteDropHint !== props.dropHint
             }
           >
-            {(card) => (
-              <div
-                data-drop-placeholder
-                class="pointer-events-none shrink-0 rounded-xl border border-neutral-200/80 bg-white p-3 text-sm opacity-70 shadow-xs dark:border-neutral-700/80 dark:bg-neutral-900"
-                style={{ height: `${props.dragHeight ?? 72}px` }}
-              >
-                <CardFace card={card()} members={props.members} />
-              </div>
-            )}
-          </Show>
-        </Show>
-        <Show
-          when={
-            props.remoteDropHint === props.cards.length &&
-            props.remoteDropHint !== props.dropHint
-          }
-        >
-          {/* A peer hovering past the last card — no length guard, unlike
+            {/* A peer hovering past the last card — no length guard, unlike
               the local site: an empty column has no ringed source card to
               signal the drag, so the preview is the only thing peers see. */}
-          <Show
-            when={props.remoteDragCard}
-            fallback={
-              <div
-                data-drop-placeholder
-                class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
-                style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
-              >
-                <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                  {props.remoteDrag?.name} moving…
-                </span>
-              </div>
-            }
-          >
-            {(card) => (
-              <div
-                data-drop-placeholder
-                class="pointer-events-none relative shrink-0 rounded-xl border-2 border-amber-400/80 bg-white p-3 text-sm shadow-xs dark:border-amber-500/70 dark:bg-neutral-900"
-                style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
-              >
-                <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
-                  {props.remoteDrag?.name} moving…
-                </span>
-                <CardFace card={card()} members={props.members} />
-              </div>
-            )}
+            <Show
+              when={props.remoteDragCard}
+              fallback={
+                <div
+                  data-drop-placeholder
+                  class="flex shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-500/10"
+                  style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                >
+                  <span class="truncate px-2 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                    {props.remoteDrag?.name} moving…
+                  </span>
+                </div>
+              }
+            >
+              {(card) => (
+                <div
+                  data-drop-placeholder
+                  class="pointer-events-none relative shrink-0 rounded-xl border-2 border-amber-400/80 bg-white p-3 text-sm shadow-xs dark:border-amber-500/70 dark:bg-neutral-900"
+                  style={{ height: `${props.remoteDrag?.height ?? 72}px` }}
+                >
+                  <span class="absolute -top-2 left-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                    {props.remoteDrag?.name} moving…
+                  </span>
+                  <CardFace card={card()} members={props.members} />
+                </div>
+              )}
+            </Show>
           </Show>
-        </Show>
 
-        {/* Add-card (editors only): the input ALWAYS clears instantly on
+          {/* Add-card (editors only): the input ALWAYS clears instantly on
             submit (the card appears immediately via the engine) — optionally
             stays open for the next card ("add another"), never blocked by
             the server. Viewers see no editing surface at all. */}
-        <Show when={props.canEdit}>
-          <Show
-            when={props.adding || keepOpen()}
-            fallback={
-              <button
-                type="button"
-                class="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-                onClick={() => {
-                  setKeepOpen(true);
-                  props.onAdd();
-                }}
-              >
-                + Add card
-              </button>
-            }
-          >
-          <form
-            class="flex flex-col gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = event.currentTarget;
-              const title = String(new FormData(form).get('title') ?? '').trim();
-              if (title) {
-                props.onSubmitAdd(title);
-                if (keepOpen()) {
-                  form.reset();
-                  form.querySelector('textarea')?.focus();
-                }
-              }
-            }}
-          >
-            <textarea name="title" rows={2} placeholder="Card title…" autofocus />
-            <div class="flex items-center gap-2">
-              <button
-                type="submit"
-                class="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
-              >
-                Add
-              </button>
-              <Show
-                when={keepOpen()}
-                fallback={
-                  <button
-                    type="button"
-                    class="text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                    title="Keep the form open to add several cards"
-                    onClick={() => setKeepOpen(true)}
-                  >
-                    Add another ↵
-                  </button>
-                }
-              >
+          <Show when={props.canEdit}>
+            <Show
+              when={props.adding || keepOpen()}
+              fallback={
                 <button
                   type="button"
-                  class="text-xs font-medium text-indigo-600 dark:text-indigo-400"
-                  title="Close the form"
+                  class="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
                   onClick={() => {
-                    setKeepOpen(false);
-                    props.onCancelAdd();
+                    setKeepOpen(true);
+                    props.onAdd();
                   }}
                 >
-                  Done
+                  + Add card
                 </button>
-              </Show>
-            </div>
-          </form>
+              }
+            >
+              <form
+                class="flex flex-col gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = event.currentTarget;
+                  const title = String(new FormData(form).get('title') ?? '').trim();
+                  if (title) {
+                    props.onSubmitAdd(title);
+                    if (keepOpen()) {
+                      form.reset();
+                      form.querySelector('textarea')?.focus();
+                    }
+                  }
+                }}
+              >
+                <textarea name="title" rows={2} placeholder="Card title…" autofocus />
+                <div class="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    class="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+                  >
+                    Add
+                  </button>
+                  <Show
+                    when={keepOpen()}
+                    fallback={
+                      <button
+                        type="button"
+                        class="text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                        title="Keep the form open to add several cards"
+                        onClick={() => setKeepOpen(true)}
+                      >
+                        Add another ↵
+                      </button>
+                    }
+                  >
+                    <button
+                      type="button"
+                      class="text-xs font-medium text-indigo-600 dark:text-indigo-400"
+                      title="Close the form"
+                      onClick={() => {
+                        setKeepOpen(false);
+                        props.onCancelAdd();
+                      }}
+                    >
+                      Done
+                    </button>
+                  </Show>
+                </div>
+              </form>
+            </Show>
           </Show>
-        </Show>
-      </div>
+        </div>
       </Show>
     </section>
   );
@@ -2458,7 +2494,8 @@ function SmartTextarea(props: {
           : kind === 'tag'
             ? 'fd-chip fd-chip-tag'
             : 'fd-chip fd-chip-card';
-      if (kind === 'user' || kind === 'team' || kind === 'all') chip.setAttribute('data-mention', `${kind}:${id}`);
+      if (kind === 'user' || kind === 'team' || kind === 'all')
+        chip.setAttribute('data-mention', `${kind}:${id}`);
       else if (kind === 'tag') chip.setAttribute('data-tag', id);
       else if (kind === 'board') chip.setAttribute('data-board', id);
       else chip.setAttribute('data-cross', id);
@@ -2493,7 +2530,12 @@ function SmartTextarea(props: {
 
   // ── the @ / # menu ─────────────────────────────────────────────────
   type Option = { key: string; label: string; hint?: string; chip: HTMLElement };
-  const makeChip = (className: string, attr: [string, string] | null, cite: string | null, label: string): HTMLElement => {
+  const makeChip = (
+    className: string,
+    attr: [string, string] | null,
+    cite: string | null,
+    label: string,
+  ): HTMLElement => {
     const chip = document.createElement('span');
     chip.contentEditable = 'false';
     chip.className = className;
@@ -2515,12 +2557,17 @@ function SmartTextarea(props: {
         })
         .slice(0, 6)
         .map((member) => {
-          const label = (member.display_name ?? member.email ?? 'member').replace(/[\]\(\[]/g, '');
+          const label = (member.display_name ?? member.email ?? 'member').replace(/[\](\[]/g, '');
           return {
             key: member.user_id,
             label,
             hint: member.email ?? undefined,
-            chip: makeChip('fd-chip fd-chip-user', ['data-mention', `user:${member.user_id}`], null, `@${label}`),
+            chip: makeChip(
+              'fd-chip fd-chip-user',
+              ['data-mention', `user:${member.user_id}`],
+              null,
+              `@${label}`,
+            ),
           };
         });
       // @all — Slack's @channel: everyone who can see this board, at
@@ -2532,7 +2579,12 @@ function SmartTextarea(props: {
                 key: 'all:everyone',
                 label: 'All',
                 hint: `notifies everyone with access (${props.members.length})`,
-                chip: makeChip('fd-chip fd-chip-all', ['data-mention', 'all:everyone'], null, '@All'),
+                chip: makeChip(
+                  'fd-chip fd-chip-all',
+                  ['data-mention', 'all:everyone'],
+                  null,
+                  '@All',
+                ),
               },
             ]
           : [];
@@ -2540,12 +2592,17 @@ function SmartTextarea(props: {
         .filter((team) => !q || team.name.toLowerCase().includes(q))
         .slice(0, 3)
         .map((team) => {
-          const label = team.name.replace(/[\]\(\[]/g, '');
+          const label = team.name.replace(/[\](\[]/g, '');
           return {
             key: `team:${team.id}`,
             label: `${label} · team`,
             hint: `notifies ${team.members.length} member${team.members.length === 1 ? '' : 's'}`,
-            chip: makeChip('fd-chip fd-chip-user', ['data-mention', `team:${team.id}`], null, `@${label}`),
+            chip: makeChip(
+              'fd-chip fd-chip-user',
+              ['data-mention', `team:${team.id}`],
+              null,
+              `@${label}`,
+            ),
           };
         });
       return [...all, ...people, ...teams];
@@ -2553,7 +2610,9 @@ function SmartTextarea(props: {
     const q = m.query.toLowerCase();
     const current = props.cards
       .filter((card) => card.number !== null)
-      .filter((card) => !q || String(card.number) === m.query || card.title.toLowerCase().includes(q))
+      .filter(
+        (card) => !q || String(card.number) === m.query || card.title.toLowerCase().includes(q),
+      )
       .slice(0, 4)
       .map((card) => ({
         key: `c:${card.id}`,
@@ -2602,7 +2661,10 @@ function SmartTextarea(props: {
       .filter(
         (card) =>
           card.board_id !== props.cards[0]?.board_id &&
-          (!q || String(card.number) === m.query || card.title.toLowerCase().includes(q) || card.board_name.toLowerCase().includes(q)),
+          (!q ||
+            String(card.number) === m.query ||
+            card.title.toLowerCase().includes(q) ||
+            card.board_name.toLowerCase().includes(q)),
       )
       .slice(0, 5)
       .map((card) => ({
@@ -2696,7 +2758,13 @@ function SmartTextarea(props: {
     const range = document.createRange();
     const anchor: Node = caret && root.contains(caret.node) ? caret.node : root;
     const pos = anchor.nodeType === Node.TEXT_NODE ? m.offset : anchor.childNodes.length;
-    range.setStart(anchor, Math.min(pos, anchor.nodeType === Node.TEXT_NODE ? (anchor as Text).length : anchor.childNodes.length));
+    range.setStart(
+      anchor,
+      Math.min(
+        pos,
+        anchor.nodeType === Node.TEXT_NODE ? (anchor as Text).length : anchor.childNodes.length,
+      ),
+    );
     range.collapse(true);
     selection?.removeAllRanges();
     selection?.addRange(range);
@@ -2851,14 +2919,15 @@ function DetailHoverCard(props: {
     () => (props.hover?.kind === 'user' ? props.hover.id : null),
     (userId) => {
       setStatus(null);
-      if (userId) void statusOf(userId).then(setStatus).catch(() => {});
+      if (userId)
+        void statusOf(userId)
+          .then(setStatus)
+          .catch(() => {});
     },
   );
   const crossCard = () => props.crossCards.find((c) => c.id === props.hover?.id);
   const card = () =>
-    props.cards.find(
-      (c) => c.number === Number(props.hover?.id) || c.id === props.hover?.id,
-    );
+    props.cards.find((c) => c.number === Number(props.hover?.id) || c.id === props.hover?.id);
   const tag = () => props.workspaceTags.find((t) => t.id === props.hover?.id);
   const list = () => props.lists.find((l) => l.id === card()?.list_id);
   const team = () => props.teams.find((t) => t.id === props.hover?.id);
@@ -2878,50 +2947,67 @@ function DetailHoverCard(props: {
                 <Show
                   when={props.hover!.kind === 'card' && crossCard()}
                   fallback={
-                    <Show when={card()} fallback={
-                      <Show when={team()} fallback={<p class="text-xs text-neutral-400">Unknown reference</p>}>
-                        {(t) => (
-                          <>
-                            <div class="flex items-center gap-2">
-                              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-sm dark:bg-emerald-500/15">
-                                👥
-                              </span>
-                              <div class="min-w-0">
-                                <p class="truncate text-sm font-semibold">{t().name}</p>
-                                <p class="text-[10px] font-medium uppercase tracking-wider text-neutral-400">
-                                  Team · {t().members.length} member{t().members.length === 1 ? '' : 's'}
-                                </p>
-                              </div>
-                            </div>
-                            <Show when={t().description}>
-                              <p class="mt-2 line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">
-                                {t().description}
-                              </p>
-                            </Show>
-                            <Show when={t().members.length > 0}>
-                              <div class="mt-2 flex items-center gap-1.5">
-                                <span class="flex -space-x-1.5">
-                                  <For each={t().members.slice(0, 6)}>
-                                    {(entry) => {
-                                      const person = () => props.members.find((m) => m.user_id === entry.user_id);
-                                      return (
-                                        <span class="rounded-full ring-2 ring-white dark:ring-neutral-900">
-                                          <Avatar src={person()?.avatar_url} name={person()?.display_name} email={person()?.email} size="xs" />
-                                        </span>
-                                      );
-                                    }}
-                                  </For>
+                    <Show
+                      when={card()}
+                      fallback={
+                        <Show
+                          when={team()}
+                          fallback={<p class="text-xs text-neutral-400">Unknown reference</p>}
+                        >
+                          {(t) => (
+                            <>
+                              <div class="flex items-center gap-2">
+                                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-sm dark:bg-emerald-500/15">
+                                  👥
                                 </span>
-                                <Show when={t().members.length > 6}>
-                                  <span class="text-[10px] text-neutral-400">+{t().members.length - 6}</span>
-                                </Show>
+                                <div class="min-w-0">
+                                  <p class="truncate text-sm font-semibold">{t().name}</p>
+                                  <p class="text-[10px] font-medium uppercase tracking-wider text-neutral-400">
+                                    Team · {t().members.length} member
+                                    {t().members.length === 1 ? '' : 's'}
+                                  </p>
+                                </div>
                               </div>
-                            </Show>
-                            <p class="mt-2 text-[10px] text-neutral-400">Click to open the team page</p>
-                          </>
-                        )}
-                      </Show>
-                    }>
+                              <Show when={t().description}>
+                                <p class="mt-2 line-clamp-3 text-xs text-neutral-500 dark:text-neutral-400">
+                                  {t().description}
+                                </p>
+                              </Show>
+                              <Show when={t().members.length > 0}>
+                                <div class="mt-2 flex items-center gap-1.5">
+                                  <span class="flex -space-x-1.5">
+                                    <For each={t().members.slice(0, 6)}>
+                                      {(entry) => {
+                                        const person = () =>
+                                          props.members.find((m) => m.user_id === entry.user_id);
+                                        return (
+                                          <span class="rounded-full ring-2 ring-white dark:ring-neutral-900">
+                                            <Avatar
+                                              src={person()?.avatar_url}
+                                              name={person()?.display_name}
+                                              email={person()?.email}
+                                              size="xs"
+                                            />
+                                          </span>
+                                        );
+                                      }}
+                                    </For>
+                                  </span>
+                                  <Show when={t().members.length > 6}>
+                                    <span class="text-[10px] text-neutral-400">
+                                      +{t().members.length - 6}
+                                    </span>
+                                  </Show>
+                                </div>
+                              </Show>
+                              <p class="mt-2 text-[10px] text-neutral-400">
+                                Click to open the team page
+                              </p>
+                            </>
+                          )}
+                        </Show>
+                      }
+                    >
                       {(target) => (
                         <>
                           <div class="flex items-start gap-2">
@@ -2933,7 +3019,10 @@ function DetailHoverCard(props: {
                             </p>
                           </div>
                           <p class="mt-1 text-xs text-neutral-400">
-                            in <span class="font-medium text-neutral-500 dark:text-neutral-300">{list()?.name ?? '…'}</span>
+                            in{' '}
+                            <span class="font-medium text-neutral-500 dark:text-neutral-300">
+                              {list()?.name ?? '…'}
+                            </span>
                             <Show when={target().priority}> · {target().priority}</Show>
                           </p>
                           <Show when={(target().assignees ?? []).length > 0}>
@@ -2941,8 +3030,16 @@ function DetailHoverCard(props: {
                               <span class="flex -space-x-1.5">
                                 <For each={target().assignees}>
                                   {(userId) => {
-                                    const person = () => props.members.find((m) => m.user_id === userId);
-                                    return <Avatar src={person()?.avatar_url} name={person()?.display_name} email={person()?.email} size="sm" />;
+                                    const person = () =>
+                                      props.members.find((m) => m.user_id === userId);
+                                    return (
+                                      <Avatar
+                                        src={person()?.avatar_url}
+                                        name={person()?.display_name}
+                                        email={person()?.email}
+                                        size="sm"
+                                      />
+                                    );
                                   }}
                                 </For>
                               </span>
@@ -2993,7 +3090,9 @@ function DetailHoverCard(props: {
                   <p class="mt-1 text-xs text-neutral-400">
                     A tag shared across this workspace's cards.
                   </p>
-                  <p class="mt-2 text-[10px] text-neutral-400">Click to search cards with this tag</p>
+                  <p class="mt-2 text-[10px] text-neutral-400">
+                    Click to search cards with this tag
+                  </p>
                 </>
               )}
             </Show>
@@ -3001,9 +3100,16 @@ function DetailHoverCard(props: {
         >
           {(person) => (
             <div class="flex items-center gap-2.5">
-              <Avatar src={person().avatar_url} name={person().display_name} email={person().email} size="md" />
+              <Avatar
+                src={person().avatar_url}
+                name={person().display_name}
+                email={person().email}
+                size="md"
+              />
               <div class="min-w-0">
-                <p class="truncate text-sm font-semibold">{person().display_name ?? person().email}</p>
+                <p class="truncate text-sm font-semibold">
+                  {person().display_name ?? person().email}
+                </p>
                 <Show when={person().username}>
                   <p class="truncate text-xs text-neutral-400">@{person().username}</p>
                 </Show>
@@ -3048,9 +3154,7 @@ function TagInput(props: {
 
   const suggestions = () => {
     const q = draft().trim().toLowerCase().replace(/^#/, '');
-    return props.workspaceTags
-      .filter((tag) => !q || tag.name.includes(q))
-      .slice(0, 5);
+    return props.workspaceTags.filter((tag) => !q || tag.name.includes(q)).slice(0, 5);
   };
   /** Does the typed name already exist? (then no create flow needed) */
   const exists = () => {
@@ -3115,7 +3219,10 @@ function TagInput(props: {
         }}
       />
       <Show when={open() && draft().trim() !== ''}>
-        <div ref={root} class="absolute left-0 top-full z-30 mt-1 w-56 rounded-xl border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+        <div
+          ref={root}
+          class="absolute left-0 top-full z-30 mt-1 w-56 rounded-xl border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+        >
           <For each={suggestions()}>
             {(tag) => (
               <button
@@ -3200,11 +3307,7 @@ function DescriptionDiffEvent(props: { from: string; to: string }) {
   return (
     <span>
       updated the description{' '}
-      <button
-        type="button"
-        class="fd-diff-toggle"
-        onClick={() => setOpen(!open())}
-      >
+      <button type="button" class="fd-diff-toggle" onClick={() => setOpen(!open())}>
         {open() ? 'hide changes' : 'show changes'}
       </button>
       <Show when={open()}>
@@ -3212,12 +3315,20 @@ function DescriptionDiffEvent(props: { from: string; to: string }) {
           <For each={rows()}>
             {(row) =>
               row.type === 'fold' ? (
-                <div class="fd-diff-fold">⋯ {row.count} unchanged line{row.count === 1 ? '' : 's'}</div>
+                <div class="fd-diff-fold">
+                  ⋯ {row.count} unchanged line{row.count === 1 ? '' : 's'}
+                </div>
               ) : (
                 <div
-                  class={['fd-diff-row', `fd-diff-${row.type}`, { 'fd-diff-empty': row.text === '' }]}
+                  class={[
+                    'fd-diff-row',
+                    `fd-diff-${row.type}`,
+                    { 'fd-diff-empty': row.text === '' },
+                  ]}
                 >
-                  <span class="fd-diff-sign">{row.type === 'del' ? '−' : row.type === 'add' ? '+' : ' '}</span>
+                  <span class="fd-diff-sign">
+                    {row.type === 'del' ? '−' : row.type === 'add' ? '+' : ' '}
+                  </span>
                   <span class="fd-diff-text">{row.text}</span>
                 </div>
               )
@@ -3288,9 +3399,15 @@ function CardDrawer(props: {
   onCommentArrived: (listener: (event: CommentBusEvent) => void) => () => void;
   onOpenCardRef: (num: number) => void;
   /** Detail hover cards: a user id or a card number under the pointer. */
-  onHover: (target: { kind: 'user' | 'card' | 'tag' | 'team'; id: string; rect: DOMRect } | null) => void;
+  onHover: (
+    target: { kind: 'user' | 'card' | 'tag' | 'team'; id: string; rect: DOMRect } | null,
+  ) => void;
   /** The shared panel width helper (resize handle + width style). */
-  panelWidth: { width: () => number | null; dragging: () => boolean; startDrag: (event: MouseEvent) => void };
+  panelWidth: {
+    width: () => number | null;
+    dragging: () => boolean;
+    startDrag: (event: MouseEvent) => void;
+  };
   /** A cross-board reference was clicked — route to that board's card,
    *  optionally landing ON the citing comment / description event (the
    *  board-backlink chip carries the anchor). */
@@ -3318,9 +3435,7 @@ function CardDrawer(props: {
     // Org-wide numbers (#N is unique across the workspace now): the union
     // of this board's cards and every card reachable cross-board.
     cardNumbers: [
-      ...props.cards
-        .map((c) => c.number)
-        .filter((number): number is number => number !== null),
+      ...props.cards.map((c) => c.number).filter((number): number is number => number !== null),
       ...props.crossCards
         .map((c) => c.number)
         .filter((number): number is number => number !== null),
@@ -3366,9 +3481,12 @@ function CardDrawer(props: {
   onCleanup(() => document.removeEventListener('mousedown', onPickerAway));
 
   const [titleDraft, setTitleDraft] = createSignal(card()?.title ?? '');
-  createEffect(() => card()?.title, (title) => {
-    if (title !== undefined && !titleDraft()) setTitleDraft(title);
-  });
+  createEffect(
+    () => card()?.title,
+    (title) => {
+      if (title !== undefined && !titleDraft()) setTitleDraft(title);
+    },
+  );
 
   // Description: rendered markdown by default, textarea when editing.
   const [editingBody, setEditingBody] = createSignal(false);
@@ -3414,7 +3532,6 @@ function CardDrawer(props: {
       setLoadingEarlier(false);
     }
   };
-
 
   const [bodyDraft, setBodyDraft] = createSignal('');
   const startEditing = () => {
@@ -3521,8 +3638,7 @@ function CardDrawer(props: {
    *  hover raises the profile card, click opens the profile. */
   const personChip = (item: EventRef) => {
     const member = item.id ? props.members.find((m) => m.user_id === item.id) : undefined;
-    const label =
-      member?.display_name ?? member?.email?.split('@')[0] ?? item.name ?? 'someone';
+    const label = member?.display_name ?? member?.email?.split('@')[0] ?? item.name ?? 'someone';
     if (!item.id) return <span class="font-medium">{label}</span>;
     return (
       <span class="fd-mention" data-user-id={item.id}>
@@ -3720,7 +3836,9 @@ function CardDrawer(props: {
             return old && JSON.stringify(old) === JSON.stringify(row) ? old : { ...row };
           }),
         ...kept,
-      ].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
+      ].sort(
+        (a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at),
+      );
       if (draft.list.length !== merged.length || draft.list.some((row, i) => row !== merged[i])) {
         draft.list = merged;
       }
@@ -3800,7 +3918,8 @@ function CardDrawer(props: {
     () => [drawerParams.event ?? null, events().length, card()?.id, tab()] as const,
     ([event]) => {
       if (event !== 'description') return;
-      if (anchoredEventRow?.isConnected && anchoredEventRow.classList.contains('fd-chat-anchor')) return;
+      if (anchoredEventRow?.isConnected && anchoredEventRow.classList.contains('fd-chat-anchor'))
+        return;
       queueMicrotask(() => {
         const rows = document.querySelectorAll('[data-event-kind="description"]');
         const row = rows[rows.length - 1];
@@ -3822,7 +3941,6 @@ function CardDrawer(props: {
       });
     },
   );
-
 
   // The scroller: latest at the bottom; auto-follow new comments.
   let commentsScroll: HTMLDivElement | undefined;
@@ -3862,7 +3980,10 @@ function CardDrawer(props: {
                 edited_at: null,
                 client_op: payload.clientOp,
               });
-              draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
+              draft.list = [...draft.list].sort(
+                (a, b) =>
+                  chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at),
+              );
             }
           },
           echo: (durable) => durable.list.some((row) => row.client_op === payload.clientOp),
@@ -3944,7 +4065,10 @@ function CardDrawer(props: {
         .catch(() => {});
     }
   };
-  const blockedNames = () => blocked().map((person) => person.name).join(', ');
+  const blockedNames = () =>
+    blocked()
+      .map((person) => person.name)
+      .join(', ');
   const grantAccess = async () => {
     if (accessBusy() || (blocked().length === 0 && blockedTeams().length === 0)) return;
     setAccessBusy(true);
@@ -3959,7 +4083,9 @@ function CardDrawer(props: {
         });
         props.onTeamAccessGranted(blockedTeams().map((team) => team.teamId));
         showAccessNote(
-          `Access granted — ${blockedTeams().map((team) => `@${team.name}`).join(', ')} can now see this board and just got your mention.`,
+          `Access granted — ${blockedTeams()
+            .map((team) => `@${team.name}`)
+            .join(', ')} can now see this board and just got your mention.`,
         );
         setBlockedTeams([]);
         return;
@@ -4029,7 +4155,9 @@ function CardDrawer(props: {
       });
       props.onTeamAccessGranted(blockedTeams().map((team) => team.teamId));
       showAccessNote(
-        `Access granted — ${blockedTeams().map((team) => `@${team.name}`).join(', ')} can now see this board and just got your mention.`,
+        `Access granted — ${blockedTeams()
+          .map((team) => `@${team.name}`)
+          .join(', ')} can now see this board and just got your mention.`,
       );
       setBlockedTeams([]);
     } catch (error) {
@@ -4081,7 +4209,9 @@ function CardDrawer(props: {
           edited_at: null,
           client_op: payload.clientOp,
         });
-        draft.list = [...draft.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
+        draft.list = [...draft.list].sort(
+          (a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at),
+        );
       },
       send: () =>
         addComment(cardIdNow(), body, payload.clientOp, props.clientOp ?? null).catch((error) => {
@@ -4107,7 +4237,9 @@ function CardDrawer(props: {
     (comment.author_id === props.myId || Boolean(props.myWsRole) || Boolean(props.myTeamAdmin));
   /** The role this viewer deletes under (optimistic tombstone stamp; the
    *  RPC's value wins on echo). */
-  const deleteAsFor = (comment: CommentRow): {
+  const deleteAsFor = (
+    comment: CommentRow,
+  ): {
     role: 'author' | 'owner' | 'admin' | 'team_admin';
     teamId: string | null;
   } => {
@@ -4283,7 +4415,9 @@ function CardDrawer(props: {
       // A backlink chip carries the citing message: land ON it, not just
       // on the board.
       const anchor = boardChip.getAttribute('data-message-id');
-      navigate(`/b/${boardChip.getAttribute('data-board-id') ?? ''}${anchor ? `?chat=${anchor}` : ''}`);
+      navigate(
+        `/b/${boardChip.getAttribute('data-board-id') ?? ''}${anchor ? `?chat=${anchor}` : ''}`,
+      );
       return;
     }
     const prio = target?.closest?.('[data-priority]');
@@ -4316,7 +4450,8 @@ function CardDrawer(props: {
       props.onHover({ kind: 'tag', id: tagId, rect });
       return;
     }
-    const cardRef = around.getAttribute('data-card-ref') ?? around.getAttribute('data-card-id') ?? '';
+    const cardRef =
+      around.getAttribute('data-card-ref') ?? around.getAttribute('data-card-id') ?? '';
     if (cardRef) props.onHover({ kind: 'card', id: cardRef, rect });
     const teamId = around.getAttribute('data-team-id');
     if (teamId) props.onHover({ kind: 'team', id: teamId, rect });
@@ -4434,228 +4569,671 @@ function CardDrawer(props: {
 
         {/* ── settings tab ─────────────────────────────────────────────── */}
         <Show when={tab() === 'settings'}>
-        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3">
-          {/* title — the card's name is edited here, not in the header */}
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs font-medium text-neutral-400">Title</span>
-            <Show
-              when={props.canEdit}
-              fallback={
-                <span class="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 dark:border-neutral-700 dark:text-neutral-300">
-                  {card()?.title ?? '…'}
-                </span>
-              }
-            >
-              <input
-                value={titleDraft()}
-                class="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 focus:border-indigo-400 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-                onInput={(event) => setTitleDraft(event.currentTarget.value)}
-                onBlur={() => saveTitle()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.currentTarget.blur();
-                }}
-              />
-            </Show>
-          </div>
-          {/* assignment block */}
-          <div class="flex flex-col gap-2">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="w-16 shrink-0 text-xs font-medium text-neutral-400">Assigned</span>
-              <span class="flex -space-x-1.5">
-                <For each={card()?.assignees ?? []}>
-                  {(userId) => {
-                    const member = () => props.members.find((m) => m.user_id === userId);
-                    return (
-                      <Show
-                        when={props.canEdit}
-                        fallback={
-                          <span class="rounded-full ring-1 ring-white dark:ring-neutral-900">
-                            <Avatar src={member()?.avatar_url} name={member()?.display_name} email={member()?.email} size="sm" />
-                          </span>
-                        }
-                      >
-                        <button
-                          type="button"
-                          title={`Unassign ${member()?.display_name ?? userId}`}
-                          class="rounded-full ring-1 ring-white transition hover:opacity-60 dark:ring-neutral-900"
-                          onClick={() =>
-                            props.onUpdate({
-                              assignees: (card()?.assignees ?? []).filter((id) => id !== userId),
-                            })
-                          }
-                        >
-                          <Avatar src={member()?.avatar_url} name={member()?.display_name} email={member()?.email} size="sm" />
-                        </button>
-                      </Show>
-                    );
-                  }}
-                </For>
-              </span>
-              <Show when={props.canEdit}>
-                <div data-assign-picker class="relative" onClick={(event) => event.stopPropagation()}>
-                  <button
-                    type="button"
-                    class="rounded-full border border-dashed border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700 dark:hover:border-indigo-600"
-                    onClick={() => setPickerOpen(!pickerOpen())}
-                  >
-                    + Assign
-                  </button>
-                  <Show when={pickerOpen()}>
-                    <div class="absolute left-0 top-full z-30 mt-1 max-h-56 w-56 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
-                      <For each={props.members}>
-                        {(member) => {
-                          const assigned = () => (card()?.assignees ?? []).includes(member.user_id);
-                          return (
-                            <button
-                              type="button"
-                              class={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${
-                                assigned()
-                                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
-                                  : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                              }`}
-                              onClick={() => {
-                                const current = card()?.assignees ?? [];
-                                props.onUpdate({
-                                  assignees: assigned()
-                                    ? current.filter((id) => id !== member.user_id)
-                                    : [...current, member.user_id],
-                                });
-                              }}
-                            >
-                              <Avatar src={member.avatar_url} name={member.display_name} email={member.email} size="sm" />
-                              <span class="min-w-0 flex-1 truncate">
-                                {member.display_name ?? member.email}
-                              </span>
-                              <Show when={assigned()}>✓</Show>
-                            </button>
-                          );
-                        }}
-                      </For>
-                      <Show when={props.members.length === 0}>
-                        <p class="px-2 py-1.5 text-xs text-neutral-400">No members yet</p>
-                      </Show>
-                    </div>
-                  </Show>
-                </div>
-              </Show>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="w-16 shrink-0 text-xs font-medium text-neutral-400">Priority</span>
+          <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3">
+            {/* title — the card's name is edited here, not in the header */}
+            <div class="flex flex-col gap-1.5">
+              <span class="text-xs font-medium text-neutral-400">Title</span>
               <Show
                 when={props.canEdit}
                 fallback={
-                  <Show when={card()?.priority} fallback={<span class="text-xs text-neutral-400">None</span>}>
-                    {(priority) => <PriorityPill priority={priority()} />}
-                  </Show>
+                  <span class="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 dark:border-neutral-700 dark:text-neutral-300">
+                    {card()?.title ?? '…'}
+                  </span>
                 }
               >
-                <select
-                  class="w-28 py-1 text-xs"
-                  value={card()?.priority ?? ''}
-                  onChange={(event) =>
-                    props.onUpdate({ priority: (event.currentTarget.value || null) as string | null })
-                  }
-                >
-                  <option value="">None</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </Show>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="w-16 shrink-0 text-xs font-medium text-neutral-400">Tags</span>
-              <For each={card()?.tags ?? []}>
-                {(tag) => (
-                  <span class="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-                    #{tag.name}
-                    <Show when={props.canEdit}>
-                      <button
-                        type="button"
-                        class="text-sky-400 hover:text-sky-700 dark:hover:text-sky-100"
-                        title={`Remove #${tag.name}`}
-                        onClick={() =>
-                          props.onUpdate({ tags: (card()?.tags ?? []).filter((t) => t.id !== tag.id) })
-                        }
-                      >
-                        ×
-                      </button>
-                    </Show>
-                  </span>
-                )}
-              </For>
-              <Show when={props.canEdit}>
-                <TagInput
-                  workspaceTags={props.workspaceTags}
-                  workspaceId={props.workspaceId}
-                  onAdd={(tag) => {
-                    if (!(card()?.tags ?? []).some((t) => t.id === tag.id))
-                      props.onUpdate({ tags: [...(card()?.tags ?? []), tag] });
+                <input
+                  value={titleDraft()}
+                  class="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 focus:border-indigo-400 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                  onInput={(event) => setTitleDraft(event.currentTarget.value)}
+                  onBlur={() => saveTitle()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
                   }}
                 />
               </Show>
             </div>
-          </div>
+            {/* assignment block */}
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="w-16 shrink-0 text-xs font-medium text-neutral-400">Assigned</span>
+                <span class="flex -space-x-1.5">
+                  <For each={card()?.assignees ?? []}>
+                    {(userId) => {
+                      const member = () => props.members.find((m) => m.user_id === userId);
+                      return (
+                        <Show
+                          when={props.canEdit}
+                          fallback={
+                            <span class="rounded-full ring-1 ring-white dark:ring-neutral-900">
+                              <Avatar
+                                src={member()?.avatar_url}
+                                name={member()?.display_name}
+                                email={member()?.email}
+                                size="sm"
+                              />
+                            </span>
+                          }
+                        >
+                          <button
+                            type="button"
+                            title={`Unassign ${member()?.display_name ?? userId}`}
+                            class="rounded-full ring-1 ring-white transition hover:opacity-60 dark:ring-neutral-900"
+                            onClick={() =>
+                              props.onUpdate({
+                                assignees: (card()?.assignees ?? []).filter((id) => id !== userId),
+                              })
+                            }
+                          >
+                            <Avatar
+                              src={member()?.avatar_url}
+                              name={member()?.display_name}
+                              email={member()?.email}
+                              size="sm"
+                            />
+                          </button>
+                        </Show>
+                      );
+                    }}
+                  </For>
+                </span>
+                <Show when={props.canEdit}>
+                  <div
+                    data-assign-picker
+                    class="relative"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      class="rounded-full border border-dashed border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700 dark:hover:border-indigo-600"
+                      onClick={() => setPickerOpen(!pickerOpen())}
+                    >
+                      + Assign
+                    </button>
+                    <Show when={pickerOpen()}>
+                      <div class="absolute left-0 top-full z-30 mt-1 max-h-56 w-56 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+                        <For each={props.members}>
+                          {(member) => {
+                            const assigned = () =>
+                              (card()?.assignees ?? []).includes(member.user_id);
+                            return (
+                              <button
+                                type="button"
+                                class={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${
+                                  assigned()
+                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                                    : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                                }`}
+                                onClick={() => {
+                                  const current = card()?.assignees ?? [];
+                                  props.onUpdate({
+                                    assignees: assigned()
+                                      ? current.filter((id) => id !== member.user_id)
+                                      : [...current, member.user_id],
+                                  });
+                                }}
+                              >
+                                <Avatar
+                                  src={member.avatar_url}
+                                  name={member.display_name}
+                                  email={member.email}
+                                  size="sm"
+                                />
+                                <span class="min-w-0 flex-1 truncate">
+                                  {member.display_name ?? member.email}
+                                </span>
+                                <Show when={assigned()}>✓</Show>
+                              </button>
+                            );
+                          }}
+                        </For>
+                        <Show when={props.members.length === 0}>
+                          <p class="px-2 py-1.5 text-xs text-neutral-400">No members yet</p>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
+              </div>
 
-          {/* provenance: who created the card and when */}
-          <p class="text-[11px] text-neutral-400">
-            Created by{' '}
-            <span class="font-medium text-neutral-500 dark:text-neutral-300">
-              {props.members.find((m) => m.user_id === card()?.created_by)?.display_name ??
-                'a former member'}
-            </span>
-            <Show when={card()?.created_at}>
-              {' '}· {new Date(card()!.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-            </Show>
-          </p>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="w-16 shrink-0 text-xs font-medium text-neutral-400">Priority</span>
+                <Show
+                  when={props.canEdit}
+                  fallback={
+                    <Show
+                      when={card()?.priority}
+                      fallback={<span class="text-xs text-neutral-400">None</span>}
+                    >
+                      {(priority) => <PriorityPill priority={priority()} />}
+                    </Show>
+                  }
+                >
+                  <select
+                    class="w-28 py-1 text-xs"
+                    value={card()?.priority ?? ''}
+                    onChange={(event) =>
+                      props.onUpdate({
+                        priority: (event.currentTarget.value || null) as string | null,
+                      })
+                    }
+                  >
+                    <option value="">None</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </Show>
+              </div>
 
-          {/* description */}
-          <div class="flex flex-col gap-1.5">
-            <div class="flex items-center justify-between">
-              <label class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                Description
-              </label>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="w-16 shrink-0 text-xs font-medium text-neutral-400">Tags</span>
+                <For each={card()?.tags ?? []}>
+                  {(tag) => (
+                    <span class="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+                      #{tag.name}
+                      <Show when={props.canEdit}>
+                        <button
+                          type="button"
+                          class="text-sky-400 hover:text-sky-700 dark:hover:text-sky-100"
+                          title={`Remove #${tag.name}`}
+                          onClick={() =>
+                            props.onUpdate({
+                              tags: (card()?.tags ?? []).filter((t) => t.id !== tag.id),
+                            })
+                          }
+                        >
+                          ×
+                        </button>
+                      </Show>
+                    </span>
+                  )}
+                </For>
+                <Show when={props.canEdit}>
+                  <TagInput
+                    workspaceTags={props.workspaceTags}
+                    workspaceId={props.workspaceId}
+                    onAdd={(tag) => {
+                      if (!(card()?.tags ?? []).some((t) => t.id === tag.id))
+                        props.onUpdate({ tags: [...(card()?.tags ?? []), tag] });
+                    }}
+                  />
+                </Show>
+              </div>
+            </div>
+
+            {/* provenance: who created the card and when */}
+            <p class="text-[11px] text-neutral-400">
+              Created by{' '}
+              <span class="font-medium text-neutral-500 dark:text-neutral-300">
+                {props.members.find((m) => m.user_id === card()?.created_by)?.display_name ??
+                  'a former member'}
+              </span>
+              <Show when={card()?.created_at}>
+                {' '}
+                ·{' '}
+                {new Date(card()!.created_at).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </Show>
+            </p>
+
+            {/* description */}
+            <div class="flex flex-col gap-1.5">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                  Description
+                </label>
+                <Show
+                  when={!editingBody()}
+                  fallback={
+                    <span class="flex gap-2 text-xs">
+                      <button
+                        type="button"
+                        class="rounded-md px-2 py-0.5 font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+                        onClick={() => saveBody()}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        onClick={() => setEditingBody(false)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  }
+                >
+                  <Show when={props.canEdit}>
+                    <button
+                      type="button"
+                      class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                      onClick={startEditing}
+                    >
+                      {card()?.description ? 'Edit' : 'Add description'}
+                    </button>
+                  </Show>
+                </Show>
+              </div>
               <Show
                 when={!editingBody()}
                 fallback={
-                  <span class="flex gap-2 text-xs">
-                    <button
-                      type="button"
-                      class="rounded-md px-2 py-0.5 font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
-                      onClick={() => saveBody()}
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                      onClick={() => setEditingBody(false)}
-                    >
-                      Cancel
-                    </button>
-                  </span>
+                  <SmartTextarea
+                    value={bodyDraft()}
+                    onInput={setBodyDraft}
+                    members={props.members}
+                    teams={props.teams}
+                    cards={props.cards}
+                    workspaceTags={props.workspaceTags}
+                    crossCards={props.crossCards}
+                    workspaceBoards={props.workspaceBoards}
+                    boardName={props.boardName}
+                    board={{ id: card()?.board_id ?? '', name: props.boardName }}
+                    rows={8}
+                    onSend={() => saveBody()}
+                    placeholder={
+                      'Describe the task — **markdown**, image links, #12 references, @name mentions'
+                    }
+                  />
                 }
               >
-                <Show when={props.canEdit}>
-                  <button
-                    type="button"
-                    class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-                    onClick={startEditing}
-                  >
-                    {card()?.description ? 'Edit' : 'Add description'}
-                  </button>
+                <Show
+                  when={card()?.description}
+                  fallback={
+                    <p class="rounded-lg border border-dashed border-neutral-200 p-3 text-sm text-neutral-400 dark:border-neutral-700">
+                      No description yet — that's the full task: markdown, images, video links, #12
+                      citations.
+                    </p>
+                  }
+                >
+                  <div
+                    // markdown-rendered card body; clicks on #citations open that card
+                    class="prose-card text-sm leading-relaxed"
+                    onClick={onBodyClick}
+                    onMouseOver={onBodyHover}
+                    // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
+                    innerHTML={renderMarkdown(card()?.description ?? '', markdownContext())}
+                  />
                 </Show>
               </Show>
             </div>
+
+            {/* ── activity timeline: every change, by whom ───────────────── */}
+            <div class="flex flex-col gap-1.5">
+              <span class="text-xs font-medium text-neutral-400">Activity</span>
+              <Show
+                when={events().length > 0}
+                fallback={
+                  <p class="text-xs text-neutral-400">
+                    Everything that happens to this card — moves, renames, tags, assignments — lands
+                    here.
+                  </p>
+                }
+              >
+                <ol
+                  class="fd-timeline flex flex-col gap-1 border-l border-neutral-200 pl-3 dark:border-neutral-700"
+                  onClick={onBodyClick}
+                  onMouseOver={onBodyHover}
+                >
+                  <For each={timelineRows()}>
+                    {(row) => (
+                      <li
+                        data-event-kind={row.kind}
+                        class="relative text-xs leading-relaxed text-neutral-500 dark:text-neutral-400"
+                      >
+                        <span class="absolute -left-[17px] top-1.5 h-1.5 w-1.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+                        <Show
+                          when={row.actor_id}
+                          fallback={
+                            <span class="font-medium text-neutral-700 dark:text-neutral-200">
+                              {actorName(row.actor_id)}
+                            </span>
+                          }
+                        >
+                          <span class="fd-mention" data-user-id={row.actor_id}>
+                            {actorName(row.actor_id)}
+                          </span>
+                        </Show>{' '}
+                        {eventLine(row)}
+                        <Show when={row.agent}>
+                          <span class="ml-0.5 rounded bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+                            via agent
+                          </span>
+                        </Show>
+                        <span class="ml-1 text-[10px] text-neutral-400">
+                          {timeAgo(row.created_at)}
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ol>
+              </Show>
+            </div>
+          </div>
+        </Show>
+
+        {/* ── chat tab ──────────────────────────────────────────────────── */}
+        <Show when={tab() === 'chat'}>
+          {/* ── comments label ──────────────────────────────────────────── */}
+          <div class="flex shrink-0 items-center justify-between border-t border-neutral-100 px-5 pb-1 pt-2 dark:border-neutral-800">
+            <span class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              Comments · {comments().length}
+            </span>
+            <Show when={!loadingEarlier() && !noMoreEarlier()}>
+              <button
+                type="button"
+                class="text-[11px] font-medium text-indigo-500 hover:text-indigo-600 dark:text-indigo-400"
+                onClick={() => void loadEarlier()}
+              >
+                ↑ Load earlier
+              </button>
+            </Show>
+            <Show when={loadingEarlier()}>
+              <span class="text-[11px] text-neutral-400">Loading…</span>
+            </Show>
+          </div>
+
+          {/* ── comments: the ONLY scrollable region, latest at the bottom ── */}
+          <div ref={commentsScroll} class="min-h-0 flex-1 overflow-y-auto px-5 py-1">
             <Show
-              when={!editingBody()}
+              when={comments().length > 0}
               fallback={
+                <p class="py-6 text-center text-xs text-neutral-400">
+                  No comments yet — mention cards as #12, people as @name, use markdown.
+                </p>
+              }
+            >
+              <ul class="flex flex-col gap-3 py-1">
+                <For each={comments()}>
+                  {(comment) => {
+                    const mine = () =>
+                      comment.author_id !== null && comment.author_id === props.myId;
+                    return (
+                      <li
+                        data-comment-id={comment.id}
+                        class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}
+                      >
+                        <Avatar src={comment.avatar_url} name={comment.author} size="sm" />
+                        <div
+                          class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}
+                        >
+                          <p
+                            class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}
+                          >
+                            <span class="font-semibold text-neutral-500 dark:text-neutral-300">
+                              {mine() ? 'You' : comment.author}
+                            </span>
+                            <Show when={comment.agent}>
+                              {
+                                <span
+                                  class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
+                                  title="Sent through an MCP connection"
+                                >
+                                  Agent
+                                </span>
+                              }
+                            </Show>
+                            <time>
+                              {new Date(comment.created_at).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </time>
+                            <Show when={comment.edited_at && !comment.deleted_at}>
+                              <span
+                                class="italic"
+                                title={`Edited ${new Date(comment.edited_at!).toLocaleString(
+                                  undefined,
+                                  {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                  },
+                                )}`}
+                              >
+                                (edited)
+                              </span>
+                            </Show>
+                            <Show when={canEditComment(comment) || canDeleteComment(comment)}>
+                              <span
+                                class={[
+                                  'flex items-center gap-1 transition-opacity',
+                                  confirmCommentId() === comment.id
+                                    ? 'opacity-100'
+                                    : 'opacity-0 group-hover:opacity-100',
+                                ]}
+                              >
+                                <Show when={canEditComment(comment)}>
+                                  <button
+                                    type="button"
+                                    title="Edit comment"
+                                    class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                                    onClick={() => startCommentEdit(comment)}
+                                  >
+                                    ✏️
+                                  </button>
+                                </Show>
+                                <Show when={canDeleteComment(comment)}>
+                                  <button
+                                    type="button"
+                                    title={
+                                      confirmCommentId() === comment.id
+                                        ? 'Click again to delete'
+                                        : 'Delete comment'
+                                    }
+                                    class={[
+                                      'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
+                                      { 'text-red-500': confirmCommentId() === comment.id },
+                                    ]}
+                                    onClick={() => askDeleteComment(comment)}
+                                  >
+                                    {confirmCommentId() === comment.id ? 'Delete?' : '🗑'}
+                                  </button>
+                                </Show>
+                              </span>
+                            </Show>
+                          </p>
+                          <Show
+                            when={!comment.deleted_at}
+                            fallback={
+                              // The deletion trail: real mention chips (avatars,
+                              // hovers, rename-proof) + the role the deleter held.
+                              <p
+                                class="prose-card mt-0.5 text-xs italic text-neutral-400"
+                                // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
+                                innerHTML={renderMarkdown(
+                                  tombstoneLine(
+                                    comment,
+                                    props.myId,
+                                    props.members,
+                                    props.teams,
+                                    'comment',
+                                  ),
+                                  markdownContext(),
+                                )}
+                                onClick={onBodyClick}
+                                onMouseOver={onBodyHover}
+                              />
+                            }
+                          >
+                            <Show
+                              when={editingCommentId() !== comment.id}
+                              fallback={
+                                <form
+                                  class={[
+                                    'mt-0.5 flex w-full flex-col gap-1.5',
+                                    { 'text-left': mine() },
+                                  ]}
+                                  onSubmit={(event) => {
+                                    event.preventDefault();
+                                    saveCommentEdit();
+                                  }}
+                                >
+                                  <SmartTextarea
+                                    value={commentEditDraft()}
+                                    onInput={setCommentEditDraft}
+                                    members={props.members}
+                                    teams={props.teams}
+                                    cards={props.cards}
+                                    workspaceTags={props.workspaceTags}
+                                    crossCards={props.crossCards}
+                                    workspaceBoards={props.workspaceBoards}
+                                    boardName={props.boardName}
+                                    board={{ id: card()?.board_id ?? '', name: props.boardName }}
+                                    rows={2}
+                                    sendOnEnter
+                                    onSend={() => saveCommentEdit()}
+                                    placeholder="Edit comment…"
+                                  />
+                                  <div class="flex items-center justify-end gap-2 text-xs">
+                                    <button
+                                      type="button"
+                                      class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                      onClick={() => setEditingCommentId(null)}
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      disabled={!commentEditDraft().trim()}
+                                      class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                                    >
+                                      Save
+                                    </button>
+                                  </div>
+                                </form>
+                              }
+                            >
+                              <div
+                                class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
+                                  mine()
+                                    ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                                    : 'bg-neutral-100 dark:bg-neutral-800/60'
+                                }`}
+                                onClick={onBodyClick}
+                                onMouseOver={onBodyHover}
+                                // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
+                                innerHTML={renderMarkdown(comment.body, markdownContext())}
+                              />
+                            </Show>
+                          </Show>
+                        </div>
+                      </li>
+                    );
+                  }}
+                </For>
+              </ul>
+            </Show>
+          </div>
+
+          {/* ── composer (fixed at the bottom) ───────────────────────────── */}
+          <div class="shrink-0 border-t border-neutral-100 px-5 py-3 dark:border-neutral-800">
+            {/* Blocked mentions: the send-time indication. The server never
+              notified these people or teams — the author decides. */}
+            <Show when={blocked().length > 0 || blockedTeams().length > 0 || accessNote()}>
+              <div class="mb-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950/50">
+                <Show
+                  when={blocked().length > 0 || blockedTeams().length > 0}
+                  fallback={
+                    <p class="flex items-start gap-2 text-amber-800 dark:text-amber-200">
+                      <span class="flex-1">{accessNote()}</span>
+                      <button
+                        type="button"
+                        title="Dismiss"
+                        class="shrink-0 font-semibold text-amber-500 hover:text-amber-800 dark:hover:text-amber-200"
+                        onClick={() => setAccessNote(null)}
+                      >
+                        ×
+                      </button>
+                    </p>
+                  }
+                >
+                  <p class="font-semibold text-amber-900 dark:text-amber-100">
+                    {[
+                      ...blocked().map((person) => person.name),
+                      ...blockedTeams().map((team) => `@${team.name}`),
+                    ].join(', ')}{' '}
+                    can’t see this board — no notification was sent.
+                  </p>
+                  <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <Show
+                      when={props.accessDelegation || props.isWsAdmin}
+                      fallback={
+                        <button
+                          type="button"
+                          disabled={accessBusy()}
+                          class="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                          onClick={() => void askAdmins()}
+                        >
+                          {accessBusy() ? 'Asking…' : 'Ask admins to grant access'}
+                        </button>
+                      }
+                    >
+                      <button
+                        type="button"
+                        disabled={accessBusy()}
+                        class="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                        onClick={() => void grantAccess()}
+                      >
+                        {accessBusy() ? 'Granting…' : 'Give access & notify'}
+                      </button>
+                    </Show>
+                    <button
+                      type="button"
+                      class="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900"
+                      onClick={() => {
+                        setBlocked([]);
+                        setBlockedTeams([]);
+                      }}
+                    >
+                      Ignore
+                    </button>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+            <Show when={commentsEngine.failed().length > 0}>
+              <p class="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-400">
+                Couldn't post that comment — {commentsEngine.failed()[0]?.error}
+                <button
+                  type="button"
+                  class="font-semibold underline"
+                  onClick={() => commentsEngine.retry(commentsEngine.failed()[0]!.id)}
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  class="font-semibold underline"
+                  onClick={() => commentsEngine.dismiss(commentsEngine.failed()[0]!.id)}
+                >
+                  Dismiss
+                </button>
+              </p>
+            </Show>
+            <Show
+              when={props.canEdit}
+              fallback={
+                <p class="text-center text-xs text-neutral-400">
+                  View only — ask an admin for write access to comment.
+                </p>
+              }
+            >
+              <form
+                class="flex flex-col gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  post();
+                }}
+              >
                 <SmartTextarea
-                  value={bodyDraft()}
-                  onInput={setBodyDraft}
+                  value={commentDraft()}
+                  onInput={setCommentDraft}
                   members={props.members}
                   teams={props.teams}
                   cards={props.cards}
@@ -4664,403 +5242,35 @@ function CardDrawer(props: {
                   workspaceBoards={props.workspaceBoards}
                   boardName={props.boardName}
                   board={{ id: card()?.board_id ?? '', name: props.boardName }}
-                  rows={8}
-                  onSend={() => saveBody()}
-                  placeholder={'Describe the task — **markdown**, image links, #12 references, @name mentions'}
+                  rows={2}
+                  sendOnEnter
+                  onSend={() => post()}
+                  placeholder="Write a comment… markdown, @ to mention, # to cite a card"
                 />
-              }
-            >
-              <Show
-                when={card()?.description}
-                fallback={
-                  <p class="rounded-lg border border-dashed border-neutral-200 p-3 text-sm text-neutral-400 dark:border-neutral-700">
-                    No description yet — that's the full task: markdown, images, video links, #12
-                    citations.
-                  </p>
-                }
-              >
-                <div
-                  // markdown-rendered card body; clicks on #citations open that card
-                  class="prose-card text-sm leading-relaxed"
-                  onClick={onBodyClick}
-                  onMouseOver={onBodyHover}
-                  // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
-                  innerHTML={renderMarkdown(card()?.description ?? '', markdownContext())}
-                />
-              </Show>
-            </Show>
-          </div>
-
-          {/* ── activity timeline: every change, by whom ───────────────── */}
-          <div class="flex flex-col gap-1.5">
-            <span class="text-xs font-medium text-neutral-400">Activity</span>
-            <Show
-              when={events().length > 0}
-              fallback={
-                <p class="text-xs text-neutral-400">
-                  Everything that happens to this card — moves, renames, tags, assignments —
-                  lands here.
-                </p>
-              }
-            >
-              <ol
-                class="fd-timeline flex flex-col gap-1 border-l border-neutral-200 pl-3 dark:border-neutral-700"
-                onClick={onBodyClick}
-                onMouseOver={onBodyHover}
-              >
-                <For each={timelineRows()}>
-                  {(row) => (
-                    <li data-event-kind={row.kind} class="relative text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-                      <span class="absolute -left-[17px] top-1.5 h-1.5 w-1.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-                      <Show
-                        when={row.actor_id}
-                        fallback={
-                          <span class="font-medium text-neutral-700 dark:text-neutral-200">
-                            {actorName(row.actor_id)}
-                          </span>
-                        }
-                      >
-                        <span class="fd-mention" data-user-id={row.actor_id}>
-                          {actorName(row.actor_id)}
-                        </span>
-                      </Show>{' '}
-                      {eventLine(row)}
-                      <Show when={row.agent}>
-                        <span class="ml-0.5 rounded bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
-                          via agent
-                        </span>
-                      </Show>
-                      <span class="ml-1 text-[10px] text-neutral-400">{timeAgo(row.created_at)}</span>
-                    </li>
-                  )}
-                </For>
-              </ol>
-            </Show>
-          </div>
-        </div>
-        </Show>
-
-        {/* ── chat tab ──────────────────────────────────────────────────── */}
-        <Show when={tab() === 'chat'}>
-        {/* ── comments label ──────────────────────────────────────────── */}
-        <div class="flex shrink-0 items-center justify-between border-t border-neutral-100 px-5 pb-1 pt-2 dark:border-neutral-800">
-          <span class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Comments · {comments().length}
-          </span>
-          <Show when={!loadingEarlier() && !noMoreEarlier()}>
-            <button
-              type="button"
-              class="text-[11px] font-medium text-indigo-500 hover:text-indigo-600 dark:text-indigo-400"
-              onClick={() => void loadEarlier()}
-            >
-              ↑ Load earlier
-            </button>
-          </Show>
-          <Show when={loadingEarlier()}>
-            <span class="text-[11px] text-neutral-400">Loading…</span>
-          </Show>
-        </div>
-
-        {/* ── comments: the ONLY scrollable region, latest at the bottom ── */}
-        <div ref={commentsScroll} class="min-h-0 flex-1 overflow-y-auto px-5 py-1">
-          <Show when={comments().length > 0} fallback={
-            <p class="py-6 text-center text-xs text-neutral-400">
-              No comments yet — mention cards as #12, people as @name, use markdown.
-            </p>
-          }>
-            <ul class="flex flex-col gap-3 py-1">
-              <For each={comments()}>
-                {(comment) => {
-                  const mine = () => comment.author_id !== null && comment.author_id === props.myId;
-                  return (
-                    <li data-comment-id={comment.id} class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
-                      <Avatar src={comment.avatar_url} name={comment.author} size="sm" />
-                      <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
-                        <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
-                          <span class="font-semibold text-neutral-500 dark:text-neutral-300">
-                            {mine() ? 'You' : comment.author}
-                          </span>
-                          <Show when={comment.agent}>{<span
-                            class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
-                            title="Sent through an MCP connection"
-                          >
-                            Agent
-                          </span>}</Show>
-                          <time>
-                            {new Date(comment.created_at).toLocaleString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                          </time>
-                          <Show when={comment.edited_at && !comment.deleted_at}>
-                            <span
-                              class="italic"
-                              title={`Edited ${new Date(comment.edited_at!).toLocaleString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })}`}
-                            >
-                              (edited)
-                            </span>
-                          </Show>
-                          <Show when={canEditComment(comment) || canDeleteComment(comment)}>
-                            <span
-                              class={[
-                                'flex items-center gap-1 transition-opacity',
-                                confirmCommentId() === comment.id
-                                  ? 'opacity-100'
-                                  : 'opacity-0 group-hover:opacity-100',
-                              ]}
-                            >
-                              <Show when={canEditComment(comment)}>
-                                <button
-                                  type="button"
-                                  title="Edit comment"
-                                  class="rounded px-1 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-                                  onClick={() => startCommentEdit(comment)}
-                                >
-                                  ✏️
-                                </button>
-                              </Show>
-                              <Show when={canDeleteComment(comment)}>
-                                <button
-                                  type="button"
-                                  title={confirmCommentId() === comment.id ? 'Click again to delete' : 'Delete comment'}
-                                  class={[
-                                    'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
-                                    { 'text-red-500': confirmCommentId() === comment.id },
-                                  ]}
-                                  onClick={() => askDeleteComment(comment)}
-                                >
-                                  {confirmCommentId() === comment.id ? 'Delete?' : '🗑'}
-                                </button>
-                              </Show>
-                            </span>
-                          </Show>
-                        </p>
-                        <Show
-                          when={!comment.deleted_at}
-                          fallback={
-                            // The deletion trail: real mention chips (avatars,
-                            // hovers, rename-proof) + the role the deleter held.
-                            <p
-                              class="prose-card mt-0.5 text-xs italic text-neutral-400"
-                              // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
-                              innerHTML={renderMarkdown(
-                                tombstoneLine(comment, props.myId, props.members, props.teams, 'comment'),
-                                markdownContext(),
-                              )}
-                              onClick={onBodyClick}
-                              onMouseOver={onBodyHover}
-                            />
-                          }
-                        >
-                        <Show
-                          when={editingCommentId() !== comment.id}
-                          fallback={
-                            <form
-                              class={['mt-0.5 flex w-full flex-col gap-1.5', { 'text-left': mine() }]}
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                saveCommentEdit();
-                              }}
-                            >
-                              <SmartTextarea
-                                value={commentEditDraft()}
-                                onInput={setCommentEditDraft}
-                                members={props.members}
-                                teams={props.teams}
-                                cards={props.cards}
-                                workspaceTags={props.workspaceTags}
-                                crossCards={props.crossCards}
-                                workspaceBoards={props.workspaceBoards}
-                                boardName={props.boardName}
-                                board={{ id: card()?.board_id ?? '', name: props.boardName }}
-                                rows={2}
-                                sendOnEnter
-                                onSend={() => saveCommentEdit()}
-                                placeholder="Edit comment…"
-                              />
-                              <div class="flex items-center justify-end gap-2 text-xs">
-                                <button
-                                  type="button"
-                                  class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                                  onClick={() => setEditingCommentId(null)}
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="submit"
-                                  disabled={!commentEditDraft().trim()}
-                                  class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
-                                >
-                                  Save
-                                </button>
-                              </div>
-                            </form>
-                          }
-                        >
-                          <div
-                            class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
-                              mine()
-                                ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                                : 'bg-neutral-100 dark:bg-neutral-800/60'
-                            }`}
-                            onClick={onBodyClick}
-                            onMouseOver={onBodyHover}
-                            // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify) and re-whitelists iframe hosts
-                            innerHTML={renderMarkdown(comment.body, markdownContext())}
-                          />
-                        </Show>
-                        </Show>
-                      </div>
-                    </li>
-                  );
-                }}
-              </For>
-            </ul>
-          </Show>
-        </div>
-
-        {/* ── composer (fixed at the bottom) ───────────────────────────── */}
-        <div class="shrink-0 border-t border-neutral-100 px-5 py-3 dark:border-neutral-800">
-          {/* Blocked mentions: the send-time indication. The server never
-              notified these people or teams — the author decides. */}
-          <Show when={blocked().length > 0 || blockedTeams().length > 0 || accessNote()}>
-            <div class="mb-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950/50">
-              <Show
-                when={blocked().length > 0 || blockedTeams().length > 0}
-                fallback={
-                  <p class="flex items-start gap-2 text-amber-800 dark:text-amber-200">
-                    <span class="flex-1">{accessNote()}</span>
-                    <button
-                      type="button"
-                      title="Dismiss"
-                      class="shrink-0 font-semibold text-amber-500 hover:text-amber-800 dark:hover:text-amber-200"
-                      onClick={() => setAccessNote(null)}
-                    >
-                      ×
-                    </button>
-                  </p>
-                }
-              >
-                <p class="font-semibold text-amber-900 dark:text-amber-100">
-                  {[
-                    ...blocked().map((person) => person.name),
-                    ...blockedTeams().map((team) => `@${team.name}`),
-                  ].join(', ')}{' '}
-                  can’t see this board — no notification was sent.
-                </p>
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <Show
-                    when={props.accessDelegation || props.isWsAdmin}
-                    fallback={
-                      <button
-                        type="button"
-                        disabled={accessBusy()}
-                        class="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-                        onClick={() => void askAdmins()}
-                      >
-                        {accessBusy() ? 'Asking…' : 'Ask admins to grant access'}
-                      </button>
-                    }
-                  >
-                    <button
-                      type="button"
-                      disabled={accessBusy()}
-                      class="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-                      onClick={() => void grantAccess()}
-                    >
-                      {accessBusy() ? 'Granting…' : 'Give access & notify'}
-                    </button>
-                  </Show>
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] text-neutral-400">
+                    <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">
+                      Enter
+                    </kbd>{' '}
+                    to send ·
+                    <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">
+                      Shift+Enter
+                    </kbd>{' '}
+                    new line ·<span class="font-semibold">@</span> mention ·
+                    <span class="font-semibold">#</span> cite
+                  </span>
                   <button
-                    type="button"
-                    class="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900"
-                    onClick={() => {
-                      setBlocked([]);
-                      setBlockedTeams([]);
-                    }}
+                    type="submit"
+                    disabled={!commentDraft().trim()}
+                    class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
                   >
-                    Ignore
+                    Send
+                    <span aria-hidden="true">↵</span>
                   </button>
                 </div>
-              </Show>
-            </div>
-          </Show>
-          <Show when={commentsEngine.failed().length > 0}>
-            <p class="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-400">
-              Couldn't post that comment — {commentsEngine.failed()[0]?.error}
-              <button
-                type="button"
-                class="font-semibold underline"
-                onClick={() => commentsEngine.retry(commentsEngine.failed()[0]!.id)}
-              >
-                Retry
-              </button>
-              <button
-                type="button"
-                class="font-semibold underline"
-                onClick={() => commentsEngine.dismiss(commentsEngine.failed()[0]!.id)}
-              >
-                Dismiss
-              </button>
-            </p>
-          </Show>
-          <Show
-            when={props.canEdit}
-            fallback={
-              <p class="text-center text-xs text-neutral-400">
-                View only — ask an admin for write access to comment.
-              </p>
-            }
-          >
-            <form
-              class="flex flex-col gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                post();
-              }}
-            >
-              <SmartTextarea
-                value={commentDraft()}
-                onInput={setCommentDraft}
-                members={props.members}
-                teams={props.teams}
-                cards={props.cards}
-                workspaceTags={props.workspaceTags}
-                crossCards={props.crossCards}
-                workspaceBoards={props.workspaceBoards}
-                boardName={props.boardName}
-                board={{ id: card()?.board_id ?? '', name: props.boardName }}
-                rows={2}
-                sendOnEnter
-                onSend={() => post()}
-                placeholder="Write a comment… markdown, @ to mention, # to cite a card"
-              />
-              <div class="flex items-center justify-between">
-                <span class="text-[10px] text-neutral-400">
-                  <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">Enter</kbd> to send ·
-                  <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">Shift+Enter</kbd> new line ·
-                  <span class="font-semibold">@</span> mention ·
-                  <span class="font-semibold">#</span> cite
-                </span>
-                <button
-                  type="submit"
-                  disabled={!commentDraft().trim()}
-                  class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
-                >
-                  Send
-                  <span aria-hidden="true">↵</span>
-                </button>
-              </div>
-            </form>
-          </Show>
-        </div>
+              </form>
+            </Show>
+          </div>
         </Show>
       </aside>
     </div>
@@ -5145,8 +5355,8 @@ function ChatPrefMenu(props: { scopeType: 'board' | 'card'; scopeId: string }) {
             </button>
           </Show>
           <p class="px-2 pt-1.5 text-[10px] leading-snug text-neutral-400">
-            Mentions arrive as notifications; “all” activity is quiet — it lives in the bell’s
-            Chat section.
+            Mentions arrive as notifications; “all” activity is quiet — it lives in the bell’s Chat
+            section.
           </p>
         </div>
       </Show>
@@ -5227,7 +5437,9 @@ function BoardChat(props: {
             return old && JSON.stringify(old) === JSON.stringify(row) ? old : { ...row };
           }),
         ...kept,
-      ].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
+      ].sort(
+        (a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at),
+      );
       if (draft.list.length !== merged.length || draft.list.some((row, i) => row !== merged[i])) {
         draft.list = merged;
       }
@@ -5397,7 +5609,9 @@ function BoardChat(props: {
           edited_at: null,
           client_op: payload.clientOp,
         });
-        current.list = [...current.list].sort((a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at));
+        current.list = [...current.list].sort(
+          (a, b) => chatSeq(a) - chatSeq(b) || +new Date(a.created_at) - +new Date(b.created_at),
+        );
       },
       send: () => postBoardMessage(props.boardId, body, clientOp),
       echo: (durable) => durable.list.some((row) => row.client_op === clientOp),
@@ -5417,7 +5631,9 @@ function BoardChat(props: {
     (message.author_id === props.myId || Boolean(props.myWsRole) || Boolean(props.myTeamAdmin));
   /** The role this viewer deletes under (optimistic tombstone stamp; the
    *  RPC's value wins on echo). */
-  const deleteAsFor = (message: BoardMessageRow): {
+  const deleteAsFor = (
+    message: BoardMessageRow,
+  ): {
     role: 'author' | 'owner' | 'admin' | 'team_admin';
     teamId: string | null;
   } => {
@@ -5513,9 +5729,7 @@ function BoardChat(props: {
     // # citations in board chat resolve across the org (same maps the
     // card drawer uses); chips read "Board › Card title".
     cardNumbers: [
-      ...props.cards
-        .map((c) => c.number)
-        .filter((number): number is number => number !== null),
+      ...props.cards.map((c) => c.number).filter((number): number is number => number !== null),
       ...props.crossCards
         .map((c) => c.number)
         .filter((number): number is number => number !== null),
@@ -5626,19 +5840,30 @@ function BoardChat(props: {
               {(message) => {
                 const mine = () => message.author_id !== null && message.author_id === props.myId;
                 return (
-                  <li data-msg-id={message.id} class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}>
+                  <li
+                    data-msg-id={message.id}
+                    class={`group flex items-start gap-2 ${mine() ? 'flex-row-reverse' : ''}`}
+                  >
                     <Avatar src={message.avatar_url} name={message.author} size="sm" />
-                    <div class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}>
-                      <p class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}>
+                    <div
+                      class={`flex min-w-0 max-w-[85%] flex-col ${mine() ? 'items-end text-right' : ''}`}
+                    >
+                      <p
+                        class={`flex items-center gap-2 text-[11px] text-neutral-400 ${mine() ? 'flex-row-reverse' : ''}`}
+                      >
                         <span class="font-semibold text-neutral-500 dark:text-neutral-300">
                           {mine() ? 'You' : message.author}
                         </span>
-                        <Show when={message.agent}>{<span
-                            class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
-                            title="Sent through an MCP connection"
-                          >
-                            Agent
-                          </span>}</Show>
+                        <Show when={message.agent}>
+                          {
+                            <span
+                              class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
+                              title="Sent through an MCP connection"
+                            >
+                              Agent
+                            </span>
+                          }
+                        </Show>
                         <time>
                           {new Date(message.created_at).toLocaleString(undefined, {
                             month: 'short',
@@ -5650,12 +5875,15 @@ function BoardChat(props: {
                         <Show when={message.edited_at && !message.deleted_at}>
                           <span
                             class="italic"
-                            title={`Edited ${new Date(message.edited_at!).toLocaleString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}`}
+                            title={`Edited ${new Date(message.edited_at!).toLocaleString(
+                              undefined,
+                              {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              },
+                            )}`}
                           >
                             (edited)
                           </span>
@@ -5682,7 +5910,11 @@ function BoardChat(props: {
                             <Show when={canDeleteMsg(message)}>
                               <button
                                 type="button"
-                                title={confirmId() === message.id ? 'Click again to delete' : 'Delete message'}
+                                title={
+                                  confirmId() === message.id
+                                    ? 'Click again to delete'
+                                    : 'Delete message'
+                                }
                                 class={[
                                   'rounded px-1 text-[10px] font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700',
                                   { 'text-red-500': confirmId() === message.id },
@@ -5704,7 +5936,13 @@ function BoardChat(props: {
                             class="prose-card mt-0.5 text-xs italic text-neutral-400"
                             // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
                             innerHTML={renderMarkdown(
-                              tombstoneLine(message, props.myId, props.members, props.teams, 'message'),
+                              tombstoneLine(
+                                message,
+                                props.myId,
+                                props.members,
+                                props.teams,
+                                'message',
+                              ),
                               markdownContext(),
                             )}
                             onClick={onBodyClick}
@@ -5712,63 +5950,66 @@ function BoardChat(props: {
                           />
                         }
                       >
-                      <Show
-                        when={editingId() !== message.id}
-                        fallback={
-                          <form
-                            class={['mt-0.5 flex w-full flex-col gap-1.5', { 'text-left': mine() }]}
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              saveEdit();
-                            }}
-                          >
-                            <SmartTextarea
-                              value={editDraft()}
-                              onInput={setEditDraft}
-                              members={props.members}
-                              teams={props.teams}
-                              cards={props.cards}
-                              workspaceTags={props.workspaceTags}
-                              crossCards={props.crossCards}
-                              workspaceBoards={props.workspaceBoards}
-                              boardName={props.boardName}
-                              board={{ id: props.boardId, name: props.boardName }}
-                              rows={2}
-                              sendOnEnter
-                              onSend={() => saveEdit()}
-                              placeholder="Edit message…"
-                            />
-                            <div class="flex items-center justify-end gap-2 text-xs">
-                              <button
-                                type="button"
-                                class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                                onClick={() => setEditingId(null)}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="submit"
-                                disabled={!editDraft().trim()}
-                                class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </form>
-                        }
-                      >
-                        <div
-                          class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
-                            mine()
-                              ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                              : 'bg-neutral-100 dark:bg-neutral-800/60'
-                          }`}
-                          // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
-                          innerHTML={renderMarkdown(message.body, markdownContext())}
-                          onClick={onBodyClick}
-                          onMouseOver={onChipHover}
-                        />
-                      </Show>
+                        <Show
+                          when={editingId() !== message.id}
+                          fallback={
+                            <form
+                              class={[
+                                'mt-0.5 flex w-full flex-col gap-1.5',
+                                { 'text-left': mine() },
+                              ]}
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                saveEdit();
+                              }}
+                            >
+                              <SmartTextarea
+                                value={editDraft()}
+                                onInput={setEditDraft}
+                                members={props.members}
+                                teams={props.teams}
+                                cards={props.cards}
+                                workspaceTags={props.workspaceTags}
+                                crossCards={props.crossCards}
+                                workspaceBoards={props.workspaceBoards}
+                                boardName={props.boardName}
+                                board={{ id: props.boardId, name: props.boardName }}
+                                rows={2}
+                                sendOnEnter
+                                onSend={() => saveEdit()}
+                                placeholder="Edit message…"
+                              />
+                              <div class="flex items-center justify-end gap-2 text-xs">
+                                <button
+                                  type="button"
+                                  class="rounded-md px-2 py-0.5 font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                                  onClick={() => setEditingId(null)}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={!editDraft().trim()}
+                                  class="rounded-md bg-indigo-600 px-2.5 py-0.5 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </form>
+                          }
+                        >
+                          <div
+                            class={`prose-card mt-0.5 rounded-xl px-3 py-2 text-left text-sm leading-relaxed ${
+                              mine()
+                                ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                                : 'bg-neutral-100 dark:bg-neutral-800/60'
+                            }`}
+                            // oxlint-disable-next-line solid/no-innerhtml -- renderMarkdown() sanitizes (DOMPurify)
+                            innerHTML={renderMarkdown(message.body, markdownContext())}
+                            onClick={onBodyClick}
+                            onMouseOver={onChipHover}
+                          />
+                        </Show>
                       </Show>
                     </div>
                   </li>
@@ -5878,8 +6119,10 @@ function BoardChat(props: {
             />
             <div class="flex items-center justify-between">
               <span class="text-[10px] text-neutral-400">
-                <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">Enter</kbd> to send ·
-                <span class="font-semibold">#</span> cite
+                <kbd class="rounded border border-neutral-200 px-1 dark:border-neutral-700">
+                  Enter
+                </kbd>{' '}
+                to send ·<span class="font-semibold">#</span> cite
               </span>
               <button
                 type="submit"
@@ -5976,151 +6219,282 @@ function BoardSettings(props: {
 
   return (
     <div class="min-h-0 flex-1 overflow-y-auto p-5">
-        <Show when={props.error} fallback={null}>
-          {(error) => (
-            <p class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-400">
-              {error()}
-            </p>
-          )}
+      <Show when={props.error} fallback={null}>
+        {(error) => (
+          <p class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-400">
+            {error()}
+          </p>
+        )}
+      </Show>
+
+      {/* ── name + description ───────────────────────────────────────── */}
+      <section class="mt-5">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Details</h3>
+        <label class="mt-2 block text-xs text-neutral-400">Name</label>
+        <Show
+          when={props.canEdit}
+          fallback={<p class="mt-1 text-sm font-medium">{props.board.name}</p>}
+        >
+          <form
+            class="mt-1 flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = nameDraft().trim();
+              if (name && name !== props.board.name) props.onRename(name);
+            }}
+          >
+            <input
+              class="flex-1"
+              value={nameDraft()}
+              maxlength="80"
+              onInput={(event) => setNameDraft(event.currentTarget.value)}
+            />
+            <button
+              type="submit"
+              disabled={nameDraft().trim() === props.board.name}
+              class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+            >
+              Save
+            </button>
+          </form>
         </Show>
 
-        {/* ── name + description ───────────────────────────────────────── */}
-        <section class="mt-5">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Details</h3>
-          <label class="mt-2 block text-xs text-neutral-400">Name</label>
+        <label class="mt-3 block text-xs text-neutral-400">
+          Description <span class="text-neutral-300">(markdown — shown on this board)</span>
+        </label>
+        <Show
+          when={descriptionDraft() !== null || props.canEdit}
+          fallback={
+            <p class="prose-card mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+              {props.board.description || <span class="text-neutral-400">No description</span>}
+            </p>
+          }
+        >
           <Show
-            when={props.canEdit}
-            fallback={<p class="mt-1 text-sm font-medium">{props.board.name}</p>}
-          >
-            <form
-              class="mt-1 flex gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const name = nameDraft().trim();
-                if (name && name !== props.board.name) props.onRename(name);
-              }}
-            >
-              <input
-                class="flex-1"
-                value={nameDraft()}
-                maxlength="80"
-                onInput={(event) => setNameDraft(event.currentTarget.value)}
-              />
-              <button
-                type="submit"
-                disabled={nameDraft().trim() === props.board.name}
-                class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
-              >
-                Save
-              </button>
-            </form>
-          </Show>
-
-          <label class="mt-3 block text-xs text-neutral-400">
-            Description <span class="text-neutral-300">(markdown — shown on this board)</span>
-          </label>
-          <Show
-            when={descriptionDraft() !== null || props.canEdit}
-            fallback={<p class="prose-card mt-1 text-sm text-neutral-600 dark:text-neutral-300">{props.board.description || <span class="text-neutral-400">No description</span>}</p>}
-          >
-            <Show
-              when={descriptionDraft() !== null}
-              fallback={
-                <button
-                  type="button"
-                  class="mt-1 w-full rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-left text-xs text-neutral-500 hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-600"
-                  onClick={() => setDescriptionDraft(props.board.description)}
-                >
-                  {props.board.description ? 'Edit description…' : '+ Add a description…'}
-                </button>
-              }
-            >
-              <form
-                class="mt-1 space-y-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  saveDescription();
-                }}
-              >
-                <textarea
-                  class="w-full"
-                  rows={4}
-                  maxlength={4000}
-                  placeholder="What is this board for? Scope, goals, links…"
-                  value={description()}
-                  onInput={(event) => setDescriptionDraft(event.currentTarget.value)}
-                />
-                <div class="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    class="rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    onClick={() => setDescriptionDraft(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
-                  >
-                    Save
-                  </button>
-                </div>
-              </form>
-            </Show>
-          </Show>
-        </section>
-
-        {/* ── per-member access to this board ──────────────────────────── */}
-        <section class="mt-6">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Access on this board
-          </h3>
-          <Show
-            when={props.isWsAdmin}
+            when={descriptionDraft() !== null}
             fallback={
-              <p class="mt-2 text-xs text-neutral-400">
-                Only workspace owners and admins can change board access.
-              </p>
+              <button
+                type="button"
+                class="mt-1 w-full rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-left text-xs text-neutral-500 hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-600"
+                onClick={() => setDescriptionDraft(props.board.description)}
+              >
+                {props.board.description ? 'Edit description…' : '+ Add a description…'}
+              </button>
             }
           >
-            <p class="mt-1 text-xs text-neutral-400">
-              Members start with no access — grant view or write per board. Changes reach
-              everyone on this board instantly.
-            </p>
+            <form
+              class="mt-1 space-y-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveDescription();
+              }}
+            >
+              <textarea
+                class="w-full"
+                rows={4}
+                maxlength={4000}
+                placeholder="What is this board for? Scope, goals, links…"
+                value={description()}
+                onInput={(event) => setDescriptionDraft(event.currentTarget.value)}
+              />
+              <div class="flex justify-end gap-2">
+                <button
+                  type="button"
+                  class="rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  onClick={() => setDescriptionDraft(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
           </Show>
+        </Show>
+      </section>
+
+      {/* ── per-member access to this board ──────────────────────────── */}
+      <section class="mt-6">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          Access on this board
+        </h3>
+        <Show
+          when={props.isWsAdmin}
+          fallback={
+            <p class="mt-2 text-xs text-neutral-400">
+              Only workspace owners and admins can change board access.
+            </p>
+          }
+        >
+          <p class="mt-1 text-xs text-neutral-400">
+            Members start with no access — grant view or write per board. Changes reach everyone on
+            this board instantly.
+          </p>
+        </Show>
+        <ul class="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
+          <For each={props.detail.members}>
+            {(member) => {
+              const current = () => accessOf(member);
+              const grantable = () => props.onIsGrantable(member);
+              return (
+                <li class="flex items-center gap-3 py-2.5">
+                  <Avatar
+                    src={member.avatar_url}
+                    name={member.display_name}
+                    email={member.email}
+                    size="sm"
+                  />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-medium">
+                      {member.display_name ?? member.email}
+                      <Show when={member.user_id === props.meId}>
+                        <span class="ml-1 text-xs font-normal text-neutral-400">(you)</span>
+                      </Show>
+                    </span>
+                    <span class="block truncate text-xs text-neutral-400">
+                      {member.role} · workspace member
+                    </span>
+                  </span>
+                  <Show
+                    when={grantable() && props.isWsAdmin}
+                    fallback={
+                      <span
+                        title={
+                          current() === 'edit'
+                            ? 'Always write via their workspace role or board ownership'
+                            : 'No access yet'
+                        }
+                        class={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          current() === 'edit'
+                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                            : current() === 'view'
+                              ? 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
+                              : 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800'
+                        }`}
+                      >
+                        {current() === 'edit' ? 'Write' : current() === 'view' ? 'View' : 'None'}
+                      </span>
+                    }
+                  >
+                    <div class="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-700">
+                      <For each={ACCESS_OPTIONS}>
+                        {(option) => (
+                          <button
+                            type="button"
+                            title={option.hint}
+                            class={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                              current() === option.value
+                                ? 'bg-indigo-600 text-white'
+                                : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                            }`}
+                            onClick={() => props.onChangeAccess(member.user_id, option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </li>
+              );
+            }}
+          </For>
+        </ul>
+      </section>
+
+      {/* ── mention access: who may let people in ────────────────────── */}
+      <section class="mt-6">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          Mention access
+        </h3>
+        <div class="mt-2 flex items-start gap-3 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={props.accessDelegation ? 'true' : 'false'}
+            disabled={!props.isWsAdmin}
+            title={
+              props.isWsAdmin
+                ? 'Toggle who may grant access when someone is mentioned without it'
+                : 'Only workspace owners and admins can change this'
+            }
+            class={`relative h-6 w-11 shrink-0 rounded-full transition ${
+              props.accessDelegation ? 'bg-indigo-600' : 'bg-neutral-300 dark:bg-neutral-700'
+            } ${props.isWsAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+            onClick={() => props.onToggleDelegation(!props.accessDelegation)}
+          >
+            <span
+              class={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                props.accessDelegation ? 'left-[1.375rem]' : 'left-0.5'
+              }`}
+            />
+          </button>
+          <div class="min-w-0">
+            <p class="text-sm font-medium">Anyone with access can grant board access</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-neutral-400">
+              When someone is mentioned but can’t see this board:{' '}
+              <span class={props.accessDelegation ? 'text-indigo-600 dark:text-indigo-400' : ''}>
+                {props.accessDelegation
+                  ? 'the author can let them in directly and notify them.'
+                  : 'the author can only ask the workspace owners/admins to grant access.'}
+              </span>{' '}
+              Owners and admins can always grant, either way.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── teams: grant the whole team access to this board ──────── */}
+      <section class="mt-6">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Team access</h3>
+        <Show
+          when={(props.detail.teams.length ?? 0) > 0}
+          fallback={
+            <p class="mt-2 text-xs text-neutral-400">
+              No teams yet — create them from the workspace members page.
+            </p>
+          }
+        >
+          <p class="mt-1 text-xs text-neutral-400">
+            Granting a team access gives every member that access (individuals can still be tuned
+            above).
+          </p>
           <ul class="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
-            <For each={props.detail.members}>
-              {(member) => {
-                const current = () => accessOf(member);
-                const grantable = () => props.onIsGrantable(member);
+            <For each={props.detail.teams}>
+              {(team) => {
+                const current = () =>
+                  (props.detail.teamAccess[props.boardId] ?? []).find(
+                    (grant) => grant.teamId === team.id,
+                  )?.access ?? null;
+                const canManage = () =>
+                  props.isWsAdmin ||
+                  team.members.some(
+                    (member) => member.user_id === props.meId && member.role === 'admin',
+                  );
                 return (
                   <li class="flex items-center gap-3 py-2.5">
-                    <Avatar
-                      src={member.avatar_url}
-                      name={member.display_name}
-                      email={member.email}
-                      size="sm"
-                    />
                     <span class="min-w-0 flex-1">
                       <span class="block truncate text-sm font-medium">
-                        {member.display_name ?? member.email}
-                        <Show when={member.user_id === props.meId}>
-                          <span class="ml-1 text-xs font-normal text-neutral-400">(you)</span>
+                        @{team.name}
+                        <Show when={team.members.some((m) => m.role === 'admin')}>
+                          <span class="ml-1 text-[10px] font-normal text-neutral-400">
+                            · {team.members.filter((m) => m.role === 'admin').length} admin
+                            {team.members.filter((m) => m.role === 'admin').length === 1 ? '' : 's'}
+                          </span>
                         </Show>
                       </span>
                       <span class="block truncate text-xs text-neutral-400">
-                        {member.role} · workspace member
+                        {team.members.length} member{team.members.length === 1 ? '' : 's'}
                       </span>
                     </span>
                     <Show
-                      when={grantable() && props.isWsAdmin}
+                      when={canManage()}
                       fallback={
                         <span
-                          title={
-                            current() === 'edit'
-                              ? 'Always write via their workspace role or board ownership'
-                              : 'No access yet'
-                          }
                           class={`rounded-full px-2.5 py-1 text-xs font-medium ${
                             current() === 'edit'
                               ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
@@ -6134,19 +6508,30 @@ function BoardSettings(props: {
                       }
                     >
                       <div class="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-700">
-                        <For each={ACCESS_OPTIONS}>
+                        <For each={[null, 'view', 'edit'] as const}>
                           {(option) => (
                             <button
                               type="button"
-                              title={option.hint}
                               class={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                                current() === option.value
+                                current() === option
                                   ? 'bg-indigo-600 text-white'
                                   : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'
                               }`}
-                              onClick={() => props.onChangeAccess(member.user_id, option.value)}
+                              onClick={() =>
+                                void setBoardTeamAccess({
+                                  boardId: props.boardId,
+                                  teamId: team.id,
+                                  access: option,
+                                })
+                                  .then(() => props.onTeamAccessChanged(team.id, option))
+                                  .catch((error: unknown) => {
+                                    props.onError(
+                                      errorMessage(error, 'Could not change team access'),
+                                    );
+                                  })
+                              }
                             >
-                              {option.label}
+                              {option === null ? 'None' : option === 'view' ? 'View' : 'Write'}
                             </button>
                           )}
                         </For>
@@ -6157,302 +6542,155 @@ function BoardSettings(props: {
               }}
             </For>
           </ul>
-        </section>
+        </Show>
+      </section>
 
-        {/* ── mention access: who may let people in ────────────────────── */}
-        <section class="mt-6">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Mention access
-          </h3>
-          <div class="mt-2 flex items-start gap-3 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={props.accessDelegation ? 'true' : 'false'}
-              disabled={!props.isWsAdmin}
-              title={
-                props.isWsAdmin
-                  ? 'Toggle who may grant access when someone is mentioned without it'
-                  : 'Only workspace owners and admins can change this'
-              }
-              class={`relative h-6 w-11 shrink-0 rounded-full transition ${
-                props.accessDelegation ? 'bg-indigo-600' : 'bg-neutral-300 dark:bg-neutral-700'
-              } ${props.isWsAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
-              onClick={() => props.onToggleDelegation(!props.accessDelegation)}
-            >
-              <span
-                class={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
-                  props.accessDelegation ? 'left-[1.375rem]' : 'left-0.5'
-                }`}
-              />
-            </button>
-            <div class="min-w-0">
-              <p class="text-sm font-medium">
-                Anyone with access can grant board access
-              </p>
-              <p class="mt-0.5 text-xs leading-relaxed text-neutral-400">
-                When someone is mentioned but can’t see this board:{' '}
-                <span class={props.accessDelegation ? 'text-indigo-600 dark:text-indigo-400' : ''}>
-                  {props.accessDelegation
-                    ? 'the author can let them in directly and notify them.'
-                    : 'the author can only ask the workspace owners/admins to grant access.'}
-                </span>{' '}
-                Owners and admins can always grant, either way.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ── teams: grant the whole team access to this board ──────── */}
-        <section class="mt-6">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Team access
-          </h3>
-          <Show
-            when={(props.detail.teams.length ?? 0) > 0}
-            fallback={
-              <p class="mt-2 text-xs text-neutral-400">
-                No teams yet — create them from the workspace members page.
-              </p>
-            }
+      {/* ── resolved cards: the time capsule's shelf (0059) ───────────── */}
+      <section class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+        <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          <span>Resolved cards · {props.resolvedCards.length}</span>
+          <a
+            href={`/search?board=${props.boardId}&resolved=resolved`}
+            class="rounded-md px-1.5 py-0.5 font-medium normal-case tracking-normal text-indigo-500 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+            title="Search this board's resolved cards — the search page's resolved view, board pre-filtered"
           >
-            <p class="mt-1 text-xs text-neutral-400">
-              Granting a team access gives every member that access (individuals can still
-              be tuned above).
-            </p>
-            <ul class="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
-              <For each={props.detail.teams}>
-                {(team) => {
-                  const current = () =>
-                    (props.detail.teamAccess[props.boardId] ?? []).find(
-                      (grant) => grant.teamId === team.id,
-                    )?.access ?? null;
-                  const canManage = () =>
-                    props.isWsAdmin ||
-                    team.members.some(
-                      (member) => member.user_id === props.meId && member.role === 'admin',
-                    );
-                  return (
-                    <li class="flex items-center gap-3 py-2.5">
-                      <span class="min-w-0 flex-1">
-                        <span class="block truncate text-sm font-medium">
-                          @{team.name}
-                          <Show when={team.members.some((m) => m.role === 'admin')}>
-                            <span class="ml-1 text-[10px] font-normal text-neutral-400">
-                              · {team.members.filter((m) => m.role === 'admin').length} admin
-                              {team.members.filter((m) => m.role === 'admin').length === 1 ? '' : 's'}
-                            </span>
-                          </Show>
-                        </span>
-                        <span class="block truncate text-xs text-neutral-400">
-                          {team.members.length} member{team.members.length === 1 ? '' : 's'}
-                        </span>
-                      </span>
-                      <Show
-                        when={canManage()}
-                        fallback={
-                          <span
-                            class={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                              current() === 'edit'
-                                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
-                                : current() === 'view'
-                                  ? 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
-                                  : 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800'
-                            }`}
-                          >
-                            {current() === 'edit' ? 'Write' : current() === 'view' ? 'View' : 'None'}
-                          </span>
-                        }
-                      >
-                        <div class="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-700">
-                          <For each={[null, 'view', 'edit'] as const}>
-                            {(option) => (
-                              <button
-                                type="button"
-                                class={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                                  current() === option
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                                }`}
-                                onClick={() =>
-                                  void setBoardTeamAccess({
-                                    boardId: props.boardId,
-                                    teamId: team.id,
-                                    access: option,
-                                  })
-                                    .then(() => props.onTeamAccessChanged(team.id, option))
-                                    .catch((error: unknown) => {
-                                    props.onError(
-                                      errorMessage(error, 'Could not change team access'),
-                                    );
-                                  })
-                                }
-                              >
-                                {option === null ? 'None' : option === 'view' ? 'View' : 'Write'}
-                              </button>
-                            )}
-                          </For>
-                        </div>
-                      </Show>
-                    </li>
-                  );
-                }}
-              </For>
-            </ul>
-          </Show>
-        </section>
-
-        {/* ── resolved cards: the time capsule's shelf (0059) ───────────── */}
-        <section class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
-          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            <span>Resolved cards · {props.resolvedCards.length}</span>
-            <a
-              href={`/search?board=${props.boardId}&resolved=resolved`}
-              class="rounded-md px-1.5 py-0.5 font-medium normal-case tracking-normal text-indigo-500 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
-              title="Search this board's resolved cards — the search page's resolved view, board pre-filtered"
-            >
-              🔍 Search these
-            </a>
-          </h3>
-          <p class="mt-1 text-xs text-neutral-400">
-            Nothing is ever deleted — resolved cards hide from the board and stay
-            fully editable. Unresolving returns them to their list.
-          </p>
-          <Show
-            when={props.resolvedCards.length > 0}
-            fallback={
-              <p class="mt-2 text-xs text-neutral-400">No resolved cards on this board.</p>
-            }
-          >
-            <ul class="mt-2 flex flex-col gap-1.5">
-              <For each={props.resolvedCards.slice(0, resolvedShown())}>
-                {(card) => (
-                  <li class="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-700">
-                    <span class="min-w-0 flex-1">
-                      <span class="rounded bg-neutral-100 px-1 font-mono text-[10px] text-neutral-500 dark:bg-neutral-800">
-                        #{card.number ?? '–'}
-                      </span>{' '}
-                      <span class="font-medium">{card.title}</span>
-                      <span class="ml-2 text-neutral-400">
-                        in{' '}
-                        {props.lists.find((l) => l.id === card.list_id)?.name ??
-                          'a deleted list'}
-                      </span>
-                    </span>
-                    <span class="shrink-0 text-neutral-400">
-                      {new Date(card.resolved_at!).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </span>
-                    <button
-                      type="button"
-                      class="shrink-0 rounded-md px-2 py-1 font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
-                      onClick={() => props.onUnresolve(card.id)}
-                    >
-                      Unresolve
-                    </button>
-                  </li>
-                )}
-              </For>
-            </ul>
-            <Show when={props.resolvedCards.length > resolvedShown()}>
-              <button
-                type="button"
-                class="mt-2 w-full rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                onClick={() => setResolvedShown(resolvedShown() + 20)}
-              >
-                Show more ({props.resolvedCards.length - resolvedShown()} left)
-              </button>
-            </Show>
-          </Show>
-        </section>
-
-        {/* ── danger zone ──────────────────────────────────────────────── */}
-        <Show when={props.canDelete}>
-          <section class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-red-500">
-              Danger zone
-            </h3>
-            <p class="mt-1 text-xs text-neutral-400">
-              Deleting removes the board, its lists, cards, and comments for everyone.
-              <Show when={props.cardCount > 0}>
-                {' '}Cards can never be deleted on their own — a board that holds
-                them deletes only through this deliberate, typed confirmation.
-              </Show>
-            </p>
-            <Show
-              when={confirmingDelete()}
-              fallback={
-                <button
-                  type="button"
-                  class="mt-2 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-                  onClick={() => {
-                    setTypedConfirm('');
-                    setConfirmingDelete(true);
-                  }}
-                >
-                  Delete this board{props.cardCount > 0 ? ` (${props.cardCount} cards)` : ''}…
-                </button>
-              }
-            >
-              <Show
-                when={props.cardCount === 0}
-                fallback={
-                  <span class="mt-2 flex flex-col gap-2">
-                    <span class="text-xs text-neutral-500 dark:text-neutral-400">
-                      Type <span class="font-semibold">{props.board.name}</span> to
-                      permanently delete this board and its {props.cardCount} card
-                      {props.cardCount === 1 ? '' : 's'} (cards included — this is
-                      the capsule's one sanctioned purge):
-                    </span>
-                    <input
-                      class="max-w-xs"
-                      value={typedConfirm()}
-                      onInput={(event) => setTypedConfirm(event.currentTarget.value)}
-                      placeholder={props.board.name}
-                    />
-                    <span class="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={props.deleting || typedConfirm() !== props.board.name}
-                        class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                        onClick={() => props.onDelete(true)}
-                      >
-                        {props.deleting ? 'Deleting…' : 'Purge everything permanently'}
-                      </button>
-                      <button
-                        type="button"
-                        class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                        onClick={() => setConfirmingDelete(false)}
-                      >
-                        Cancel
-                      </button>
+            🔍 Search these
+          </a>
+        </h3>
+        <p class="mt-1 text-xs text-neutral-400">
+          Nothing is ever deleted — resolved cards hide from the board and stay fully editable.
+          Unresolving returns them to their list.
+        </p>
+        <Show
+          when={props.resolvedCards.length > 0}
+          fallback={<p class="mt-2 text-xs text-neutral-400">No resolved cards on this board.</p>}
+        >
+          <ul class="mt-2 flex flex-col gap-1.5">
+            <For each={props.resolvedCards.slice(0, resolvedShown())}>
+              {(card) => (
+                <li class="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-700">
+                  <span class="min-w-0 flex-1">
+                    <span class="rounded bg-neutral-100 px-1 font-mono text-[10px] text-neutral-500 dark:bg-neutral-800">
+                      #{card.number ?? '–'}
+                    </span>{' '}
+                    <span class="font-medium">{card.title}</span>
+                    <span class="ml-2 text-neutral-400">
+                      in {props.lists.find((l) => l.id === card.list_id)?.name ?? 'a deleted list'}
                     </span>
                   </span>
-                }
-              >
-                <span class="mt-2 flex items-center gap-2">
+                  <span class="shrink-0 text-neutral-400">
+                    {new Date(card.resolved_at!).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
                   <button
                     type="button"
-                    disabled={props.deleting}
-                    class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                    onClick={() => props.onDelete(false)}
+                    class="shrink-0 rounded-md px-2 py-1 font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                    onClick={() => props.onUnresolve(card.id)}
                   >
-                    {props.deleting ? 'Deleting…' : 'Really delete everything?'}
+                    Unresolve
                   </button>
-                  <button
-                    type="button"
-                    class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                    onClick={() => setConfirmingDelete(false)}
-                  >
-                    Cancel
-                  </button>
-                </span>
-              </Show>
-            </Show>
-          </section>
+                </li>
+              )}
+            </For>
+          </ul>
+          <Show when={props.resolvedCards.length > resolvedShown()}>
+            <button
+              type="button"
+              class="mt-2 w-full rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              onClick={() => setResolvedShown(resolvedShown() + 20)}
+            >
+              Show more ({props.resolvedCards.length - resolvedShown()} left)
+            </button>
+          </Show>
         </Show>
+      </section>
+
+      {/* ── danger zone ──────────────────────────────────────────────── */}
+      <Show when={props.canDelete}>
+        <section class="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-red-500">Danger zone</h3>
+          <p class="mt-1 text-xs text-neutral-400">
+            Deleting removes the board, its lists, cards, and comments for everyone.
+            <Show when={props.cardCount > 0}>
+              {' '}
+              Cards can never be deleted on their own — a board that holds them deletes only through
+              this deliberate, typed confirmation.
+            </Show>
+          </p>
+          <Show
+            when={confirmingDelete()}
+            fallback={
+              <button
+                type="button"
+                class="mt-2 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                onClick={() => {
+                  setTypedConfirm('');
+                  setConfirmingDelete(true);
+                }}
+              >
+                Delete this board{props.cardCount > 0 ? ` (${props.cardCount} cards)` : ''}…
+              </button>
+            }
+          >
+            <Show
+              when={props.cardCount === 0}
+              fallback={
+                <span class="mt-2 flex flex-col gap-2">
+                  <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                    Type <span class="font-semibold">{props.board.name}</span> to permanently delete
+                    this board and its {props.cardCount} card
+                    {props.cardCount === 1 ? '' : 's'} (cards included — this is the capsule's one
+                    sanctioned purge):
+                  </span>
+                  <input
+                    class="max-w-xs"
+                    value={typedConfirm()}
+                    onInput={(event) => setTypedConfirm(event.currentTarget.value)}
+                    placeholder={props.board.name}
+                  />
+                  <span class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={props.deleting || typedConfirm() !== props.board.name}
+                      class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                      onClick={() => props.onDelete(true)}
+                    >
+                      {props.deleting ? 'Deleting…' : 'Purge everything permanently'}
+                    </button>
+                    <button
+                      type="button"
+                      class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                      onClick={() => setConfirmingDelete(false)}
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                </span>
+              }
+            >
+              <span class="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={props.deleting}
+                  class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                  onClick={() => props.onDelete(false)}
+                >
+                  {props.deleting ? 'Deleting…' : 'Really delete everything?'}
+                </button>
+                <button
+                  type="button"
+                  class="text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  Cancel
+                </button>
+              </span>
+            </Show>
+          </Show>
+        </section>
+      </Show>
     </div>
   );
 }

@@ -69,7 +69,8 @@ export interface OpSpec<S = unknown> {
    *  provisional (relayed) op: the write lives on the author's machine. */
   send?: () => Promise<unknown>;
   /** True when the durable snapshot contains this op's change. */
-  echo: (durable: S) => boolean;}
+  echo: (durable: S) => boolean;
+}
 
 /** Guard id for the board's own row (name etc.). */
 export const BOARD_ENTITY = 'board';
@@ -95,7 +96,7 @@ const ECHO_GRACE_MS = 2_500;
 /** Client-side durable poll interval — realtime's silent-death fallback. */
 const POLL_MS = 20_000;
 /** Sweep cadence — retire missed echoes, expire provisional TTLs. */
-const SWEEP_MS = 5_000;/**
+const SWEEP_MS = 5_000; /**
  * A provisional (relayed) op whose echo never lands — the author's write
  * failed silently or their client vanished. The prediction reverts to the
  * durable state after this long; the author's own outbox surfaces the
@@ -236,10 +237,13 @@ function mergeBoardSnapshot(
   snapshot: BoardSnapshot,
   keep: ReadonlySet<string>,
 ) {
-  const lists = mergeRows(draft.lists, snapshot.lists, keep).sort((a, b) => a.position - b.position);
+  const lists = mergeRows(draft.lists, snapshot.lists, keep).sort(
+    (a, b) => a.position - b.position,
+  );
   const listIndex = new Map(lists.map((list, index) => [list.id, index]));
   const cards = mergeRows(draft.cards, snapshot.cards, keep).sort(
-    (a, b) => (listIndex.get(a.list_id) ?? 0) - (listIndex.get(b.list_id) ?? 0) || a.position - b.position,
+    (a, b) =>
+      (listIndex.get(a.list_id) ?? 0) - (listIndex.get(b.list_id) ?? 0) || a.position - b.position,
   );
   draft.board = keep.has(BOARD_ENTITY)
     ? draft.board
@@ -423,7 +427,6 @@ function createEngineBody<S extends object>(
     return keep;
   };
 
-
   // THE merge driver: every view write happens here, inside a durable
   // emission pass. Retirements are decided from data read BEFORE any
   // write (reads lag writes), then applied with the merge in one pass.
@@ -451,18 +454,21 @@ function createEngineBody<S extends object>(
       for (const timer of timers) clearInterval(timer);
     };
   });
-  createEffect(() => (started() ? durable() : undefined), (snapshot) => {
-    if (snapshot === undefined) return; // pre-settle: nothing to merge yet
-    lastDurable = snapshot; // the sweep retires against the freshest state
-    const retiring = new Set<string>();
-    for (const op of [...ops.list]) {
-      const spec = specs.get(op.id);
-      if (op.status === 'inFlight' && spec?.echo(snapshot)) {
-        for (const id of [...op.guards, ...op.tempIds]) retiring.add(id);
+  createEffect(
+    () => (started() ? durable() : undefined),
+    (snapshot) => {
+      if (snapshot === undefined) return; // pre-settle: nothing to merge yet
+      lastDurable = snapshot; // the sweep retires against the freshest state
+      const retiring = new Set<string>();
+      for (const op of [...ops.list]) {
+        const spec = specs.get(op.id);
+        if (op.status === 'inFlight' && spec?.echo(snapshot)) {
+          for (const id of [...op.guards, ...op.tempIds]) retiring.add(id);
+        }
       }
-    }
-    applyWithRetire(snapshot, retiring);
-  });
+      applyWithRetire(snapshot, retiring);
+    },
+  );
 
   /** Shared retire + merge pass (writes ops first, then merges once). */
   function applyWithRetire(snapshot: S, retiring: ReadonlySet<string>) {
@@ -639,7 +645,8 @@ function createEngineBody<S extends object>(
       if (expiredRemote.length > 0) {
         setOps((draft) => {
           draft.list = draft.list.filter(
-            (entry) => !(entry.remote && expiredRemote.includes(entry.id) && entry.status === 'inFlight'),
+            (entry) =>
+              !(entry.remote && expiredRemote.includes(entry.id) && entry.status === 'inFlight'),
           );
         });
         for (const id of expiredRemote) specs.delete(id);
@@ -713,8 +720,6 @@ function createEngineBody<S extends object>(
     /** A locally created entity whose real id hasn't been echoed yet —
      *  local or provisional (the shimmer marks not-yet-durable rows). */
     isTemp: (entityId: string) =>
-      ops.list.some(
-        (op) => op.status === 'inFlight' && op.tempIds.includes(entityId),
-      ),
+      ops.list.some((op) => op.status === 'inFlight' && op.tempIds.includes(entityId)),
   };
 }

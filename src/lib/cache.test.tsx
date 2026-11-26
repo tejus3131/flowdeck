@@ -5,14 +5,7 @@
 // wrapper is the same logic with a real store behind it.
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  __testAge,
-  cacheClear,
-  cacheGet,
-  cachePut,
-  cacheSetUser,
-  cachedStream,
-} from './cache';
+import { __testAge, cacheClear, cacheGet, cachePut, cacheSetUser, cachedStream } from './cache';
 import { perfStats } from './perf';
 
 /** cachePut is fire-and-forget by design; tests wait a macrotask so every

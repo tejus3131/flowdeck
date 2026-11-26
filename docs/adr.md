@@ -70,7 +70,7 @@ log; timelines subscribe live (the table is realtime-published).
 
 **Consequences.** One event vocabulary; the 10s timeline poll dies; the
 capsule becomes an indexed cursor read. Jira's lesson kept: store the id
-*and* the display snapshot at write time so history renders even when the
+_and_ the display snapshot at write time so history renders even when the
 entity is gone.
 
 ## ADR-5: Single write path — decompose `mcp_exec`
@@ -210,7 +210,7 @@ exists for AWS/GCP/Azure/Vault. Neither Cloudflare nor Supabase supports
 OIDC federation for their API tokens (verified against current docs:
 wrangler in CI takes a static API token; Supabase CLI takes a static
 access token). Minting per-run tokens via each provider's API would
-require storing a *token-minting* token (Cloudflare "API Tokens: Edit",
+require storing a _token-minting_ token (Cloudflare "API Tokens: Edit",
 Supabase account-wide) — strictly more dangerous than the tokens being
 minted. Rejected.
 
@@ -237,7 +237,7 @@ minted. Rejected.
 5. **GitHub hardening.** Default `GITHUB_TOKEN` read-only (set); fork PRs
    get no workflows (set); every workflow pins actions to full commit
    SHAs; per-workflow `permissions:` blocks; `persist-credentials:
-   false` on checkout; no `pull_request_target` + PR-head checkout
+false` on checkout; no `pull_request_target` + PR-head checkout
    patterns, ever.
 6. **Environments as the gate.** `production` requires a reviewer;
    `preview` is merge-gated. Credentials live in environments, not

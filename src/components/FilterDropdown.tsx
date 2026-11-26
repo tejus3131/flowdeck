@@ -28,7 +28,8 @@ export function FilterDropdown(props: {
   const filtered = () => {
     const q = query().trim().toLowerCase();
     return props.items.filter(
-      (item) => !q || item.label.toLowerCase().includes(q) || (item.sub ?? '').toLowerCase().includes(q),
+      (item) =>
+        !q || item.label.toLowerCase().includes(q) || (item.sub ?? '').toLowerCase().includes(q),
     );
   };
 

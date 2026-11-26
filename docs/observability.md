@@ -8,11 +8,11 @@ feed the sink described here).
 
 ## The stack
 
-| Tool | What it gives us | Free tier | Cost control |
-| --- | --- | --- | --- |
-| PostHog Cloud | product analytics, feature flags, experiments, session replay, exceptions | 1M events/mo, 1M flag requests/mo, 5K replays/mo, 100K exceptions/mo — **hard-capped, no surprise bills** | lean taxonomy (below), replays sampled 10% |
-| Workers Logs | server-side logs: `[perf]` slow reads, `[boardStream]` fold/resync lines, channel errors | 3-day retention | the escape hatch is Axiom Personal (500GB/mo) if retention ever matters |
-| `perf.ts` marks | client-side p50/p95 per open path (the `?perf=1` panel) | free (ours) | a batched sink → PostHog counters, not one event per mark |
+| Tool            | What it gives us                                                                         | Free tier                                                                                                 | Cost control                                                            |
+| --------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| PostHog Cloud   | product analytics, feature flags, experiments, session replay, exceptions                | 1M events/mo, 1M flag requests/mo, 5K replays/mo, 100K exceptions/mo — **hard-capped, no surprise bills** | lean taxonomy (below), replays sampled 10%                              |
+| Workers Logs    | server-side logs: `[perf]` slow reads, `[boardStream]` fold/resync lines, channel errors | 3-day retention                                                                                           | the escape hatch is Axiom Personal (500GB/mo) if retention ever matters |
+| `perf.ts` marks | client-side p50/p95 per open path (the `?perf=1` panel)                                  | free (ours)                                                                                               | a batched sink → PostHog counters, not one event per mark               |
 
 Local dev sends nothing (`import.meta.env.DEV` guard on the sink); the
 PostHog key is `VITE_`-prefixed — public by design.
@@ -24,16 +24,16 @@ event below answers a question we have already needed to answer by reading
 code. Names are `snake_case`, no PII — user/workspace identities are the
 existing UUIDs, never emails or display names.
 
-| Event | Properties | Answers |
-| --- | --- | --- |
-| `page_open` | route, auth state, p50/p95 of the route's open mark | is the redesign faster; where do users go |
-| `panel_open` | panel (`card-drawer`, `board-chat`, `settings`), warm/cold, open mark | the budgets table's reality check |
-| `mutation_echo` | op kind, apply→echo ms, ok/fail, `remote` (author's own op vs a received provisional) | is the outbox meeting its budgets — the author's echo retirement, and (with `remote: true`) the receiver's provisional→echo, which is the ≤500ms cross-viewer budget in [`performance.md`](./performance.md) |
-| `sync_resync` | trigger (`visibility`, `periodic`, `board-delete`), snapshot ms | resyncs should be rare — a spike means a one-row change is falling off the fold (the canonical test, caught in prod) |
-| `cache_hit` / `cache_miss` | entity type, key kind — **aggregated**: the sink emits one counter per (type, kind, minute), never per read | did the cache layer earn its complexity |
-| `fold_applied` | batch size, card fetches, duration | the fold's health as it grows event kinds |
-| `mcp_tool_call` | tool, op, workspace id, latency ms, ok, rows | what agents actually do; which ops earn their surface |
-| `exception` | PostHog exceptions (auto) | client errors the replays explain |
+| Event                      | Properties                                                                                                  | Answers                                                                                                                                                                                                      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `page_open`                | route, auth state, p50/p95 of the route's open mark                                                         | is the redesign faster; where do users go                                                                                                                                                                    |
+| `panel_open`               | panel (`card-drawer`, `board-chat`, `settings`), warm/cold, open mark                                       | the budgets table's reality check                                                                                                                                                                            |
+| `mutation_echo`            | op kind, apply→echo ms, ok/fail, `remote` (author's own op vs a received provisional)                       | is the outbox meeting its budgets — the author's echo retirement, and (with `remote: true`) the receiver's provisional→echo, which is the ≤500ms cross-viewer budget in [`performance.md`](./performance.md) |
+| `sync_resync`              | trigger (`visibility`, `periodic`, `board-delete`), snapshot ms                                             | resyncs should be rare — a spike means a one-row change is falling off the fold (the canonical test, caught in prod)                                                                                         |
+| `cache_hit` / `cache_miss` | entity type, key kind — **aggregated**: the sink emits one counter per (type, kind, minute), never per read | did the cache layer earn its complexity                                                                                                                                                                      |
+| `fold_applied`             | batch size, card fetches, duration                                                                          | the fold's health as it grows event kinds                                                                                                                                                                    |
+| `mcp_tool_call`            | tool, op, workspace id, latency ms, ok, rows                                                                | what agents actually do; which ops earn their surface                                                                                                                                                        |
+| `exception`                | PostHog exceptions (auto)                                                                                   | client errors the replays explain                                                                                                                                                                            |
 
 Per-phase additions land with the phase (the same PR that adds the path
 adds its event — the observability mirror of performance-rules 12).

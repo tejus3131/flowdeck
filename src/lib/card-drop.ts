@@ -98,9 +98,7 @@ function heal(display: Positioned[], index: number, lower: number, upper: number
   // The moving card enters after display[index-1] (or at the segment's
   // start when dropping above it): its slot among the segment.
   const insertAfter = display[index - 1];
-  const slot = insertAfter
-    ? segment.findIndex((card) => card.id === insertAfter.id) + 1
-    : 0;
+  const slot = insertAfter ? segment.findIndex((card) => card.id === insertAfter.id) + 1 : 0;
   const count = segment.length + 1;
   const spread = (s: number) => lower + ((upper - lower) * (s + 1)) / (count + 1);
   const position = spread(slot);

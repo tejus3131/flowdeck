@@ -16,10 +16,15 @@ const browser = await chromium.launch({ executablePath: BRAVE, headless: true })
 const page = await (await browser.newContext()).newPage();
 const errors = [];
 page.on('response', (res) => {
-  if (res.status() >= 400) errors.push(`[${res.status()}] ${res.request().method()} ${res.url().replace(BASE, '').slice(0, 90)}`);
+  if (res.status() >= 400)
+    errors.push(
+      `[${res.status()}] ${res.request().method()} ${res.url().replace(BASE, '').slice(0, 90)}`,
+    );
 });
 
-await page.goto(`${BASE}/auth/confirm?token_hash=${tokenHash}&type=${linkType}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`${BASE}/auth/confirm?token_hash=${tokenHash}&type=${linkType}`, {
+  waitUntil: 'domcontentloaded',
+});
 await page.waitForTimeout(1500);
 console.log('signed in:', page.url());
 

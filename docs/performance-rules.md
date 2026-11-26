@@ -1,7 +1,7 @@
 # Performance rules
 
 The checklist that keeps Flowdeck fast. The architecture landed once
-([`performance.md`](./performance.md)); these rules are how it *stays*
+([`performance.md`](./performance.md)); these rules are how it _stays_
 landed. They apply to every change that touches data or UI — bug fixes,
 features, revamps. A PR that breaks one of these is why we're slow again.
 
@@ -15,7 +15,7 @@ A "data stream" is anything the UI opens and shows: a panel, a tab, a list,
 a drawer, a page backed by rows. Five rules, in order of how you'll hit them:
 
 1. **No cold fetch on open.** The view reads from the local cache first and
-   paints immediately; the network only *revalidates*. A new entity type
+   paints immediately; the network only _revalidates_. A new entity type
    ships with its cache schema entry in the same PR — there is no such thing
    as "cache it later." The only permitted cold state is the genuine
    first-ever open.

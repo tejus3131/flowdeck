@@ -13,21 +13,33 @@ import { writeFileSync } from 'node:fs';
 
 const URL = 'https://ylarhvcbpppujpjnpxkq.supabase.co';
 const REF = 'ylarhvcbpppujpjnpxkq';
-const keys = JSON.parse(execFileSync('supabase', ['projects', 'api-keys', '--output', 'json', '--project-ref', REF], { encoding: 'utf8' }));
-const list = Array.isArray(keys) ? keys : keys.data ?? [];
+const keys = JSON.parse(
+  execFileSync('supabase', ['projects', 'api-keys', '--output', 'json', '--project-ref', REF], {
+    encoding: 'utf8',
+  }),
+);
+const list = Array.isArray(keys) ? keys : (keys.data ?? []);
 const anonKey = list.find((k) => k.name === 'anon').api_key;
 const secretKey = list.find((k) => k.name === 'service_role').api_key;
-const admin = createClient(URL, secretKey, { auth: { autoRefreshToken: false, persistSession: false } });
+const admin = createClient(URL, secretKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
 
 const email = `consent-probe-${Date.now().toString(36)}@flowdeck.test`;
 const password = `probe-${Date.now().toString(36)}!Aa1`;
-const { data: created, error: createErr } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+const { data: created, error: createErr } = await admin.auth.admin.createUser({
+  email,
+  password,
+  email_confirm: true,
+});
 if (createErr || !created.user) {
   console.error('probe user failed:', createErr?.message);
   process.exit(1);
 }
 
-const pub = createClient(URL, anonKey, { auth: { autoRefreshToken: false, persistSession: false } });
+const pub = createClient(URL, anonKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
 const { data: signIn, error: signInErr } = await pub.auth.signInWithPassword({ email, password });
 if (signInErr || !signIn.session) {
   console.error('probe sign-in failed:', signInErr?.message);
@@ -71,5 +83,9 @@ writeFileSync(
   '/tmp/probe-env',
   `SUPABASE_URL=${URL}\nSUPABASE_PUBLISHABLE_KEY=${anonKey}\nSUPABASE_SECRET_KEY=${secretKey}\nPORT=3004\n`,
 );
-console.log(`probe user ${email} signed in; cookie written (${cookie.length} chars, chunked=${encoded.length > 3180})`);
-console.log('now run: curl -s -o /dev/null -w "%{http_code}\\n" -H "Cookie: $(cat /tmp/probe-cookie.txt)" "<authorize url>"');
+console.log(
+  `probe user ${email} signed in; cookie written (${cookie.length} chars, chunked=${encoded.length > 3180})`,
+);
+console.log(
+  'now run: curl -s -o /dev/null -w "%{http_code}\\n" -H "Cookie: $(cat /tmp/probe-cookie.txt)" "<authorize url>"',
+);

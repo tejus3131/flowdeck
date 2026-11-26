@@ -163,8 +163,7 @@ export function sortBoardDraft(draft: BoardSnapshot): void {
   const listOrder = new Map(draft.lists.map((list, index) => [list.id, index]));
   draft.cards = [...draft.cards].sort(
     (a, b) =>
-      (listOrder.get(a.list_id) ?? 0) - (listOrder.get(b.list_id) ?? 0) ||
-      a.position - b.position,
+      (listOrder.get(a.list_id) ?? 0) - (listOrder.get(b.list_id) ?? 0) || a.position - b.position,
   );
 }
 
@@ -301,7 +300,11 @@ export function echoBoardOp(durable: BoardSnapshot, payload: BoardOpPayload): bo
         if (ids(card.assignees) !== ids(payload.assignees)) return false;
       }
       if (payload.tags !== undefined) {
-        const tagIds = (list: { id: string }[]) => [...list].map((t) => t.id).sort().join(',');
+        const tagIds = (list: { id: string }[]) =>
+          [...list]
+            .map((t) => t.id)
+            .sort()
+            .join(',');
         if (tagIds(card.tags) !== tagIds(payload.tags)) return false;
       }
       return true;

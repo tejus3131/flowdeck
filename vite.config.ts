@@ -23,11 +23,7 @@ export default defineConfig({
     // Cloudflare's plugin adopts Solid's `ssr` environment before solid()
     // claims it: dev runs the server build in workerd, and `vite build`
     // emits the Worker + assets wrangler deploys. No adapter layer.
-    ...(edgeDev
-      ? [
-          cloudflare({ viteEnvironment: { name: 'ssr' } }),
-        ]
-      : []),
+    ...(edgeDev ? [cloudflare({ viteEnvironment: { name: 'ssr' } })] : []),
     solid({
       start: {
         middleware: './src/middleware.ts',
@@ -96,9 +92,7 @@ export default defineConfig({
             // is stubbed with the same contract (live process.env reads).
             {
               find: 'virtual:solid-env/server',
-              replacement: fileURLToPath(
-                new URL('./vitest-env-server-stub.ts', import.meta.url),
-              ),
+              replacement: fileURLToPath(new URL('./vitest-env-server-stub.ts', import.meta.url)),
             },
           ],
         },
