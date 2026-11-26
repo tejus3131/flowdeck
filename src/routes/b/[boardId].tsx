@@ -88,7 +88,11 @@ import {
   updateCard as updateCardServer,
   updateList as updateListServer,
 } from '../../lib/boards';
-import { foldTimelineBurst } from '../../lib/board-fold';
+import {
+  commentsSlice as commentsSliceOver,
+  timelineSlice as timelineSliceOver,
+} from '../../lib/board-slices';
+
 import {
   getMyWorkspaces,
   getWorkspaceSnapshot,
@@ -1506,6 +1510,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       <Show when={openCardId()}>
         {(cardId) => (
           <CardDrawer
+            boardId={view().board.id}
             cardId={cardId()}
             clientOp={openCardOp()}
             cards={view().cards}
@@ -3353,6 +3358,11 @@ function DescriptionDiffEvent(props: { from: string; to: string }) {
 
 function CardDrawer(props: {
   cardId: string;
+  /** The board's id — the TOPIC's key. The drawer's slices subscribe to
+   *  the board stream by THIS id and filter per-card digests client-side;
+   *  keying the topic by the card id would spin a phantom, denied board
+   *  topic whose digests never arrive (the poll would mask it at 20s). */
+  boardId: string;
   /** The card's client_op — lets the drawer survive the provisional→
    *  durable id swap (a relayed card's temp id differs from its echo). */
   clientOp: string | null;
@@ -3569,23 +3579,17 @@ function CardDrawer(props: {
   // liveQuery dedupes by (name + args), so the drawer adds zero sockets.
   // The slice accumulates: the cold page from one fetch, then the topic's
   // new event rows append through foldTimelineBurst.
+  // The slice (lib/board-slices, test-pinned): the topic by the BOARD
+  // id, the page by the CARD id — the wrong key would spin a phantom
+  // topic whose digests never arrive, masked only by the 20s poll.
   const topicLive = liveQuery(boardStream, 'board');
-  const timelineSlice = async function* (key: string): AsyncGenerator<CardEventRow[]> {
-    let page = await getCardEvents(key);
-    yield page;
-    for await (const composite of await topicLive(key)) {
-      if (composite.newEvents.length === 0) continue;
-      const mine = composite.newEvents.filter((row) => row.card_id === key);
-      if (mine.length === 0) continue;
-      const folded = foldTimelineBurst(page, mine);
-      if (folded) {
-        page = folded;
-        yield page;
-      }
-      // Out-of-order arrivals skip: the engine's durable poll converges
-      // them (the same bound the standalone producer kept).
-    }
-  };
+  const timelineSlice = (cardId: string) =>
+    timelineSliceOver({
+      boardId: props.boardId,
+      cardId,
+      topic: (boardId) => topicLive(boardId),
+      fetchPage: (id) => getCardEvents(id),
+    });
   const timelineEngine = createEngine<TimelineSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<TimelineSnapshot> {
@@ -3618,7 +3622,7 @@ function CardDrawer(props: {
         draft.list = snapshot.list;
       }
     },
-    status: () => topicLive.status(tab() === 'settings' ? cardIdNow() : ''),
+    status: () => topicLive.status(props.boardId),
     refresh: async () => ({ list: await getCardEvents(cardIdNow()) }),
   });
   const events = () => timelineEngine.view().list;
@@ -3819,21 +3823,16 @@ function CardDrawer(props: {
   // accumulates: the cold page from one fetch (the same query the old
   // producer's first value ran), then the digest's pages replace it as
   // the card's comments change.
+  // The slice (lib/board-slices, test-pinned): topic by the BOARD id,
+  // digest pages replaced for this card only.
   const commentsTopic = liveQuery(boardStream, 'board');
-  const commentsSlice = async function* (
-    key: string,
-    clientOp?: string | null,
-  ): AsyncGenerator<CommentRow[]> {
-    let page = await getCardComments(key, clientOp ?? null);
-    yield page;
-    for await (const composite of await commentsTopic(key)) {
-      const digest = composite.commentPages[key];
-      if (digest) {
-        page = digest;
-        yield page;
-      }
-    }
-  };
+  const commentsSlice = (cardId: string) =>
+    commentsSliceOver({
+      boardId: props.boardId,
+      cardId,
+      topic: (boardId) => commentsTopic(boardId),
+      fetchPage: (id) => getCardComments(id, props.clientOp ?? null),
+    });
   const commentsEngine = createEngine<CommentsSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<CommentsSnapshot> {
@@ -3845,7 +3844,7 @@ function CardDrawer(props: {
         for await (const list of await perfFirstValue(
           cachedStream(
             `card-comments:${key}`,
-            () => commentsSlice(key, props.clientOp ?? null),
+            () => commentsSlice(key),
             'card-comments-revalidate',
           ),
           'card-comments-open',
@@ -3875,7 +3874,7 @@ function CardDrawer(props: {
         draft.list = merged;
       }
     },
-    status: () => commentsTopic.status(cardIdNow()),
+    status: () => commentsTopic.status(props.boardId),
     refresh: async () => ({ list: await getCardComments(cardIdNow(), props.clientOp ?? null) }),
   });
 
