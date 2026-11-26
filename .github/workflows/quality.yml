@@ -13,6 +13,11 @@ name: quality
 on:
   pull_request:
     branches: [main, preview]
+    # ready_for_review is REQUIRED: draft-gated jobs (client/server/
+    # functions) skip on drafts, and marking ready fires no synchronize
+    # — without this type the full checks never run for drafted PRs and
+    # branch protection shows pending checks forever.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -138,14 +143,22 @@ jobs:
           SUPABASE_SECRET_KEY: test-secret-key-placeholder-value
 
   # MCP edge functions: nothing in the test projects exercises them —
-  # this job exists so a functions-only PR shows an explicit (passing)
-  # check instead of silently skipping. Review coverage comes from
+  # this job type-checks the function with deno (the honest tool: the
+  # deps are https://esm.sh/ imports). Without it, a syntax/type break
+  # in mcp/index.ts sails through quality green and the deploy workflow
+  # pushes a broken function to prod. Review coverage comes from
   # pr-intel's tool report.
   functions:
     needs: classify
     if: needs.classify.outputs.functions == 'true' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - name: MCP function changed — review via the pr-intel tool report
-        run: echo "Edge function changes are covered by pr-intel's tool report; deploy workflows redeploy the function on merge."
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Type-check MCP function
+        run: deno check supabase/functions/mcp/index.ts
