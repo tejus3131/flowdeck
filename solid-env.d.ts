@@ -9,6 +9,7 @@ declare module 'virtual:solid-env/client' {
     : string;
   const env: {
     readonly "VITE_APP_NAME": __Out<__Schema["client"]["VITE_APP_NAME"]>;
+    readonly "VITE_APP_URL": __Out<__Schema["client"]["VITE_APP_URL"]>;
     readonly "VITE_SUPABASE_URL": __Out<__Schema["client"]["VITE_SUPABASE_URL"]>;
     readonly "VITE_SUPABASE_PUBLISHABLE_KEY": __Out<__Schema["client"]["VITE_SUPABASE_PUBLISHABLE_KEY"]>;
   };
@@ -31,6 +32,7 @@ declare module 'virtual:solid-env/server' {
     readonly "VAPID_PRIVATE_KEY": __Out<__Schema["server"]["VAPID_PRIVATE_KEY"]>;
     readonly "VAPID_SUBJECT": __Out<__Schema["server"]["VAPID_SUBJECT"]>;
     readonly "VITE_APP_NAME": __Out<__Schema["client"]["VITE_APP_NAME"]>;
+    readonly "VITE_APP_URL": __Out<__Schema["client"]["VITE_APP_URL"]>;
     readonly "VITE_SUPABASE_URL": __Out<__Schema["client"]["VITE_SUPABASE_URL"]>;
     readonly "VITE_SUPABASE_PUBLISHABLE_KEY": __Out<__Schema["client"]["VITE_SUPABASE_PUBLISHABLE_KEY"]>;
   };
