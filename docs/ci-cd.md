@@ -45,6 +45,8 @@ server/DB code moved):
 | ----------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `classify`  | always                             | paths-filter → ui / server / functions outputs                                                                                                                    |
 | `lint`      | always                             | oxlint + tsc (drafts included)                                                                                                                                    |
+| `format`    | always                             | prettier --check (drafts included) — the commit hooks' backstop: a `--no-verify` commit still cannot merge                                                        |
+| `knip`      | always                             | knip (drafts included) — unused files/dependencies fail the PR; export-level findings are scoped out for now (cleanup follow-up)                                  |
 | `client`    | UI paths, non-draft                | build (repo-level public `PREVIEW_*` vars — PR runs have no environment context) + jsdom tests                                                                    |
 | `server`    | server/DB paths, non-draft         | local `supabase start && db reset` + node tests (db-guards self-seeds)                                                                                            |
 | `functions` | `supabase/functions/**`, non-draft | `deno check` on the MCP function — the only place it's compiled; nothing in the test projects exercises edge functions. Review coverage is pr-intel's tool report |

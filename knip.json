@@ -3,9 +3,13 @@
   "entry": ["src/router.ts", "src/server-config.ts"],
   "project": ["src/**/*.{ts,tsx}", "env.ts", "vite.config.ts"],
   "ignore": ["src/types/database.generated.ts", "src/vite-env.d.ts"],
+  "ignoreBinaries": ["supabase", "psql"],
   "ignoreDependencies": [
     "@solidjs/diagnostics",
     "playwright-core",
+    "@types/dompurify",
+    "tailwindcss",
+    "server-only",
     "oxlint",
     "typescript",
     "vitest",
@@ -14,5 +18,6 @@
     "lint-staged",
     "prettier",
     "simple-git-hooks"
-  ]
+  ],
+  "include": ["files", "dependencies"]
 }
