@@ -195,7 +195,7 @@ security invoker
 set search_path = public
 stable
 as $$
-  select coalesce(jsonb_agg(payload order by created_at desc), '[]'::jsonb)
+  select coalesce(jsonb_agg(payload order by created_at desc, event_id desc), '[]'::jsonb)
   from (
     -- Mentions (chat, comment, description) — one event row each, the
     -- display snapshots written at mention time.
@@ -260,6 +260,7 @@ as $$
       )
     ) arms
     where e.kind = 'tags'
+      and e.tag_ids && ARRAY[p_tag_id]
       and (coalesce(p_query, '') = '' or coalesce(c.title, '') ilike '%' || p_query || '%')
       and (p_from is null or e.created_at >= p_from)
       and (p_to is null or e.created_at <= p_to)
