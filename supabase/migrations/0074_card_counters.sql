@@ -70,6 +70,17 @@ begin
   if v_card is null then
     return null;
   end if;
+  -- The purge paths delete cards (and boards) with the comments cascading
+  -- behind them — by the time this trigger fires there, the card row is
+  -- already gone, and a recompute would re-insert a counter for a dead
+  -- card (FK abort — the whole purge transaction would roll back). The
+  -- cascade owns the counters in that case; maintenance is for live
+  -- cards only. (Cascade order between comments and counters is
+  -- unspecified, so the guard — not the ordering — is what makes this
+  -- deterministic.)
+  if not exists (select 1 from public.cards where id = v_card) then
+    return null;
+  end if;
   insert into public.card_counters (card_id, comment_count, last_comment_at)
   select v_card, count(*), max(cc.created_at)
     from public.card_comments cc
