@@ -1,0 +1,184 @@
+# PR intelligence — deterministic, reviewable automation for every PR:
+#
+#   1. classify: label the PR by what it touches (client / server / mcp /
+#      migration / docs / infra / sync-engine / cache), from path filters
+#      plus content probes (outbox, cache, fold).
+#   2. migration guard: fail the PR if an EXISTING migration file is
+#      modified or deleted (L0 rule 1: migrations are append-only; a
+#      merged migration is history, editing it desyncs every database
+#      that already applied it).
+#   3. mcp tool report: when supabase/functions/mcp changes, diff the
+#      TOOLS array against the base and post ONE comment (updated in
+#      place on later pushes) listing added/removed/changed tools.
+#
+# Everything here is read-only analysis; it never blocks on style, only
+# on the migration guard (a correctness rule).
+name: pr-intel
+
+on:
+  pull_request:
+    branches: [main, preview]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write # labels + the upserted report comment
+  issues: write # label add/remove rides the issues API
+
+concurrency:
+  group: pr-intel-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # The guard runs for EVERY PR including forks — it needs no write
+  # access, and an edited migration from a fork must fail just the same.
+  migration-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the guard diffs history
+
+      - name: Migration guard (append-only)
+        run: |
+          # Merge base, not base.sha: if the base branch moved (another
+          # migration PR merged), diffing the branch tip would report
+          # that migration as deleted on this clean PR. The merge base
+          # is the robust diff point in every interpretation.
+          # Guards fail CLOSED: a failed diff must fail the step. NOTE
+          # the diff runs to a FILE, not a process substitution — a
+          # process substitution's exit code goes into the void
+          # (mapfile's status is mapfile's own), so a failed diff would
+          # read as an empty list = "clean". Only a successful diff can
+          # read as clean.
+          base="$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD)"
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
+            echo "::error::merge-base did not resolve to a usable commit — refusing to run the guard blind"
+            exit 1
+          fi
+          if ! git diff --name-status "$base" HEAD -- supabase/migrations/ > /tmp/mig.diff; then
+            echo "::error::migration diff failed — refusing to pass the guard blind"
+            exit 1
+          fi
+          mapfile -t changed < /tmp/mig.diff
+          bad=0
+          for line in "${changed[@]}"; do
+            status="${line:0:1}"
+            file="${line:2}"
+            case "$status" in
+              A) echo "migration added: $file" ;;
+              D) echo "::error file=$file::Deleting a merged migration desyncs every database that already applied it. Restore the file; write a NEW migration instead."
+                 bad=1 ;;
+              M) echo "::error file=$file::Editing a merged migration desyncs every database that already applied it. Revert the edit; write a NEW migration instead."
+                 bad=1 ;;
+              R*) echo "::error file=$file::Renaming a migration breaks the applied-history chain. Restore the name; add a NEW migration instead."
+                 bad=1 ;;
+            esac
+          done
+          if [ "$bad" = "1" ]; then exit 1; fi
+          echo "migration guard: clean"
+
+  # Labels + the MCP tool report need WRITE access — fork PRs run with
+  # a read-only token, so these steps would 403 and fail the workflow
+  # through no fault of the PR. Same-repo PRs only.
+  classify:
+    needs: migration-guard
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the tool diff needs history
+
+      - name: Apply labels
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.issue;
+            // Path-based classification. NOTE: this filter set and
+            // quality.yml's classify job encode overlapping knowledge —
+            // keep them in sync (docs/ci-cd.md holds the canonical split).
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+            const paths = files.map(f => f.filename);
+            const has = re => paths.some(p => re.test(p));
+            const labels = [];
+            if (has(/^supabase\/migrations\//)) labels.push('migration');
+            if (has(/^supabase\/functions\//)) labels.push('mcp');
+            if (has(/^supabase\//) || has(/^src\/(server|lib|types)\//)) labels.push('server');
+            if (has(/^src\/(components|routes|app\.css|logo)/) || has(/^public\//)) labels.push('client');
+            if (paths.every(p => p.startsWith('docs/') || p.endsWith('.md'))) labels.push('docs');
+            if (has(/^\.github\//) || has(/^(env\.ts|vite\.config|wrangler|oxlint|tsconfig|package|pnpm-lock)/)) labels.push('infra');
+            // Content probes: the load-bearing modules.
+            const patch = files.map(f => f.patch || '').join('\n');
+            if (has(/^src\/lib\/sync\.ts$/) || (has(/^src\/lib\//) && /outbox|guards|echo|provisional/.test(patch))) labels.push('sync-engine');
+            if (has(/^src\/lib\/(cache|prefetch|perf)\.ts$/)) labels.push('cache');
+            if (has(/^src\/lib\/board-fold\.ts$/)) labels.push('fold');
+            if (labels.length === 0) labels.push('misc');
+            // The bot owns its labels, humans own theirs: setLabels is a
+            // full replace — `next` keeps human labels and adds the
+            // computed set, and stale bot labels drop out by their
+            // absence from `next`. (No separate removeLabel pass: they
+            // are already gone after the replace, and removeLabel on a
+            // detached label 404s.)
+            const BOT_LABELS = ['migration', 'mcp', 'server', 'client', 'docs', 'infra', 'sync-engine', 'cache', 'fold', 'misc'];
+            const current = (await github.rest.issues.get({ owner, repo, issue_number: pr.number }))
+              .data.labels.map(l => l.name);
+            const human = current.filter(l => !BOT_LABELS.includes(l));
+            const next = [...new Set([...human, ...labels])];
+            await github.rest.issues.setLabels({ owner, repo, issue_number: pr.number, labels: next });
+
+      - name: MCP tool report (one comment, updated per push)
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.issue;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+            if (!files.some(f => f.filename.startsWith('supabase/functions/'))) return;
+            const { execSync } = require('node:child_process');
+            const base = '${{ github.event.pull_request.base.sha }}';
+            // Tool names only: `name: 'tool_name',` on its own line at
+            // tool-def indentation (4 spaces). SERVER_INFO's inline
+            // `name: 'flowdeck'` doesn't match the line shape.
+            const extract = (rev) => execSync(
+              `git show ${rev}:supabase/functions/mcp/index.ts`,
+              { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+            ).match(/^ {4}name:\s*'([a-z_]+)',\s*$/gm)?.map(m => m.match(/'([^']+)'/)[1]) ?? [];
+            let baseTools = [], headTools = [];
+            try { baseTools = extract(base); } catch { /* new file or base lacks it */ }
+            try { headTools = extract('HEAD'); } catch { /* deleted? report that */ }
+            const added = headTools.filter(t => !baseTools.includes(t));
+            const removed = baseTools.filter(t => !headTools.includes(t));
+            const changed = files
+              .filter(f => f.filename === 'supabase/functions/mcp/index.ts')
+              .map(f => (f.patch || '').split('\n').filter(l => /^[+-]/.test(l) && !/^[+-]{3}/.test(l)).length)
+              .reduce((a, b) => a + b, 0);
+            const lines = ['## MCP tool changes', ''];
+            if (added.length) lines.push(`**Added tools (${added.length}):** ${added.map(t => '`' + t + '`').join(', ')}`);
+            if (removed.length) lines.push(`**Removed tools (${removed.length}):** ${removed.map(t => '`' + t + '`').join(', ')}`);
+            if (!added.length && !removed.length) lines.push(`No tool additions/removals — ~${changed} changed lines in the MCP function (behavior/schema changes only; review the diff).`);
+            lines.push('', `<sub>pr-intel: deterministic report — updates on every push.</sub>`);
+            const body = lines.join('\n');
+            // Upsert: find THIS BOT's previous report and edit it, so the
+            // PR carries exactly one report that tracks the latest push.
+            // user.type check: an author could post a comment containing
+            // the marker — the bot must only ever edit its own comment.
+            const marker = '<sub>pr-intel: deterministic report';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr.number, per_page: 100,
+            });
+            const prior = comments.find(c => c.user?.type === 'Bot' && c.body.includes(marker));
+            if (prior) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: prior.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+            }
