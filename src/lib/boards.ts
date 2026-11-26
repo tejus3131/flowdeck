@@ -42,6 +42,18 @@ export type CardView = CardRow & {
   tags: TagView[];
 };
 
+/**
+ * The board TOPIC's composite (phase 4, ADR-3): one channel, one
+ * producer, every board-scoped surface. The liveQuery layer dedupes the
+ * connection per key — the board engine and the chat engine (and later
+ * the drawer surfaces) all consume THIS stream as their slice source,
+ * one socket per viewer per board.
+ */
+export type BoardTopicSnapshot = BoardSnapshot & {
+  /** The board chat's latest page (the old boardChatStream slice). */
+  chat: BoardMessageRow[];
+};
+
 /** One consistent view of a board — the unit the live stream yields. */
 export type BoardSnapshot = {
   board: BoardSummary;
@@ -336,7 +348,9 @@ export async function getBoardRevision(boardId: string): Promise<number | null> 
  * connection drops, `live()` reconnects and this generator starts over —
  * first value current, never behind.
  */
-export const boardStream = live(async function* (boardId: string): AsyncGenerator<BoardSnapshot> {
+export const boardStream = live(async function* (
+  boardId: string,
+): AsyncGenerator<BoardTopicSnapshot> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
@@ -495,6 +509,17 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
     );
   }
   channel
+    // The board chat rides the TOPIC (phase 4): its messages bind here
+    // and the composite carries the chat page — the chat panel consumes
+    // a slice of this stream instead of its own producer+socket.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_messages', filter: `board_id=eq.${id}` },
+      () => {
+        chatDirty = true;
+        control.onChanged();
+      },
+    )
     // Comment stats are counters now (ADR-7, migration 0074): the
     // maintenance trigger's UPDATE IS the event — the badge folds in O(1)
     // with no card fetch, for every writer (agents and API included, they
@@ -555,9 +580,16 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
     for (const card of value.cards) for (const tag of card.tags) tagNames.set(tag.id, tag.name);
   };
 
+  /** The chat slice's dirty flag: refetched only when its table
+   *  changed, so board bursts don't re-read chat pages. */
+  let chatDirty = true;
+
   try {
     // Current value first — the reconnect contract.
-    let current = await snapshot(supabase, id);
+    let current: BoardTopicSnapshot = {
+      ...(await snapshot(supabase, id)),
+      chat: await boardChatSnapshot(supabase, id),
+    };
     seedVocabulary(current);
     yield current;
     while (true) {
@@ -600,19 +632,34 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
           console.log(
             `[boardStream ${id.slice(0, 8)}] ${plan.resync ? 'visibility change' : 'periodic re-sync'} — re-snapshotting`,
           );
-          current = await snapshot(supabase, id);
+          current = {
+            ...(await snapshot(supabase, id)),
+            chat: await boardChatSnapshot(supabase, id),
+          };
           seedVocabulary(current);
         } else {
           const views = await fetchCardViews(supabase, id, plan.cardTouches);
-          const next: BoardSnapshot = {
+          const next: BoardTopicSnapshot = {
             ...current,
             lists: current.lists.slice(),
             cards: current.cards.slice(),
           };
           if (applyFold(next, plan, views)) {
-            current = await snapshot(supabase, id);
+            current = {
+              ...(await snapshot(supabase, id)),
+              chat: await boardChatSnapshot(supabase, id),
+            };
             seedVocabulary(current);
           } else {
+            // The fold changed the board slice; the chat slice re-reads
+            // only when its own table fired (chat messages don't ride
+            // the fold — edits/tombstones are page-shaped).
+            if (chatDirty) {
+              next.chat = await boardChatSnapshot(supabase, id);
+              chatDirty = false;
+            } else {
+              next.chat = current.chat;
+            }
             current = next;
           }
           console.log(
@@ -2117,54 +2164,6 @@ async function boardChatSnapshot(
       author: (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
     }));
 }
-
-/** The board's chat as a live source (same producer pattern as comments). */
-export const boardChatStream = live(async function* (
-  boardId: string,
-): AsyncGenerator<BoardMessageRow[]> {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const id = assertId(boardId, 'board id');
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) throw new Error('Sign in to view this board');
-
-  const control = producerControls();
-  const channel = supabase
-    .channel(`board-chat:${id}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'board_messages', filter: `board_id=eq.${id}` },
-      control.onChanged,
-    )
-    .on('system', {}, (payload: { status?: string; message?: string }) => {
-      if (payload?.status === 'error') {
-        console.error('[boardChatStream] realtime system error:', payload.message);
-      }
-    })
-    .subscribe((status, err) => {
-      if (err) console.error('boardChatStream channel error:', err);
-      if (status === 'CHANNEL_ERROR') console.error('boardChatStream channel error status');
-    });
-
-  try {
-    yield await boardChatSnapshot(supabase, id);
-    while (true) {
-      if (!control.pending) {
-        await new Promise<void>((resolve) => {
-          control.wake = resolve;
-        });
-      }
-      if (control.dead) return;
-      control.pending = false;
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      if (!control.pending) {
-        yield await boardChatSnapshot(supabase, id);
-      }
-    }
-  } finally {
-    void supabase.removeChannel(channel);
-  }
-});
 
 /** The board's chat as a one-shot snapshot (the sync engine's refresh). */
 export async function getBoardChatSnapshot(boardId: string): Promise<BoardMessageRow[]> {

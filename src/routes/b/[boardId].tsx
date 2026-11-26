@@ -55,7 +55,6 @@ import {
 } from '../../lib/access';
 import {
   addComment,
-  boardChatStream,
   boardStream,
   cardCommentsStream,
   cardEventsStream,
@@ -879,7 +878,6 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // every device forever (the stamp is monotonic server-side).
   const chatStamp = () => boardChatStamp(props.params.boardId);
   const stampChatSeen = (latest: number) => stampBoardChatSeen(props.params.boardId, latest);
-  const chatLive = liveQuery(boardChatStream, 'board-chat');
   const [chatUnread, setChatUnread] = createSignal(0);
   /** The latest message instant the channel has delivered (server clock). */
   const [latestChatInstant, setLatestChatInstant] = createSignal(0);
@@ -912,9 +910,12 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       .catch(() => {});
     void (async () => {
       try {
-        for await (const list of await chatLive(props.params.boardId)) {
-          lastChatList = list;
-          applyChatList(list);
+        // Phase 4 (ADR-3): the chat dot rides the board TOPIC's composite —
+        // one connection per viewer per board, shared with the board
+        // engine and the chat panel (liveQuery dedupes by name+args).
+        for await (const composite of await boardLive(props.params.boardId)) {
+          lastChatList = composite.chat;
+          applyChatList(composite.chat);
         }
       } catch {
         // the chat panel still works without the dot
@@ -5397,14 +5398,24 @@ function BoardChat(props: {
   anchorMessageId: () => string | null;
 }) {
   type ChatSnapshot = { list: BoardMessageRow[] };
-  const chatLive = liveQuery(boardChatStream, 'board-chat');
+  // Phase 4 (ADR-3): the chat panel consumes the board TOPIC's chat slice —
+  // liveQuery dedupes by (name + args), so this shares the board engine's
+  // one connection instead of opening its own producer and socket.
+  const topicLive = liveQuery(boardStream, 'board');
   const engine = createEngine<ChatSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<ChatSnapshot> {
         // Perf mark: chat panel open → first value. Warm opens paint the
         // cached page instantly (cachedStream), the live value revalidates.
         for await (const list of await perfFirstValue(
-          cachedStream(`board-chat:${key}`, () => chatLive(key), 'board-chat-revalidate'),
+          cachedStream(
+            `board-chat:${key}`,
+            () =>
+              (async function* (): AsyncGenerator<BoardMessageRow[]> {
+                for await (const composite of await topicLive(key)) yield composite.chat;
+              })(),
+            'board-chat-revalidate',
+          ),
           'board-chat-open',
         )) {
           yield { list };
@@ -5432,7 +5443,7 @@ function BoardChat(props: {
         draft.list = merged;
       }
     },
-    status: () => chatLive.status(props.boardId),
+    status: () => topicLive.status(props.boardId),
     refresh: async () => ({ list: await getBoardChatSnapshot(props.boardId) }),
   });
 
