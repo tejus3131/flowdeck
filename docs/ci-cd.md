@@ -85,7 +85,7 @@ Path matrix (dorny/paths-filter), **in order**, environment `preview`:
 
 | Changed                                                                                               | Action                                                    |
 | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --db-url` (preview)                     |
+| `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --remote=<db url> --yes` (preview)      |
 | `supabase/functions/**`                                                                               | `supabase functions deploy mcp --no-verify-jwt` (preview) |
 | `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy`    |
 
