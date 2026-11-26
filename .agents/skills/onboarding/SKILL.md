@@ -61,6 +61,9 @@ failure ambiguous.
 
 - `src/lib/sync.ts` — the outbox sync engine (read before touching any
   realtime/mutation code)
+- `src/lib/entity-store.ts` — the L2 entity store: one reference per
+  entity, selectors are the only way views see data (read before adding
+  any surface that shows entities)
 - `src/lib/board-fold.ts` — event-batch planning/folding
 - `src/lib/boards.ts` — the board data layer
 - `src/routes/` — file-system routed pages
