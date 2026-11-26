@@ -31,10 +31,21 @@ const failSql = (...statements: string[]): string => {
 };
 
 const canConnect = (() => {
+  // The skip must be VISIBLE, not silent: without host psql the whole
+  // contract suite is invisible, and a green run here is not a green run.
+  try {
+    execFileSync('psql', ['--version'], { stdio: 'ignore' });
+  } catch {
+    // vitest drops console output from fully-skipped files — a plain
+    // console.warn is INVISIBLE. stderr is not intercepted.
+    process.stderr.write('[mcp-ops] host psql not found — contract tests SKIP (invisible)\n');
+    return false;
+  }
   try {
     sql('select 1');
     return true;
   } catch {
+    console.warn('[mcp-ops] local stack unreachable at 127.0.0.1:54322 — contract tests SKIP');
     return false;
   }
 })();
