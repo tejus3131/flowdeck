@@ -173,7 +173,7 @@ jobs:
             --jq '.[0].id // ""')
           if [ -z "$DEPLOY_ID" ]; then
             DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments" \
-              -f ref="$GITHUB_SHA" -f environment="preview" --jq '.id')
+              -F auto_merge=false -f ref="$GITHUB_SHA" -f environment="preview" --jq '.id')
           fi
           gh api -X POST "repos/$GH_REPO/deployments/$DEPLOY_ID/statuses" \
             -f state="success" -f environment="preview"
