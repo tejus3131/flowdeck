@@ -148,9 +148,10 @@ workflow code.
 | `CF_ACCESS_CLIENT_ID`     | Secret | Access service token ID     | —                |
 | `CF_ACCESS_CLIENT_SECRET` | Secret | Access service token secret | —                |
 
-The CF Access pair is consumed by the probe smoke step (parameterized
-probes against the preview URL) — wired when probes land in CI; until
-then they sit unused by design, not orphaned.
+The CF Access pair is for probe scripts hitting human-gated preview paths
+(UI smoke tests) — the MCP surface itself is Access-bypassed (see the
+preview access map below); MCP clients connect with Flowdeck's own OAuth,
+identical to prod.
 | `CLOUDFLARE_ACCOUNT_ID` | Variable | same | same |
 | `SUPABASE_PROJECT_REF` | Variable | preview ref | prod ref |
 | `SUPABASE_POOLER_HOST` | Variable | preview pooler host | prod pooler host |
@@ -193,9 +194,17 @@ not GitHub.
 1. DNS: `preview.<domain>` CNAME → the preview worker (Cloudflare zone).
 2. Zero Trust → Access → self-hosted app for that hostname; policy: emails
    in the allowlist. Free up to 50 users.
-3. Preview Supabase: auth site URL + redirect URLs = preview domain;
+3. **Access bypass apps** (protocol plumbing — never app surfaces):
+   - `/.well-known` — RFC 8414 OAuth metadata (public by design)
+   - `/api/mcp*` — the MCP machine surface: register (RFC 7591,
+     unauthenticated by design, rate-limited), token, protocol, resource
+     metadata. The PAT (`Bearer fd_…`) is its security model — identical
+     to prod, which has no Access on the app domain.
+   The rule: bypass paths are protocol plumbing, never app surfaces. The
+   UI and `/mcp/authorize` (the human consent page) stay behind Access.
+4. Preview Supabase: auth site URL + redirect URLs = preview domain;
    signups invite-only.
-4. Create one preview PAT (in the preview DB) for probe-mcp; store as a
+5. Create one preview PAT (in the preview DB) for probe-mcp; store as a
    repo secret.
 
 ## Local development
