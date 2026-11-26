@@ -206,13 +206,19 @@ export function renderMarkdown(source: string, context?: MarkdownContext): strin
   // Defense in depth: only whitelisted embed hosts may frame.
   const doc = new DOMParser().parseFromString(clean, 'text/html');
   for (const frame of [...doc.querySelectorAll('iframe')]) {
+    // Parse and compare hosts exactly — a substring prefix check would
+    // also accept lookalike hosts like https://youtube.com.evil.com.
     const src = frame.getAttribute('src') ?? '';
-    const ok = Object.keys(VIDEO_HOSTS).some(
-      (host) =>
-        src.startsWith(`https://${host}`) ||
-        src.startsWith(`https://www.${host}`) ||
-        src.startsWith('https://player.vimeo.com'),
-    );
+    const host = (() => {
+      try {
+        const parsed = new URL(src);
+        if (parsed.protocol !== 'https:') return null;
+        return parsed.hostname.replace(/^www\./, '');
+      } catch {
+        return null;
+      }
+    })();
+    const ok = host === 'player.vimeo.com' || Object.keys(VIDEO_HOSTS).includes(host ?? '');
     if (!ok) frame.remove();
   }
   styleReferences(
