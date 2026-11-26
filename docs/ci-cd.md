@@ -37,12 +37,15 @@ flowchart LR
 1. `pnpm install --frozen-lockfile`
 2. `oxlint src`
 3. `tsc --noEmit` (`pnpm typecheck`)
-4. `vite build` (build gate; client env from the environment's public
-   `VITE_*` variables)
+4. `vite build` (build gate; client env from repo-level public
+   `PREVIEW_*` variables — PR runs have no environment context)
 5. `vitest` — client project (jsdom)
 6. `vitest` — server project: `supabase db reset` on the runner first
    (docker available on ubuntu-latest; `db-guards` self-seeds its
    fixture). **Zero provider credentials in this workflow** (ADR-15).
+
+Promised follow-up (not in Phase 0): `supabase db push --dry-run` →
+PR comment with the migration diff.
 
 ### W2 — `deploy-preview` (push → preview)
 
@@ -92,6 +95,10 @@ workflow code.
 | `SUPABASE_DB_PASSWORD` | Secret | preview DB password | prod DB password |
 | `CF_ACCESS_CLIENT_ID` | Secret | Access service token ID | — |
 | `CF_ACCESS_CLIENT_SECRET` | Secret | Access service token secret | — |
+
+The CF Access pair is consumed by the probe smoke step (parameterized
+probes against the preview URL) — wired when probes land in CI; until
+then they sit unused by design, not orphaned.
 | `CLOUDFLARE_ACCOUNT_ID` | Variable | same | same |
 | `SUPABASE_PROJECT_REF` | Variable | preview ref | prod ref |
 | `VITE_SUPABASE_URL` | Variable | preview project URL | prod project URL |

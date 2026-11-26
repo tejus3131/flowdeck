@@ -14,9 +14,6 @@ concurrency:
   group: quality-${{ github.event.pull_request.head.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -43,11 +40,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build (client env from env vars — public values)
+      - name: Build (client env from repo-level public vars — a PR run has
+          no environment context, so environment-scoped VITE_* would be
+          empty here; the preview project's public values give the gate a
+          representative build)
         run: pnpm build
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_URL: ${{ vars.PREVIEW_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.PREVIEW_SUPABASE_PUBLISHABLE_KEY }}
 
       # The local Supabase stack: migrations apply fresh, db-guards
       # self-seeds its fixture (see src/server/db-guards.test.ts).
