@@ -24,6 +24,12 @@
 -- descriptions: they are capsule facts, not card-trail facts — the
 -- drawer's timeline keeps its curated kinds. (RLS is board-scoped, so
 -- null card_id reads fine.)
+--
+-- The history backfill below skips tombstoned sources while the
+-- trigger deliberately persists mentions past tombstones — the
+-- asymmetry is intentional: the backfill seeds the capsule from the
+-- world as it currently renders (what 0072 showed), the trigger
+-- records what happens from here on.
 
 -- ── the mention writer ───────────────────────────────────────────────────
 -- One function, three surfaces (chat bodies, comment bodies, card
@@ -58,6 +64,19 @@ begin
       select distinct (m[1])::uuid
       from regexp_matches(new.body, '\(tag:([0-9a-f-]{36})\)', 'g') m
     ), '{}'::uuid[]);
+    if tg_op = 'UPDATE' then
+      -- An EDIT logs only tags newly cited in the new body — the same
+      -- delta rule the description path applies (0072's read-time scan
+      -- reflected edited bodies; so does the log).
+      v_tags := array (
+        select unnest(v_tags)
+        except
+        select unnest(coalesce(array(
+          select distinct (m[1])::uuid
+          from regexp_matches(coalesce(old.body, ''), '\(tag:([0-9a-f-]{36})\)', 'g') m
+        ), '{}'::uuid[]))
+      );
+    end if;
   elsif tg_table_name = 'card_comments' then
     v_where := 'comment';
     v_source := new.id;
@@ -72,6 +91,16 @@ begin
       select distinct (m[1])::uuid
       from regexp_matches(new.body, '\(tag:([0-9a-f-]{36})\)', 'g') m
     ), '{}'::uuid[]);
+    if tg_op = 'UPDATE' then
+      v_tags := array (
+        select unnest(v_tags)
+        except
+        select unnest(coalesce(array(
+          select distinct (m[1])::uuid
+          from regexp_matches(coalesce(old.body, ''), '\(tag:([0-9a-f-]{36})\)', 'g') m
+        ), '{}'::uuid[]))
+      );
+    end if;
   else -- cards: the description — log only tags NEW to it
     v_where := 'description';
     v_card := new.id;
@@ -137,11 +166,15 @@ begin
 end;
 $$;
 
+-- UPDATE OF BODY arms: messages and comments are editable (edited_at
+-- marks the row), and an edit that newly cites a tag is a mention —
+-- the same delta rule as descriptions. Tombstone updates (deleted_at
+-- only) never fire: UPDATE OF BODY sees only body edits.
 create trigger board_messages_tag_mentions
-  after insert on public.board_messages
+  after insert or update of body on public.board_messages
   for each row execute function public.log_tag_mentions_from_body();
 create trigger card_comments_tag_mentions
-  after insert on public.card_comments
+  after insert or update of body on public.card_comments
   for each row execute function public.log_tag_mentions_from_body();
 create trigger cards_tag_mentions
   after insert or update of description on public.cards
@@ -181,7 +214,8 @@ as $$
              'snippet', coalesce(e.detail->>'snippet', ''),
              'created_at', e.created_at
            ) as payload,
-           e.created_at as created_at
+           e.created_at as created_at,
+           e.id as event_id
     from public.events e
     join public.boards b on b.id = e.board_id
     left join public.profiles p on p.id = e.actor_id
@@ -206,7 +240,8 @@ as $$
              'snippet', coalesce(c.title, e.detail->>'card_title', 'a card'),
              'created_at', e.created_at
            ) as payload,
-           e.created_at as created_at
+           e.created_at as created_at,
+           e.id as event_id
     from public.events e
     join public.boards b on b.id = e.board_id
     left join public.cards c on c.id = e.card_id
@@ -229,7 +264,10 @@ as $$
       and (p_from is null or e.created_at >= p_from)
       and (p_to is null or e.created_at <= p_to)
 
-    order by created_at desc
+    -- The identity id tie-breaks: same-second events page
+    -- deterministically (offset pagination would otherwise shuffle
+    -- tied rows between pages).
+    order by created_at desc, event_id desc
     limit least(greatest(coalesce(p_limit, 30), 1), 100)
     offset greatest(coalesce(p_offset, 0), 0)
   ) rows;
