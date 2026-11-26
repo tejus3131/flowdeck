@@ -172,8 +172,11 @@ jobs:
           DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments?ref=$GITHUB_SHA&environment=preview" \
             --jq '.[0].id // ""')
           if [ -z "$DEPLOY_ID" ]; then
-            DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments" \
-              -F auto_merge=false -f ref="$GITHUB_SHA" -f environment="preview" --jq '.id')
+            # required_contexts=[] skips GitHub's commit-status validation:
+            # when omitted, the API verifies required contexts and fails with
+            # 409 'Commit status checks failed' on refs that carry none.
+            DEPLOY_ID=$(printf '{"ref":"%s","environment":"preview","auto_merge":false,"required_contexts":[]}' "$GITHUB_SHA" \
+              | gh api "repos/$GH_REPO/deployments" --input - --jq '.id')
           fi
           gh api -X POST "repos/$GH_REPO/deployments/$DEPLOY_ID/statuses" \
             -f state="success" -f environment="preview"
