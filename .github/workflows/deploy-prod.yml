@@ -144,14 +144,25 @@ jobs:
             "${GITHUB_SHA:0:7}" "${legs:-none}" "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}")
           PREV=$(gh release list --limit 50 --json tagName \
             --jq '[.[].tagName | select(startswith("release-"))][0] // ""')
-          if [ -n "$PREV" ]; then
+          # Re-run safe: a re-run of a partially-failed run re-executes
+          # this step with the same run_number — the tag may already
+          # exist (release view instead of create) and the sha may
+          # already carry a Deployment (reuse it, re-post the status).
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "release $TAG already exists (re-run) — updating notes"
+            gh release edit "$TAG" --notes "$body" > /dev/null
+          elif [ -n "$PREV" ]; then
             gh release create "$TAG" --target "$GITHUB_SHA" --title "Release — $TAG" \
               --notes "$body" --generate-notes --notes-start-tag "$PREV"
           else
             gh release create "$TAG" --target "$GITHUB_SHA" --title "Release — $TAG" \
               --notes "$body" --generate-notes
           fi
-          DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments" \
-            -f ref="$GITHUB_SHA" -f environment="production" --jq '.id')
+          DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments?ref=$GITHUB_SHA&environment=production" \
+            --jq '.[0].id // ""')
+          if [ -z "$DEPLOY_ID" ]; then
+            DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments" \
+              -f ref="$GITHUB_SHA" -f environment="production" --jq '.id')
+          fi
           gh api -X POST "repos/$GH_REPO/deployments/$DEPLOY_ID/statuses" \
             -f state="success" -f environment="production"
