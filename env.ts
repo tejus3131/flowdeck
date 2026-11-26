@@ -34,6 +34,12 @@ export default {
   },
   client: {
     VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Flowdeck'),
+    // The deployment's public base URL (e.g. https://flowdeck.tejusgupta.dev).
+    // Baked per environment by CI (preview / production GitHub env vars);
+    // pages that advertise environment-specific endpoints (docs/mcp) derive
+    // them from this instead of hardcoding prod. Absent → local dev or a
+    // build that doesn't advertise; those pages fall back to prod defaults.
+    VITE_APP_URL: v.optional(v.pipe(v.string(), v.url())),
     // Public by design; used by the browser Supabase client (presence,
     // passkey ceremonies, avatar uploads). Absent → those features
     // gracefully no-op (e.g. a build without presence).
