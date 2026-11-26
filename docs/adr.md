@@ -223,8 +223,10 @@ minted. Rejected.
    environments, which only protected-branch merges can enter.
 2. **Minimum scope.** Cloudflare token: "Edit Cloudflare Workers" on this
    account + zone only. Supabase: `db push` uses the per-project DB
-   password (`--db-url`), not the account-wide access token; the access
-   token is used only for `functions deploy`.
+   password (`--remote=<db url>`, CLI 3.x's replacement for the
+   deprecated `--db-url` — same URL, same credential), not the
+   account-wide access token; the access token is used only for
+   `functions deploy`.
 3. **TTL + rotation.** Cloudflare tokens get a TTL (90 days) — expiry
    forces rotation; the calendar reminder is the rotation runbook.
    Supabase access token rotated quarterly.
