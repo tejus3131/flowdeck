@@ -20,6 +20,8 @@ import type { BoardSummary, BoardSnapshot, CardView, ListRow } from './boards';
 
 /** One realtime event, narrowed to what the fold needs. The stream's
  *  channel handlers translate postgres_changes payloads into these. */
+export type TagRow = { id: string; name: string; description?: string | null };
+
 export type FoldEvent =
   /** boards UPDATE — the flat row is complete, apply directly. */
   | { kind: 'board-row'; row: BoardSummary }
@@ -32,6 +34,11 @@ export type FoldEvent =
   | { kind: 'card-touch'; id: string }
   /** cards DELETE — by old id. */
   | { kind: 'card-delete'; id: string }
+  /** tags INSERT/UPDATE (workspace-scoped; tags are never deleted — the
+   *  0067 trigger): the vocabulary row itself. A rename folds into the
+   *  cards' embedded chips in memory — no re-snapshot (ADR-3: the old
+   *  `resync` on any tags change is gone). */
+  | { kind: 'tag-upsert'; row: TagRow }
   /** board_revisions UPDATE — the exact server cursor (migration 0032). */
   | { kind: 'revision'; value: number }
   /** A visibility-shaping change (board_access, board_team_access, team
@@ -46,6 +53,8 @@ export type FoldPlan = {
   /** Cards needing a fresh CardView (fetch, then fold). */
   cardTouches: Set<string>;
   cardDeletes: Set<string>;
+  /** The vocabulary rows the burst carried, id → last event wins. */
+  tagUpserts: Map<string, TagRow>;
   /** The exact server revision when ≥ 0; -1 = no revision event arrived. */
   revision: number;
   /** True when only a full re-snapshot answers the burst. */
@@ -62,6 +71,7 @@ export function planFold(events: FoldEvent[]): FoldPlan {
     listDeletes: new Set(),
     cardTouches: new Set(),
     cardDeletes: new Set(),
+    tagUpserts: new Map(),
     revision: -1,
     resync: false,
   };
@@ -81,6 +91,9 @@ export function planFold(events: FoldEvent[]): FoldPlan {
         break;
       case 'card-delete':
         plan.cardDeletes.add(event.id);
+        break;
+      case 'tag-upsert':
+        plan.tagUpserts.set(event.row.id, event.row);
         break;
       case 'revision':
         plan.revision = Math.max(plan.revision, event.value);
@@ -148,6 +161,23 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
     const byId = new Map(cards.map((card) => [card.id, card]));
     for (const view of views) byId.set(view.id, view);
     draft.cards = [...byId.values()];
+  }
+
+  // The vocabulary rows: rewrite the embedded chip names in place — a
+  // rename is memory work only, the burst costs zero queries (ADR-3).
+  // Chips stay name-sorted; a rename can reorder them.
+  if (plan.tagUpserts.size > 0) {
+    for (const card of draft.cards) {
+      let renamed = false;
+      for (const tag of card.tags) {
+        const upsert = plan.tagUpserts.get(tag.id);
+        if (upsert && tag.name !== upsert.name) {
+          tag.name = upsert.name;
+          renamed = true;
+        }
+      }
+      if (renamed) card.tags.sort((a, b) => a.name.localeCompare(b.name));
+    }
   }
 
   if (

@@ -74,6 +74,7 @@ describe('planFold', () => {
       { kind: 'list-delete', id: 'l1' },
       { kind: 'card-touch', id: 'c1' },
       { kind: 'card-delete', id: 'c2' },
+      { kind: 'tag-upsert', row: { id: 't1', name: 'urgent' } },
       { kind: 'revision', value: 42 },
       { kind: 'resync' },
     ]);
@@ -82,8 +83,24 @@ describe('planFold', () => {
     expect(plan.listDeletes).toEqual(new Set(['l1']));
     expect(plan.cardTouches).toEqual(new Set(['c1']));
     expect(plan.cardDeletes).toEqual(new Set(['c2']));
+    expect(plan.tagUpserts.get('t1')).toEqual({ id: 't1', name: 'urgent' });
     expect(plan.revision).toBe(42);
     expect(plan.resync).toBe(true);
+  });
+
+  it('keeps the LAST tag upsert per id in a burst', () => {
+    const plan = planFold([
+      { kind: 'tag-upsert', row: { id: 't1', name: 'old-name' } },
+      { kind: 'tag-upsert', row: { id: 't1', name: 'new-name' } },
+    ]);
+    expect(plan.tagUpserts.size).toBe(1);
+    expect(plan.tagUpserts.get('t1')?.name).toBe('new-name');
+  });
+
+  it('a tag upsert alone asks for NEITHER a resync NOR a card fetch (the phase-2 proof)', () => {
+    const plan = planFold([{ kind: 'tag-upsert', row: { id: 't1', name: 'renamed' } }]);
+    expect(plan.resync).toBe(false);
+    expect(plan.cardTouches.size).toBe(0);
   });
 
   it('keeps the MAX revision of a burst', () => {
@@ -186,5 +203,39 @@ describe('applyFold', () => {
     const draft = snapshot([list('l1', 1)], [card('c1', 'l1', 1)]);
     fold(draft, [{ kind: 'card-touch', id: 'unknown' }], []);
     expect(draft.cards.map((row) => row.id)).toEqual(['c1']);
+  });
+
+  it('a tag rename rewrites every chip carrying the tag, in memory, re-sorted', () => {
+    const draft = snapshot([list('l1', 1)], []);
+    draft.cards.push(
+      {
+        ...card('c1', 'l1', 1),
+        tags: [
+          { id: 't1', name: 'zzz-old' },
+          { id: 't2', name: 'beta' },
+        ],
+      },
+      { ...card('c2', 'l1', 2), tags: [{ id: 't1', name: 'zzz-old' }] },
+      { ...card('c3', 'l1', 3), tags: [{ id: 't2', name: 'beta' }] },
+    );
+    fold(draft, [{ kind: 'tag-upsert', row: { id: 't1', name: 'aaa-new' } }]);
+    // Every embedded copy moved — there is exactly one truth per tag.
+    expect(draft.cards[0]!.tags.map((tag) => tag.name)).toEqual(['aaa-new', 'beta']);
+    expect(draft.cards[1]!.tags.map((tag) => tag.name)).toEqual(['aaa-new']);
+    // Cards without the tag are untouched.
+    expect(draft.cards[2]!.tags.map((tag) => tag.name)).toEqual(['beta']);
+    // A rename can reorder chips: 'aaa-new' sorts before 'beta' now —
+    // the fold re-sorts so the client's merge sees a settled order.
+    expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t1', 't2']);
+  });
+
+  it('a rename of a tag no card carries is a no-op on the draft', () => {
+    const draft = snapshot(
+      [list('l1', 1)],
+      [{ ...card('c1', 'l1', 1), tags: [{ id: 't2', name: 'beta' }] }],
+    );
+    const frozen: BoardSnapshot = JSON.parse(JSON.stringify(draft));
+    fold(draft, [{ kind: 'tag-upsert', row: { id: 't-unlinked', name: 'lonely' } }]);
+    expect(draft).toEqual(frozen);
   });
 });

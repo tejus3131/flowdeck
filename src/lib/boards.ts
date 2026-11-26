@@ -12,7 +12,7 @@ import { query } from '@solidjs/router';
 import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
 
-import { applyFold, planFold, type FoldEvent } from './board-fold';
+import { applyFold, planFold, type FoldEvent, type TagRow } from './board-fold';
 import { createSupabaseRequestClient } from '../server/supabase';
 import { friendlyError } from '../server/friendly';
 import {
@@ -349,6 +349,17 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error('Sign in to view this board');
 
+  // The board's workspace scopes the `tags` subscription (ADR-3 — phase 2):
+  // Supabase bindings are fixed at subscribe time, so one tiny row read
+  // precedes the channel build. RLS makes this null for access-less
+  // callers (the snapshot below reports `denied` either way).
+  const { data: scopeRow } = await supabase
+    .from('boards')
+    .select('workspace_id')
+    .eq('id', id)
+    .maybeSingle();
+  const tagScopeId = scopeRow?.workspace_id ?? null;
+
   // Change notifications coalesced through a tiny promise handoff: the
   // loop sleeps until a postgres_changes event pings it.
   const control = producerControls();
@@ -368,7 +379,7 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
   const RESYNC_EVERY_BATCHES = 20;
   let batches = 0;
 
-  const channel = supabase
+  let channel = supabase
     .channel(`board:${id}`)
     .on(
       'postgres_changes',
@@ -435,10 +446,27 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
       { event: '*', schema: 'public', table: 'card_tags' },
       (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
         push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
-    )
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () =>
+    );
+
+  // The workspace's tag VOCABULARY rides scoped row events (ADR-3,
+  // phase 2): a rename folds into the chips' embedded names in memory —
+  // zero queries, no re-snapshot. Boards without a workspace (no scope
+  // to filter on) keep the old resync.
+  if (tagScopeId) {
+    channel = channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tags', filter: `workspace_id=eq.${tagScopeId}` },
+      (payload: { new: unknown }) => {
+        // Tags are never deleted — the 0067 trigger blocks it; upserts only.
+        if (payload.new) push({ kind: 'tag-upsert', row: payload.new as TagRow });
+      },
+    );
+  } else {
+    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () =>
       push({ kind: 'resync' }),
-    )
+    );
+  }
+  channel
     // Comment stats ride the snapshot: agents and API writes (which skip
     // the relay) still bump the unseen badges live — re-fetch the card.
     // (A comment DELETE carries only its own PK in `old` — no card to
