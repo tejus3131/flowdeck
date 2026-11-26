@@ -80,22 +80,22 @@ rule every new feature is reviewed against.
 
 Summarized here, full context/decision/consequences in [`adr.md`](./adr.md):
 
-| #   | Decision                                                                      |
-| --- | ----------------------------------------------------------------------------- |
-| 1   | Client truth = normalized entity store; views derive via selectors            |
-| 2   | Cache = per-entity IDB keys (not view blobs)                                  |
-| 3   | Delivery = typed row events on scoped topics; `resync` is a fallback          |
-| 4   | One `events` table (Jira changegroup pattern); `activity` retires             |
-| 5   | Single write path: web + MCP call the same per-op DB functions                |
-| 6   | Outbox engine semantics unchanged (Figma write model)                         |
-| 7   | Counters materialized by triggers, not per-snapshot RPCs                      |
-| 8   | Observability = PostHog free + Workers Logs + perf counters                   |
-| 9   | Non-goals: CRDTs, bought sync engines, client SQLite, multi-tab single-writer |
-| 10  | Escape hatch at the connection ceiling: Durable Objects hub (L1-only swap)    |
-| 11  | Branch model: `main` = prod, `preview` = integration                          |
-| 12  | Two Supabase projects (free tier); migrations are the only schema path        |
-| 13  | Preview is private: Cloudflare Access on the preview domain                   |
-| 14  | Deploys are path-based: migrations → functions → worker, in order             |
+| #   | Decision                                                                                                   |
+| --- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | Client truth = normalized entity store; views derive via selectors                                         |
+| 2   | Cache = per-entity IDB keys (not view blobs)                                                               |
+| 3   | Delivery = typed row events on scoped topics; `resync` is a fallback                                       |
+| 4   | One `events` table (Jira changegroup pattern); `activity` retires                                          |
+| 5   | Single write path: web + MCP call the same per-op DB functions                                             |
+| 6   | Outbox engine semantics unchanged (Figma write model)                                                      |
+| 7   | Counters materialized by triggers, not per-snapshot RPCs                                                   |
+| 8   | Observability = PostHog free + Workers Logs + perf counters                                                |
+| 9   | Non-goals: CRDTs, bought sync engines, client SQLite, multi-tab single-writer                              |
+| 10  | Escape hatch at the connection ceiling: Durable Objects hub (L1-only swap)                                 |
+| 11  | Branch model: `main` = prod, `preview` = integration                                                       |
+| 12  | Two Supabase projects (free tier); migrations are the only schema path                                     |
+| 13  | Preview is private: Cloudflare Access on the preview domain                                                |
+| 14  | Deploys are path-based, diffed since the last successful deploy: migrations → functions → worker, in order |
 
 ## The canonical feature walkthrough
 

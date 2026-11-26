@@ -1,24 +1,24 @@
-# Deploy preview — merge into `preview` deploys the preview environment
-# (worker `flowdeck-preview`, preview Supabase project). Path-based and
-# ordered (ADR-14): migrations → edge functions → worker. Credentials are
+# Deploy preview — merge into `preview` brings the preview environment
+# (worker `flowdeck-preview`, preview Supabase project) to the state of
+# the branch. Legs are diffed against the last SUCCESSFUL deploy of the
+# environment (the latest `preview-r*` tag — written only after all legs
+# pass), not "what this merge changed" (ADR-14 order: migrations → edge
+# functions → worker). Every leg is idempotent, so over-deploy is safe
+# and under-deploy is the only failure mode — that bias is what makes a
+# failed deploy self-heal on the next merge. `workflow_dispatch` (with an
+# optional `force`) is the unconditional escape hatch. Credentials are
 # environment-scoped (ADR-15): PR runs can never read them.
 name: deploy-preview
 
 on:
   push:
     branches: [preview]
-    paths:
-      - 'src/**'
-      - 'public/**'
-      - 'supabase/migrations/**'
-      - 'supabase/functions/**'
-      - 'supabase/config.toml'
-      - 'env.ts'
-      - 'vite.config.ts'
-      - 'wrangler.jsonc'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/deploy-preview.yml'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Deploy every leg regardless of the diff'
+        type: boolean
+        default: false
 
 permissions:
   contents: write # the release step tags + creates the GitHub Release (contents API)
@@ -33,26 +33,66 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
     outputs:
-      migrations: ${{ steps.filter.outputs.migrations }}
-      functions: ${{ steps.filter.outputs.functions }}
-      worker: ${{ steps.filter.outputs.worker }}
+      migrations: ${{ steps.legs.outputs.migrations }}
+      functions: ${{ steps.legs.outputs.functions }}
+      worker: ${{ steps.legs.outputs.worker }}
     steps:
-      # fetch-depth: 0 (full clone) so paths-filter's push-event diff can
-      # use ANY base: a shallow clone breaks when the base commit isn't
-      # local (the first preview merge failed exactly here), a 1-2 commit
-      # clone under-reports on multi-commit pushes, and a new branch's
-      # zero `before` sha needs the default branch in history. The repo
-      # is small — a full clone costs ~2s; a silently skipped deploy
-      # costs an incident.
+      # fetch-depth: 0 (full clone) fetches ALL tags plus full history —
+      # both requirements of the base resolution below. A shallow clone
+      # breaks when the base commit isn't local (the first preview merge
+      # failed exactly here), a 1-2 commit clone under-reports on
+      # multi-commit pushes. The repo is small — a full clone costs ~2s;
+      # a silently skipped deploy costs an incident.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
           fetch-depth: 0
+
+      # The diff base is the last SUCCESSFUL deploy of this environment —
+      # the latest `preview-r*` tag, created only after every leg passed —
+      # not the push event's `before` sha. A deploy means "make the
+      # environment match the branch", so a failed deploy must be picked
+      # up by the NEXT merge diffing against the last success: that is
+      # the self-healing property. The push `before` sha can never supply
+      # it — that fallback IS the state-blindness bug this replaces.
+      #
+      # Ancestor guard: if the tag's commit is not an ancestor of HEAD
+      # (force-push, re-pointed tag), history is untrustworthy and a diff
+      # across it would silently under-report. Fail safe toward
+      # over-deploy: BASE="" → all legs true (every leg is idempotent —
+      # `db push` applies only missing migrations; functions/worker
+      # upload current code).
+      #
+      # Sparse tags: skipped runs still consume run numbers (preview-r10
+      # may not exist); `sort -V | tail -1` handles gaps.
+      - name: Resolve deploy base — last successful deploy tag
+        id: base
+        run: |
+          LAST_TAG=$(git tag -l 'preview-r*' | sort -V | tail -1)
+          BASE=""
+          if [ -n "$LAST_TAG" ]; then
+            BASE=$(git rev-parse "$LAST_TAG^{commit}" 2>/dev/null || true)
+            if [ -n "$BASE" ] && ! git merge-base --is-ancestor "$BASE" HEAD; then
+              BASE="" # untrustworthy history → full deploy
+            fi
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          if [ -n "$BASE" ]; then
+            N=$(git rev-list --count "$BASE..HEAD")
+            echo "diffed \`$LAST_TAG\` → HEAD, $N commits since last successful deploy" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "BASE empty → full deploy (all legs)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Skipped when BASE is empty: a paths-filter run with no base would
+      # fall back to the push `before` sha — exactly the bug. The legs
+      # step below covers the empty-base case.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
+        if: steps.base.outputs.base != ''
         with:
+          base: ${{ steps.base.outputs.base }}
           filters: |
             migrations:
               - 'supabase/migrations/**'
@@ -68,8 +108,38 @@ jobs:
               - 'package.json'
               - 'pnpm-lock.yaml'
 
+      # Single source of the leg outputs. BASE empty (first run or guard
+      # tripped) → all legs true; a `force` dispatch does the same.
+      #
+      # Concurrency: with cancel-in-progress: false a queued run doesn't
+      # check out until the in-flight run finished and tagged, so it
+      # always diffs against the fresh tag. Even if it didn't, the
+      # superset it would deploy is idempotent — safe either way.
+      - name: Legs to deploy
+        id: legs
+        run: |
+          FORCE="${{ inputs.force }}"
+          if [ -z "${{ steps.base.outputs.base }}" ] || [ "$FORCE" = "true" ]; then
+            MIG=true; FUN=true; WRK=true
+          else
+            MIG="${{ steps.filter.outputs.migrations }}"
+            FUN="${{ steps.filter.outputs.functions }}"
+            WRK="${{ steps.filter.outputs.worker }}"
+          fi
+          echo "migrations=$MIG" >> "$GITHUB_OUTPUT"
+          echo "functions=$FUN" >> "$GITHUB_OUTPUT"
+          echo "worker=$WRK" >> "$GITHUB_OUTPUT"
+          LEGS=""
+          [ "$MIG" = "true" ] && LEGS="${LEGS}migrations+"
+          [ "$FUN" = "true" ] && LEGS="${LEGS}functions+"
+          [ "$WRK" = "true" ] && LEGS="${LEGS}worker+"
+          echo "legs: ${LEGS%+} (empty → deploy job skips, no tag)" >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     needs: changes
+    # Load-bearing gate: a no-op run (docs-only merge, zero-leg diff)
+    # must NOT deploy and must NOT tag — a tag from an empty run would
+    # poison the next run's BASE and strand the diff it skipped.
     if: needs.changes.outputs.migrations == 'true' || needs.changes.outputs.functions == 'true' || needs.changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
