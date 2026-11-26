@@ -1,6 +1,13 @@
 # Quality gate — runs on every PR to preview/main. Zero provider
 # credentials reach this workflow (ADR-15): the Supabase stack runs LOCALLY
 # on the runner, so PR code cannot exfiltrate deploy tokens.
+#
+# Split by what changed (the Docker stack is ~60% of a run and only
+# matters when server/DB code moved):
+#   lint+typecheck — always
+#   build+client tests — UI PRs (src/, public/)
+#   docker+server tests — server PRs (supabase/, src/server/, src/lib/)
+# A docs-only PR runs lint+typecheck only (~15s).
 name: quality
 
 on:
@@ -15,54 +22,103 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
+  classify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 3
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      server: ${{ steps.filter.outputs.server }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            ui:
+              - 'src/**'
+              - 'public/**'
+            server:
+              - 'supabase/**'
+              - 'src/server/**'
+              - 'src/lib/**'
+              - 'src/types/**'
+              - 'env.ts'
+              - 'vite.config.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
 
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
-        # version comes from packageManager in package.json
-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint (oxlint)
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Build (client env from repo-level public vars — a PR run has
-          no environment context, so environment-scoped VITE_* would be
-          empty here; the preview project's public values give the gate a
-          representative build)
+  client:
+    needs: classify
+    if: needs.classify.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Build with repo-level public vars — a PR run has no environment
+      # context; the preview project's public values give the gate a
+      # representative build. The artifact is discarded; prod builds
+      # happen in deploy-prod with the production environment's values.
+      - name: Build
         run: pnpm build
         env:
           VITE_SUPABASE_URL: ${{ vars.PREVIEW_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.PREVIEW_SUPABASE_PUBLISHABLE_KEY }}
+      - name: Client tests (jsdom)
+        run: pnpm vitest run --project client
 
+  server:
+    needs: classify
+    if: needs.classify.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       # The local Supabase stack: migrations apply fresh, db-guards
       # self-seeds its fixture (see src/server/db-guards.test.ts).
       - name: Start local Supabase stack
         uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
         with:
           version: latest
-
       - name: Start stack + run migrations
         run: supabase start && supabase db reset
-
-      - name: Test (client + server projects)
-        run: pnpm test -- --run
+      - name: Server tests (node)
+        run: pnpm vitest run --project server
         env:
           # The server project's env stub reads process.env at call time.
           SUPABASE_URL: http://127.0.0.1:54321
-          SUPABASE_PUBLISHABLE_KEY: test-anon-key-placeholder-value
-          SUPABASE_SECRET_KEY: test-service-key-placeholder-value
+          SUPABASE_PUBLISHABLE_KEY: test-publishable-key-placeholder-value
+          SUPABASE_SECRET_KEY: test-secret-key-placeholder-value
