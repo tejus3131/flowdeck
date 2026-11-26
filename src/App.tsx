@@ -35,7 +35,10 @@ export default function App() {
         // entries become unreachable, so a session that ends without the
         // sign-out form (expiry, a 401 bounce) cannot seed the next
         // user's warm opens with the previous user's content.
-        createEffect(() => me(), (profile) => cacheSetUser(profile?.id ?? ''));
+        createEffect(
+          () => me(),
+          (profile) => cacheSetUser(profile?.id ?? ''),
+        );
         return (
           <>
             <Title>{env.VITE_APP_NAME}</Title>

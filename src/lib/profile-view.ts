@@ -16,7 +16,12 @@ export type PublicProfile = {
   display_name: string | null;
   email: string | null;
   avatar_url: string | null;
-  status: { emoji: string | null; label: string | null; dnd: boolean; clearAt: string | null } | null;
+  status: {
+    emoji: string | null;
+    label: string | null;
+    dnd: boolean;
+    clearAt: string | null;
+  } | null;
   teams: SharedTeam[];
 };
 

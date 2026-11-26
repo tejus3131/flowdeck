@@ -58,14 +58,14 @@ flowchart TB
     L4 -.-> OBS
 ```
 
-| Layer | Contract | Owns | May not |
-| --- | --- | --- | --- |
-| L0 | [`layers/l0-database.md`](./layers/l0-database.md) | schema, RLS, triggers, events, domain fns | know the app |
-| L1 | [`layers/l1-transport.md`](./layers/l1-transport.md) | topics, subscriptions, reconnect, event decode | know entity meaning |
-| L2 | [`layers/l2-store.md`](./layers/l2-store.md) | entity store, cache, selectors, revisions | fetch, touch DOM |
-| L3 | [`layers/l3-sync.md`](./layers/l3-sync.md) | outbox, guards, echo, provisional ops, fold | know UI |
-| L4 | [`layers/l4-domain.md`](./layers/l4-domain.md) | server fns, validation, notifications | know views |
-| L5 | [`layers/l5-views.md`](./layers/l5-views.md) | components, panels, design tokens | fetch, hold server state |
+| Layer | Contract                                             | Owns                                           | May not                  |
+| ----- | ---------------------------------------------------- | ---------------------------------------------- | ------------------------ |
+| L0    | [`layers/l0-database.md`](./layers/l0-database.md)   | schema, RLS, triggers, events, domain fns      | know the app             |
+| L1    | [`layers/l1-transport.md`](./layers/l1-transport.md) | topics, subscriptions, reconnect, event decode | know entity meaning      |
+| L2    | [`layers/l2-store.md`](./layers/l2-store.md)         | entity store, cache, selectors, revisions      | fetch, touch DOM         |
+| L3    | [`layers/l3-sync.md`](./layers/l3-sync.md)           | outbox, guards, echo, provisional ops, fold    | know UI                  |
+| L4    | [`layers/l4-domain.md`](./layers/l4-domain.md)       | server fns, validation, notifications          | know views               |
+| L5    | [`layers/l5-views.md`](./layers/l5-views.md)         | components, panels, design tokens              | fetch, hold server state |
 
 ## The canonical test
 
@@ -80,22 +80,22 @@ rule every new feature is reviewed against.
 
 Summarized here, full context/decision/consequences in [`adr.md`](./adr.md):
 
-| # | Decision |
-| --- | --- |
-| 1 | Client truth = normalized entity store; views derive via selectors |
-| 2 | Cache = per-entity IDB keys (not view blobs) |
-| 3 | Delivery = typed row events on scoped topics; `resync` is a fallback |
-| 4 | One `events` table (Jira changegroup pattern); `activity` retires |
-| 5 | Single write path: web + MCP call the same per-op DB functions |
-| 6 | Outbox engine semantics unchanged (Figma write model) |
-| 7 | Counters materialized by triggers, not per-snapshot RPCs |
-| 8 | Observability = PostHog free + Workers Logs + perf counters |
-| 9 | Non-goals: CRDTs, bought sync engines, client SQLite, multi-tab single-writer |
-| 10 | Escape hatch at the connection ceiling: Durable Objects hub (L1-only swap) |
-| 11 | Branch model: `main` = prod, `preview` = integration |
-| 12 | Two Supabase projects (free tier); migrations are the only schema path |
-| 13 | Preview is private: Cloudflare Access on the preview domain |
-| 14 | Deploys are path-based: migrations → functions → worker, in order |
+| #   | Decision                                                                      |
+| --- | ----------------------------------------------------------------------------- |
+| 1   | Client truth = normalized entity store; views derive via selectors            |
+| 2   | Cache = per-entity IDB keys (not view blobs)                                  |
+| 3   | Delivery = typed row events on scoped topics; `resync` is a fallback          |
+| 4   | One `events` table (Jira changegroup pattern); `activity` retires             |
+| 5   | Single write path: web + MCP call the same per-op DB functions                |
+| 6   | Outbox engine semantics unchanged (Figma write model)                         |
+| 7   | Counters materialized by triggers, not per-snapshot RPCs                      |
+| 8   | Observability = PostHog free + Workers Logs + perf counters                   |
+| 9   | Non-goals: CRDTs, bought sync engines, client SQLite, multi-tab single-writer |
+| 10  | Escape hatch at the connection ceiling: Durable Objects hub (L1-only swap)    |
+| 11  | Branch model: `main` = prod, `preview` = integration                          |
+| 12  | Two Supabase projects (free tier); migrations are the only schema path        |
+| 13  | Preview is private: Cloudflare Access on the preview domain                   |
+| 14  | Deploys are path-based: migrations → functions → worker, in order             |
 
 ## The canonical feature walkthrough
 
@@ -118,14 +118,14 @@ redesign follows this exact path:
 
 ## Phases
 
-| Phase | What | Proof |
-| --- | --- | --- |
-| 0 | CI + observability + **this documentation** | baseline numbers; docs merged |
-| 1 | Entity store + selectors; board chips + tag page read through it | rename updates chips in one frame |
-| 2 | Row events: scoped `tags`, join-row events, counters table | rename = 1 event, no resync |
-| 3 | Events table; live timelines; tag capsule from the log | 10s poll gone; capsule < 100ms warm |
-| 4 | Channel consolidation: 1 board + 1 workspace topic per viewer | sockets 7 → 2 per viewer |
-| 5 | `mcp_exec` decomposition + single write path | new op = one small migration |
-| 6 | Route decomposition (panels out of the board route) | redesign can start |
+| Phase | What                                                             | Proof                               |
+| ----- | ---------------------------------------------------------------- | ----------------------------------- |
+| 0     | CI + observability + **this documentation**                      | baseline numbers; docs merged       |
+| 1     | Entity store + selectors; board chips + tag page read through it | rename updates chips in one frame   |
+| 2     | Row events: scoped `tags`, join-row events, counters table       | rename = 1 event, no resync         |
+| 3     | Events table; live timelines; tag capsule from the log           | 10s poll gone; capsule < 100ms warm |
+| 4     | Channel consolidation: 1 board + 1 workspace topic per viewer    | sockets 7 → 2 per viewer            |
+| 5     | `mcp_exec` decomposition + single write path                     | new op = one small migration        |
+| 6     | Route decomposition (panels out of the board route)              | redesign can start                  |
 
 Each phase ships fully working. No phase requires a big-bang migration.

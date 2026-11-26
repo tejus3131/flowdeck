@@ -137,18 +137,18 @@ messages with filters: `type`, `author_id`, `team_id` (the author's team),
 
 ## Limits
 
-| Field | Limit |
-| --- | --- |
-| board name | 80 |
-| board description | 4000 |
-| list name | 80 |
-| list description | 2000 |
-| card title | 200 |
-| card description | 8000 |
-| comment | 2000 |
-| board message | 4000 |
-| team name | 60 |
-| team description | 500 |
-| tag name | 24 (lowercased) |
-| display name | 80 |
-| notification body excerpt | 200 |
+| Field                     | Limit           |
+| ------------------------- | --------------- |
+| board name                | 80              |
+| board description         | 4000            |
+| list name                 | 80              |
+| list description          | 2000            |
+| card title                | 200             |
+| card description          | 8000            |
+| comment                   | 2000            |
+| board message             | 4000            |
+| team name                 | 60              |
+| team description          | 500             |
+| tag name                  | 24 (lowercased) |
+| display name              | 80              |
+| notification body excerpt | 200             |

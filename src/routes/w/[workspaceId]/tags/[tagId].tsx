@@ -80,7 +80,9 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
     const view = engine.view();
     return view.workspace.id ? view : null;
   });
-  const tag = createMemo(() => (detail()?.tags ?? []).find((t) => t.id === props.params.tagId) ?? null);
+  const tag = createMemo(
+    () => (detail()?.tags ?? []).find((t) => t.id === props.params.tagId) ?? null,
+  );
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
 
   // ── filters: search through the entries + a time window ─────────────
@@ -230,8 +232,16 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
     // keep resetting the debounce.
     const channel = client
       .channel(`tag-events:${props.params.workspaceId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_messages' }, refreshWindow)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'card_comments' }, refreshWindow)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'board_messages' },
+        refreshWindow,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'card_comments' },
+        refreshWindow,
+      )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'card_tags' }, refreshWindow)
       .subscribe();
     return () => {
@@ -473,9 +483,7 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
                       setWindowDays(found?.days ?? null);
                     }}
                   >
-                    <For each={TIME_WINDOWS}>
-                      {(w) => <option value={w.id}>{w.label}</option>}
-                    </For>
+                    <For each={TIME_WINDOWS}>{(w) => <option value={w.id}>{w.label}</option>}</For>
                   </select>
                 </div>
               </div>

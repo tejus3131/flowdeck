@@ -11,10 +11,14 @@ const DB_URL = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 /** Run SQL statements in ONE psql session (set_config/role stick per
  *  session — exactly how the app paths authenticate). */
 const sql = (...statements: string[]): string =>
-  execFileSync('psql', [DB_URL, '-v', 'ON_ERROR_STOP=1', '-qAt', ...statements.flatMap((s) => ['-c', s])], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  execFileSync(
+    'psql',
+    [DB_URL, '-v', 'ON_ERROR_STOP=1', '-qAt', ...statements.flatMap((s) => ['-c', s])],
+    {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
 
 const canConnect = (() => {
   try {
@@ -81,7 +85,9 @@ d('DB guards (local stack)', () => {
     WS = sql(
       `insert into public.workspaces (name, slug, owner_id) values ('DB guards ${SLUG}', '${SLUG}', '${OWNER}') returning id`,
     ).trim();
-    sql(`insert into public.workspace_members (workspace_id, user_id, role) values ('${WS}', '${OWNER}', 'owner')`);
+    sql(
+      `insert into public.workspace_members (workspace_id, user_id, role) values ('${WS}', '${OWNER}', 'owner')`,
+    );
     BOARD = sql(
       `insert into public.boards (workspace_id, name, owner_id) select '${WS}', 'Guard board', '${OWNER}' returning id`,
     ).trim();
@@ -92,7 +98,9 @@ d('DB guards (local stack)', () => {
       `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data)
        values (gen_random_uuid(), null, 'authenticated', 'authenticated', '${SLUG}@db-guards.test', 'x', now(), now(), now(), '{}', '{}') returning id`,
     ).trim();
-    sql(`insert into public.workspace_members (workspace_id, user_id, role) values ('${WS}', '${MEMBER}', 'member')`);
+    sql(
+      `insert into public.workspace_members (workspace_id, user_id, role) values ('${WS}', '${MEMBER}', 'member')`,
+    );
   });
 
   afterAll(() => {
@@ -135,7 +143,9 @@ d('DB guards (local stack)', () => {
     const team = sql(
       `insert into public.teams (workspace_id, name) values ('${WS}', 'guard-team') returning id`,
     ).trim();
-    sql(`insert into public.team_members (team_id, user_id, role) values ('${team}', '${MEMBER}', 'member')`);
+    sql(
+      `insert into public.team_members (team_id, user_id, role) values ('${team}', '${MEMBER}', 'member')`,
+    );
     const refused = failSql(`delete from public.teams where id = '${team}'`);
     expect(refused).toContain('still has 1 member');
     sql(`delete from public.team_members where team_id = '${team}'`);
@@ -147,13 +157,20 @@ d('DB guards (local stack)', () => {
     const memberRefusal = failSql(`delete from public.workspaces where id = '${WS}'`);
     expect(memberRefusal).toContain('other member');
     // Cards: move the member out of the way, then a card blocks.
-    sql(`delete from public.workspace_members where workspace_id = '${WS}' and user_id = '${MEMBER}'`);
+    sql(
+      `delete from public.workspace_members where workspace_id = '${WS}' and user_id = '${MEMBER}'`,
+    );
     sql(
       `insert into public.cards (board_id, list_id, title, number, created_by) select '${BOARD}', '${LIST}', 'Blocker', 2, '${OWNER}'`,
     );
     const cardRefusal = failSql(`delete from public.workspaces where id = '${WS}'`);
     expect(cardRefusal).toContain('still hold');
-    sql('begin', "select set_config('flowdeck.purge', 'on', true)", `delete from public.cards where board_id = '${BOARD}'`, 'commit');
+    sql(
+      'begin',
+      "select set_config('flowdeck.purge', 'on', true)",
+      `delete from public.cards where board_id = '${BOARD}'`,
+      'commit',
+    );
     // The empty workspace now deletes cleanly through the guard (it arms
     // the flag for its own cascade) — verified on the real WS in the
     // afterAll teardown; here just confirm the guard's own checks pass
@@ -191,7 +208,10 @@ d('DB guards (local stack)', () => {
         "select set_config('role', 'authenticated', false)",
         `select set_config('request.jwt.claims', json_build_object('sub', '${OWNER}', 'role', 'authenticated')::text, false)`,
         `select public.log_board_mentions('see [target](board:${targetBoard})', 'chat', '${BOARD}', null, '${sourceId}'::uuid)`,
-      ).trim().split('\n').pop();
+      )
+        .trim()
+        .split('\n')
+        .pop();
     const first = run();
     const retry = run();
     expect(Number(first)).toBe(1);
@@ -223,7 +243,9 @@ d('DB guards (local stack)', () => {
     const actorName = sql(
       `select coalesce(nullif(display_name, ''), split_part(email, '@', 1)) from public.profiles where id = '${OWNER}'`,
     ).trim();
-    expect(body.startsWith(`[@${actorName}](user:${OWNER}) mentioned this board in the `)).toBe(true);
+    expect(body.startsWith(`[@${actorName}](user:${OWNER}) mentioned this board in the `)).toBe(
+      true,
+    );
     // The citing board's NAME is not in the stored body — only its id,
     // under the neutral label (the renderer resolves the name per viewer).
     expect(body).not.toContain('Guard board');
@@ -235,7 +257,9 @@ d('DB guards (local stack)', () => {
 
   it('purge_workspace_boards notifies the members it reaches', () => {
     // Re-add the throwaway member, purge, expect their notification row.
-    sql(`insert into public.workspace_members (workspace_id, user_id, role) values ('${WS}', '${MEMBER}', 'member')`);
+    sql(
+      `insert into public.workspace_members (workspace_id, user_id, role) values ('${WS}', '${MEMBER}', 'member')`,
+    );
     sql(
       "select set_config('role', 'authenticated', false)",
       `select set_config('request.jwt.claims', json_build_object('sub', '${OWNER}', 'role', 'authenticated')::text, false)`,

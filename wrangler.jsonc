@@ -19,20 +19,20 @@
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist/client",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
   "vars": {
-    "SUPABASE_URL": "https://ylarhvcbpppujpjnpxkq.supabase.co"
+    "SUPABASE_URL": "https://ylarhvcbpppujpjnpxkq.supabase.co",
   },
   "env": {
     "preview": {
       "name": "flowdeck-preview",
       "vars": {
-        "SUPABASE_URL": "https://nopozruoekakakvwfpmh.supabase.co"
-      }
-    }
-  }
+        "SUPABASE_URL": "https://nopozruoekakakvwfpmh.supabase.co",
+      },
+    },
+  },
 }

@@ -45,19 +45,15 @@ export function PasskeyPrompt(props: { profile: () => MeProfile }) {
   };
 
   return (
-    <Show
-      when={
-        mounted() && !dismissed() && !props.profile().has_passkey && !done()
-      }
-    >
+    <Show when={mounted() && !dismissed() && !props.profile().has_passkey && !done()}>
       <div class="flex flex-col gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4 sm:flex-row sm:items-center dark:border-indigo-800 dark:bg-indigo-950">
         <div class="flex-1">
           <p class="text-sm font-semibold text-indigo-900 dark:text-indigo-100">
             🔑 Sign in faster next time
           </p>
           <p class="mt-0.5 text-sm text-indigo-700 dark:text-indigo-300">
-            Add a passkey — Face&nbsp;ID, Touch&nbsp;ID, Windows&nbsp;Hello, or a security key.
-            Next visit, no email link needed.
+            Add a passkey — Face&nbsp;ID, Touch&nbsp;ID, Windows&nbsp;Hello, or a security key. Next
+            visit, no email link needed.
           </p>
           <Show when={error()}>
             <p role="alert" class="mt-1 text-sm text-red-600 dark:text-red-400">

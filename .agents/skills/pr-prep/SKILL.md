@@ -18,7 +18,7 @@ skips it comes back with questions instead of a merge.
   same commit**, not in a follow-up.
 - No mixed concerns, no chore+feature bundles, no "minor fixes" smuggled
   into a feature commit.
-- Commit messages say *why*, briefly. The diff says what.
+- Commit messages say _why_, briefly. The diff says what.
 
 ## 2. Size
 
@@ -57,14 +57,14 @@ Read your own diff as if you were the maintainer, with these open:
 
 ## 5. Evidence per area (goes in the PR description)
 
-| Area                | Required evidence |
-| ------------------- | ----------------- |
-| UI                  | Screen recording or before→after screenshots, **light + dark** |
-| Server / data       | Data-path explanation + tests added/updated; `db reset` passes |
-| MCP tools           | Tested against local stack; `src/routes/docs/mcp.tsx` updated for schema/behavior changes |
-| Migrations          | Guard note in the PR |
-| CI / workflows      | `docs/ci-cd.md` diff in the same commit + validated YAML |
-| Docs                | The doc diffs are part of the PR, not a follow-up |
+| Area           | Required evidence                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| UI             | Screen recording or before→after screenshots, **light + dark**                            |
+| Server / data  | Data-path explanation + tests added/updated; `db reset` passes                            |
+| MCP tools      | Tested against local stack; `src/routes/docs/mcp.tsx` updated for schema/behavior changes |
+| Migrations     | Guard note in the PR                                                                      |
+| CI / workflows | `docs/ci-cd.md` diff in the same commit + validated YAML                                  |
+| Docs           | The doc diffs are part of the PR, not a follow-up                                         |
 
 UI recording tip: a phone/screen recording of the two states is fine — it
 doesn't need production polish, it needs to show the behavior.

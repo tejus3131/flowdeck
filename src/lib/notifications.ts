@@ -80,9 +80,11 @@ export async function getMyInbox(): Promise<NotificationRow[]> {
     seen_at: row.seen_at,
     agent: row.agent ?? false,
     actor_name:
-      (row.actor_profile as unknown as { display_name: string | null } | null)?.display_name ?? null,
+      (row.actor_profile as unknown as { display_name: string | null } | null)?.display_name ??
+      null,
     subject_name:
-      (row.subject_profile as unknown as { display_name: string | null } | null)?.display_name ?? null,
+      (row.subject_profile as unknown as { display_name: string | null } | null)?.display_name ??
+      null,
     card_number: (row.cards as unknown as { number: number | null } | null)?.number ?? null,
     card_title: (row.cards as unknown as { title: string | null } | null)?.title ?? null,
     board_name: (row.boards as unknown as { name: string | null } | null)?.name ?? null,
@@ -115,7 +117,12 @@ export const notificationsStream = live(async function* (): AsyncGenerator<Notif
     .channel('inbox')
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${auth.user.id}` },
+      {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${auth.user.id}`,
+      },
       control.onChanged,
     )
     .on('system', {}, (payload: { status?: string; message?: string }) => {
@@ -171,7 +178,10 @@ export const notificationsStream = live(async function* (): AsyncGenerator<Notif
     const missing = [
       ...new Set(
         rows
-          .flatMap((row) => [row.actor_name ? null : row.actor_id, row.subject_name ? null : row.subject_id])
+          .flatMap((row) => [
+            row.actor_name ? null : row.actor_id,
+            row.subject_name ? null : row.subject_id,
+          ])
           .filter((id): id is string => typeof id === 'string' && id.length > 0),
       ),
     ];
@@ -183,7 +193,8 @@ export const notificationsStream = live(async function* (): AsyncGenerator<Notif
       const byId = new Map((names ?? []).map((entry) => [entry.id, entry.display_name]));
       for (const row of rows) {
         if (!row.actor_name && row.actor_id) row.actor_name = byId.get(row.actor_id) ?? null;
-        if (!row.subject_name && row.subject_id) row.subject_name = byId.get(row.subject_id) ?? null;
+        if (!row.subject_name && row.subject_id)
+          row.subject_name = byId.get(row.subject_id) ?? null;
       }
     }
     return rows;
@@ -213,10 +224,7 @@ export const notificationsStream = live(async function* (): AsyncGenerator<Notif
 export async function markNotificationSeen(id: string): Promise<void> {
   'use server';
   const supabase = createSupabaseRequestClient();
-  await supabase
-    .from('notifications')
-    .update({ seen_at: new Date().toISOString() })
-    .eq('id', id);
+  await supabase.from('notifications').update({ seen_at: new Date().toISOString() }).eq('id', id);
 }
 
 /** Opening a card = seeing everything about it: auto-mark-read. */

@@ -98,7 +98,6 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
     setCreating(false);
   };
 
-
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
       <Title>Tags - Flowdeck</Title>
@@ -152,8 +151,8 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
               when={(data().tags ?? []).length > 0}
               fallback={
                 <p class="mt-8 text-sm text-neutral-400">
-                  No tags yet — create one above, or type <span class="font-medium">#</span>{' '}
-                  in any composer.
+                  No tags yet — create one above, or type <span class="font-medium">#</span> in any
+                  composer.
                 </p>
               }
             >

@@ -29,7 +29,10 @@ function readWorkspaceCookie(): string | null {
   return match?.[1] ?? null;
 }
 
-async function myRoleIn(supabase: Awaited<ReturnType<typeof createSupabaseRequestClient>>, workspaceId: string): Promise<WorkspaceRole | null> {
+async function myRoleIn(
+  supabase: Awaited<ReturnType<typeof createSupabaseRequestClient>>,
+  workspaceId: string,
+): Promise<WorkspaceRole | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -177,31 +180,38 @@ async function loadWorkspaceDetail(
   const myRole = await myRoleIn(supabase, workspaceId);
   if (!myRole) return null;
 
-  const [{ data: workspace }, { data: members }, { data: invites }, { data: boards }, { data: tags }] =
-    await Promise.all([
-      supabase.from('workspaces').select('id, name, invite_domains, board_creation').eq('id', workspaceId).maybeSingle(),
-      supabase
-        .from('workspace_members')
-        .select(
-          'user_id, role, created_at, profiles(display_name, username, email, avatar_url)',
-        )
-        .eq('workspace_id', workspaceId)
-        .order('created_at'),
-      // RLS hides pending invites from non-admins — that's fine, the UI
-      // only shows them to owners/admins anyway.
-      supabase
-        .from('workspace_invites')
-        .select('id, email, role, token, created_at')
-        .eq('workspace_id', workspaceId)
-        .eq('status', 'pending')
-        .order('created_at'),
-      supabase.from('boards').select('id, name').eq('workspace_id', workspaceId).order('name'),
-      supabase
-        .from('tags')
-        .select('id, name, description')
-        .eq('workspace_id', workspaceId)
-        .order('name'),
-    ]);
+  const [
+    { data: workspace },
+    { data: members },
+    { data: invites },
+    { data: boards },
+    { data: tags },
+  ] = await Promise.all([
+    supabase
+      .from('workspaces')
+      .select('id, name, invite_domains, board_creation')
+      .eq('id', workspaceId)
+      .maybeSingle(),
+    supabase
+      .from('workspace_members')
+      .select('user_id, role, created_at, profiles(display_name, username, email, avatar_url)')
+      .eq('workspace_id', workspaceId)
+      .order('created_at'),
+    // RLS hides pending invites from non-admins — that's fine, the UI
+    // only shows them to owners/admins anyway.
+    supabase
+      .from('workspace_invites')
+      .select('id, email, role, token, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('status', 'pending')
+      .order('created_at'),
+    supabase.from('boards').select('id, name').eq('workspace_id', workspaceId).order('name'),
+    supabase
+      .from('tags')
+      .select('id, name, description')
+      .eq('workspace_id', workspaceId)
+      .order('name'),
+  ]);
 
   // board_access rows for these boards. The API can't join through boards,
   // so fetch the rows this caller can see and filter to these boards —
@@ -209,9 +219,7 @@ async function loadWorkspaceDetail(
   const boardIds = (boards ?? []).map((b) => b.id);
   let overrides: { board_id: string; user_id: string; access: 'edit' | 'view' }[] = [];
   if (boardIds.length > 0) {
-    const { data: rows } = await supabase
-      .from('board_access')
-      .select('board_id, user_id, access');
+    const { data: rows } = await supabase.from('board_access').select('board_id, user_id, access');
     overrides = (rows ?? []).filter((r) => boardIds.includes(r.board_id)) as typeof overrides;
   }
 
@@ -241,15 +249,19 @@ async function loadWorkspaceDetail(
   const teamViews: TeamView[] = (teamRows ?? [])
     .filter((team) => team.deactivated_at === null)
     .map((team) => ({
-    id: team.id,
-    name: team.name,
-    description: team.description ?? '',
-    members: (teamMemberRows ?? [])
-      .filter((row) => row.team_id === team.id)
-      .map((row) => ({ user_id: row.user_id, role: row.role as 'admin' | 'member' })),
-  }));
+      id: team.id,
+      name: team.name,
+      description: team.description ?? '',
+      members: (teamMemberRows ?? [])
+        .filter((row) => row.team_id === team.id)
+        .map((row) => ({ user_id: row.user_id, role: row.role as 'admin' | 'member' })),
+    }));
   const teamAccess: Record<string, { teamId: string; access: 'edit' | 'view' }[]> = {};
-  for (const row of (teamAccessRows ?? []) as { board_id: string; team_id: string; access: 'edit' | 'view' }[]) {
+  for (const row of (teamAccessRows ?? []) as {
+    board_id: string;
+    team_id: string;
+    access: 'edit' | 'view';
+  }[]) {
     if (!boardIds.includes(row.board_id)) continue;
     const list = teamAccess[row.board_id] ?? [];
     list.push({ teamId: row.team_id, access: row.access });
@@ -258,7 +270,11 @@ async function loadWorkspaceDetail(
 
   return {
     workspace: workspace
-      ? { ...workspace, board_creation: (workspace.board_creation ?? 'team_admins') as WorkspaceDetail['workspace']['board_creation'] }
+      ? {
+          ...workspace,
+          board_creation: (workspace.board_creation ??
+            'team_admins') as WorkspaceDetail['workspace']['board_creation'],
+        }
       : { id: workspaceId, name: '', invite_domains: [], board_creation: 'team_admins' },
     myRole,
     members: (members ?? []).map((m) => {
@@ -299,9 +315,7 @@ export const getWorkspaceDetail = query(
 );
 
 /** A one-shot durable snapshot for the sync engine's refresh path. */
-export async function getWorkspaceSnapshot(
-  workspaceId: string,
-): Promise<WorkspaceDetail | null> {
+export async function getWorkspaceSnapshot(workspaceId: string): Promise<WorkspaceDetail | null> {
   'use server';
   const supabase = createSupabaseRequestClient();
   return loadWorkspaceDetail(supabase, workspaceId);
@@ -311,9 +325,7 @@ export async function getWorkspaceSnapshot(
  * The caller's own membership row for the invite-accept relay: the newly
  * joined member announces themselves to everyone viewing the members page.
  */
-export async function myProfileForRelay(
-  workspaceId: string,
-): Promise<{
+export async function myProfileForRelay(workspaceId: string): Promise<{
   userId: string;
   role: WorkspaceRole;
   displayName: string | null;
@@ -347,102 +359,124 @@ export async function myProfileForRelay(
  * as boardStream — per-viewer producer under the caller's JWT, RLS
  * decides visibility (non-admins simply see no pending invites).
  */
-export const workspaceStream = live(
-  async function* (workspaceId: string): AsyncGenerator<WorkspaceDetail> {
-    'use server';
-    const supabase = createSupabaseRequestClient();
+export const workspaceStream = live(async function* (
+  workspaceId: string,
+): AsyncGenerator<WorkspaceDetail> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
 
-    // An empty/unknown key (a board page before its snapshot lands) has no
-    // workspace to watch — end quietly instead of binding uuid filters to
-    // '' (a hard realtime error, and noise in every log).
-    if (!/^[0-9a-f-]{36}$/i.test(workspaceId)) return;
+  // An empty/unknown key (a board page before its snapshot lands) has no
+  // workspace to watch — end quietly instead of binding uuid filters to
+  // '' (a hard realtime error, and noise in every log).
+  if (!/^[0-9a-f-]{36}$/i.test(workspaceId)) return;
 
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) throw new Error('Sign in to view this workspace');
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error('Sign in to view this workspace');
 
-    const control = producerControls();
+  const control = producerControls();
 
-    const channel = supabase
-      .channel(`ws-delta:${workspaceId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'workspace_members', filter: `workspace_id=eq.${workspaceId}` },
-        control.onChanged,
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'workspace_invites', filter: `workspace_id=eq.${workspaceId}` },
-        control.onChanged,
-      )
-      // Access overrides can target any board; the row-level filter can't
-      // express "boards of this workspace", so the producer subscribes
-      // broadly and the snapshot re-fetch filters (RLS limits what this
-      // viewer sees anyway).
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_access' }, control.onChanged)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'workspaces', filter: `id=eq.${workspaceId}` },
-        control.onChanged,
-      )
-      // The workspace's tag vocabulary changes reshuffle every tag picker.
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tags', filter: `workspace_id=eq.${workspaceId}` },
-        control.onChanged,
-      )
-      // Teams re-shape the management surface live.
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'teams', filter: `workspace_id=eq.${workspaceId}` },
-        control.onChanged,
-      )
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, control.onChanged)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_team_access' }, control.onChanged)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'boards', filter: `workspace_id=eq.${workspaceId}` },
-        control.onChanged,
-      )
-      // A rejected binding surfaces only as a `system` error after the join
-      // reply — log it loudly (see boardStream's hard-won lesson).
-      .on('system', {}, (payload: { status?: string; message?: string }) => {
-        if (payload?.status === 'error') {
-          console.error('[workspaceStream] realtime system error:', payload.message);
-        }
-      })
-      .subscribe((status, err) => {
-        if (err) console.error('workspaceStream channel error:', err);
-        if (status === 'CHANNEL_ERROR') console.error('workspaceStream channel error status');
-        if (status === 'TIMED_OUT') console.error('workspaceStream channel timed out');
-      });
-
-    try {
-      const first = await loadWorkspaceDetail(supabase, workspaceId);
-      // The caller's membership can vanish (removed, left) — the stream
-      // ends and the UI shows the not-a-member state via the engine's
-      // refresh/merge of a null snapshot.
-      if (!first) return;
-      yield first;
-      while (true) {
-        if (!control.pending) {
-          await new Promise<void>((resolve) => {
-            control.wake = resolve;
-          });
-        }
-        if (control.dead) return;
-        control.pending = false;
-        await new Promise((resolve) => setTimeout(resolve, 120));
-        if (!control.pending) {
-          const next = await loadWorkspaceDetail(supabase, workspaceId);
-          if (!next) return; // no longer a member — the stream ends
-          yield next;
-        }
+  const channel = supabase
+    .channel(`ws-delta:${workspaceId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'workspace_members',
+        filter: `workspace_id=eq.${workspaceId}`,
+      },
+      control.onChanged,
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'workspace_invites',
+        filter: `workspace_id=eq.${workspaceId}`,
+      },
+      control.onChanged,
+    )
+    // Access overrides can target any board; the row-level filter can't
+    // express "boards of this workspace", so the producer subscribes
+    // broadly and the snapshot re-fetch filters (RLS limits what this
+    // viewer sees anyway).
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_access' },
+      control.onChanged,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'workspaces', filter: `id=eq.${workspaceId}` },
+      control.onChanged,
+    )
+    // The workspace's tag vocabulary changes reshuffle every tag picker.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tags', filter: `workspace_id=eq.${workspaceId}` },
+      control.onChanged,
+    )
+    // Teams re-shape the management surface live.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'teams', filter: `workspace_id=eq.${workspaceId}` },
+      control.onChanged,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'team_members' },
+      control.onChanged,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_team_access' },
+      control.onChanged,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'boards', filter: `workspace_id=eq.${workspaceId}` },
+      control.onChanged,
+    )
+    // A rejected binding surfaces only as a `system` error after the join
+    // reply — log it loudly (see boardStream's hard-won lesson).
+    .on('system', {}, (payload: { status?: string; message?: string }) => {
+      if (payload?.status === 'error') {
+        console.error('[workspaceStream] realtime system error:', payload.message);
       }
-    } finally {
-      void supabase.removeChannel(channel);
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('workspaceStream channel error:', err);
+      if (status === 'CHANNEL_ERROR') console.error('workspaceStream channel error status');
+      if (status === 'TIMED_OUT') console.error('workspaceStream channel timed out');
+    });
+
+  try {
+    const first = await loadWorkspaceDetail(supabase, workspaceId);
+    // The caller's membership can vanish (removed, left) — the stream
+    // ends and the UI shows the not-a-member state via the engine's
+    // refresh/merge of a null snapshot.
+    if (!first) return;
+    yield first;
+    while (true) {
+      if (!control.pending) {
+        await new Promise<void>((resolve) => {
+          control.wake = resolve;
+        });
+      }
+      if (control.dead) return;
+      control.pending = false;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      if (!control.pending) {
+        const next = await loadWorkspaceDetail(supabase, workspaceId);
+        if (!next) return; // no longer a member — the stream ends
+        yield next;
+      }
     }
-  },
-);
+  } finally {
+    void supabase.removeChannel(channel);
+  }
+});
 
 /** Watches MY membership rows and the workspaces I belong to: when a
  *  membership vanishes (removed, left, or the workspace was deleted — the
@@ -451,79 +485,90 @@ export const workspaceStream = live(
  *  when a workspace I'm in changes policy (board_creation), every page
  *  hears about it and revalidates. One yield per change; the client
  *  decides what to do. */
-export const myMembershipWatch = live(
-  async function* (): AsyncGenerator<'removed' | 'changed'> {
-    'use server';
-    const supabase = createSupabaseRequestClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    const control = producerControls();
-    let removed = false;
-    const channel = supabase
-      .channel(`my-memberships:${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'workspace_members', filter: `user_id=eq.${user.id}` },
-        (payload) => {
-          // The DELETE payload carries the row's key columns.
-          const old = payload.old as { workspace_id?: string } | null;
-          if (old?.workspace_id) {
-            removed = true;
-            control.onChanged();
-          }
-        },
-      )
-      // Role changes: a promotion/demotion reshapes what the permission
-      // picker may offer — the connection page must re-read its caps.
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'workspace_members', filter: `user_id=eq.${user.id}` },
-        (payload) => {
-          const record = payload as { old?: { role?: string }; new?: { role?: string } };
-          // Only actual role changes matter (no-op updates are noise).
-          if (record.old?.role !== record.new?.role) control.onChanged();
-        },
-      )
-      // New membership: the org becomes grantable on the consent and
-      // connection pages.
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'workspace_members', filter: `user_id=eq.${user.id}` },
-        () => control.onChanged(),
-      )
-      // Workspace-level policy (board_creation, rename): realtime
-      // delivers only rows the subscriber can see (RLS), so this is my
-      // workspaces only.
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'workspaces' },
-        () => control.onChanged(),
-      )
-      .on('system', {}, (payload: { status?: string; message?: string }) => {
-        if (payload?.status === 'error') {
-          console.error('[myMembershipWatch] realtime system error:', payload.message);
+export const myMembershipWatch = live(async function* (): AsyncGenerator<'removed' | 'changed'> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  const control = producerControls();
+  let removed = false;
+  const channel = supabase
+    .channel(`my-memberships:${user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'workspace_members',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload) => {
+        // The DELETE payload carries the row's key columns.
+        const old = payload.old as { workspace_id?: string } | null;
+        if (old?.workspace_id) {
+          removed = true;
+          control.onChanged();
         }
-      })
-      .subscribe();
-    try {
-      while (true) {
-        await new Promise<void>((resolve) => {
-          control.wake = resolve;
-        });
-        if (control.dead) return;
-        // A beat of quiet: a workspace delete cascades one membership per
-        // member, and revalidating once is enough.
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        yield removed ? 'removed' : 'changed';
-        removed = false;
+      },
+    )
+    // Role changes: a promotion/demotion reshapes what the permission
+    // picker may offer — the connection page must re-read its caps.
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'workspace_members',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload) => {
+        const record = payload as { old?: { role?: string }; new?: { role?: string } };
+        // Only actual role changes matter (no-op updates are noise).
+        if (record.old?.role !== record.new?.role) control.onChanged();
+      },
+    )
+    // New membership: the org becomes grantable on the consent and
+    // connection pages.
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'workspace_members',
+        filter: `user_id=eq.${user.id}`,
+      },
+      () => control.onChanged(),
+    )
+    // Workspace-level policy (board_creation, rename): realtime
+    // delivers only rows the subscriber can see (RLS), so this is my
+    // workspaces only.
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'workspaces' }, () =>
+      control.onChanged(),
+    )
+    .on('system', {}, (payload: { status?: string; message?: string }) => {
+      if (payload?.status === 'error') {
+        console.error('[myMembershipWatch] realtime system error:', payload.message);
       }
-    } finally {
-      void supabase.removeChannel(channel);
+    })
+    .subscribe();
+  try {
+    while (true) {
+      await new Promise<void>((resolve) => {
+        control.wake = resolve;
+      });
+      if (control.dead) return;
+      // A beat of quiet: a workspace delete cascades one membership per
+      // member, and revalidating once is enough.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      yield removed ? 'removed' : 'changed';
+      removed = false;
     }
-  },
-);
+  } finally {
+    void supabase.removeChannel(channel);
+  }
+});
 
 // ── mutations ──────────────────────────────────────────────────────────────
 /** Remember the chosen workspace for this device (cookie), then refetch. */
@@ -535,7 +580,13 @@ export async function switchWorkspace(workspaceId: string): Promise<boolean> {
   const event = getRequestEvent();
   event?.response.headers.append(
     'set-cookie',
-    stringifySetCookie({ name: WORKSPACE_COOKIE, value: workspaceId, path: '/', sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 }),
+    stringifySetCookie({
+      name: WORKSPACE_COOKIE,
+      value: workspaceId,
+      path: '/',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 365,
+    }),
   );
   return true;
 }
@@ -588,9 +639,7 @@ export function reserveSwitchIntent(): number {
  *  design (see switchWorkspace). */
 function activeWorkspaceCookie(): string | null {
   if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(
-    new RegExp(`(?:^|;\\s*)${WORKSPACE_COOKIE}=([0-9a-f-]{36})`),
-  );
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${WORKSPACE_COOKIE}=([0-9a-f-]{36})`));
   return match?.[1] ?? null;
 }
 
@@ -668,7 +717,9 @@ export async function createWorkspace(name: string): Promise<{ id: string }> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error('You need to sign in first');
-  const clean = String(name ?? '').trim().slice(0, 80);
+  const clean = String(name ?? '')
+    .trim()
+    .slice(0, 80);
   if (!clean) throw new Error('Workspace name cannot be empty');
   const slug = `ws-${user.id.slice(0, 8)}-${Date.now().toString(36)}`;
   const { data, error } = await supabase
@@ -684,7 +735,13 @@ export async function createWorkspace(name: string): Promise<{ id: string }> {
   const event = getRequestEvent();
   event?.response.headers.append(
     'set-cookie',
-    stringifySetCookie({ name: WORKSPACE_COOKIE, value: data.id, path: '/', sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 }),
+    stringifySetCookie({
+      name: WORKSPACE_COOKIE,
+      value: data.id,
+      path: '/',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 365,
+    }),
   );
   return { id: data.id };
 }
@@ -696,7 +753,9 @@ export async function renameWorkspace(workspaceId: string, name: string): Promis
   if (!UUID.test(workspaceId)) throw new Error('Invalid workspace');
   const role = await myRoleIn(supabase, workspaceId);
   if (role !== 'owner') throw new Error('Only owners can rename the workspace');
-  const clean = String(name ?? '').trim().slice(0, 80);
+  const clean = String(name ?? '')
+    .trim()
+    .slice(0, 80);
   if (!clean) throw new Error('Workspace name cannot be empty');
   const { error } = await supabase.from('workspaces').update({ name: clean }).eq('id', workspaceId);
   if (error) throw new Error(error.message);
@@ -742,7 +801,9 @@ export async function updateInviteDomains(
   if (!UUID.test(workspaceId)) throw new Error('Invalid workspace');
   const role = await myRoleIn(supabase, workspaceId);
   if (role !== 'owner') throw new Error('Only owners can manage the invite allowlist');
-  const clean = [...new Set((domains ?? []).map((d) => String(d).trim().toLowerCase().replace(/^@/, '')))]
+  const clean = [
+    ...new Set((domains ?? []).map((d) => String(d).trim().toLowerCase().replace(/^@/, ''))),
+  ]
     .filter((d) => d.length > 0 && d.length <= 100 && DOMAIN.test(d))
     .slice(0, 50);
   const { error } = await supabase
@@ -812,7 +873,13 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
     const event = getRequestEvent();
     event?.response.headers.append(
       'set-cookie',
-      stringifySetCookie({ name: WORKSPACE_COOKIE, value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
+      stringifySetCookie({
+        name: WORKSPACE_COOKIE,
+        value: '',
+        path: '/',
+        sameSite: 'lax',
+        maxAge: 0,
+      }),
     );
   }
   return true;
@@ -897,7 +964,9 @@ export async function inviteMember(input: {
   role: InviteRole;
 }): Promise<{ acceptUrl: string; emailed: boolean; id: string; token: string; createdAt: string }> {
   'use server';
-  const email = String(input.email ?? '').trim().toLowerCase();
+  const email = String(input.email ?? '')
+    .trim()
+    .toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error('Enter a valid email address');
   }
@@ -924,9 +993,7 @@ export async function inviteMember(input: {
   if (allowlist.length > 0) {
     const domain = email.split('@')[1]?.toLowerCase() ?? '';
     if (!allowlist.includes(domain)) {
-      throw new Error(
-        `Only addresses at ${allowlist.join(', ')} can be invited to this workspace`,
-      );
+      throw new Error(`Only addresses at ${allowlist.join(', ')} can be invited to this workspace`);
     }
   }
 
@@ -1007,7 +1074,6 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
   if (error) throw new Error(error.message);
   return true;
 }
-
 
 /** Remove a person's board overrides and team memberships in a workspace
  *  (used when they leave or are removed — a returning member starts
@@ -1143,7 +1209,8 @@ export async function updateMemberRole(input: {
         userId: input.userId,
         kind: 'role_changed',
         actorId: user.id,
-        body: input.role === 'owner' ? 'an owner' : input.role === 'admin' ? 'an admin' : 'a member',
+        body:
+          input.role === 'owner' ? 'an owner' : input.role === 'admin' ? 'an admin' : 'a member',
       },
     ]);
   } catch (notifyError) {
@@ -1211,7 +1278,13 @@ export async function leaveWorkspace(workspaceId: string): Promise<boolean> {
     const event = getRequestEvent();
     event?.response.headers.append(
       'set-cookie',
-      stringifySetCookie({ name: WORKSPACE_COOKIE, value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
+      stringifySetCookie({
+        name: WORKSPACE_COOKIE,
+        value: '',
+        path: '/',
+        sameSite: 'lax',
+        maxAge: 0,
+      }),
     );
   }
   return true;
@@ -1332,9 +1405,7 @@ export async function setBoardAccess(input: {
           .maybeSingle(),
       ]);
       const implicit =
-        board?.owner_id === input.userId ||
-        member?.role === 'owner' ||
-        member?.role === 'admin';
+        board?.owner_id === input.userId || member?.role === 'owner' || member?.role === 'admin';
       firstGrant = !previous && !implicit;
     } catch {
       firstGrant = false; // the note is a nicety; never block the grant

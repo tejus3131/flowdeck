@@ -14,7 +14,14 @@ import type { Database } from '../types/database.generated';
 export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type MeProfile = Pick<
   Profile,
-  'id' | 'email' | 'display_name' | 'username' | 'avatar_url' | 'has_passkey' | 'theme' | 'created_at'
+  | 'id'
+  | 'email'
+  | 'display_name'
+  | 'username'
+  | 'avatar_url'
+  | 'has_passkey'
+  | 'theme'
+  | 'created_at'
 >;
 
 /** Who is signed in, from their profile row (RLS: own + peers). */
@@ -72,7 +79,13 @@ export const signIn = formAction(async (formData: FormData) => {
   if (next) {
     getRequestEvent()?.response.headers.append(
       'set-cookie',
-      stringifySetCookie({ name: 'fd_next', value: next, path: '/', sameSite: 'lax', maxAge: 3600 }),
+      stringifySetCookie({
+        name: 'fd_next',
+        value: next,
+        path: '/',
+        sameSite: 'lax',
+        maxAge: 3600,
+      }),
     );
   }
 
@@ -162,8 +175,8 @@ export async function deleteAccount(): Promise<boolean> {
   // (signOut would 404 against a deleted user).
   const event = getRequestEvent();
   if (event) {
-    const jar = Object.keys(parseCookie(event.request.headers.get('cookie') ?? '')).filter(
-      (name) => /^sb-.*-auth-token(\.\d+)?$/.test(name),
+    const jar = Object.keys(parseCookie(event.request.headers.get('cookie') ?? '')).filter((name) =>
+      /^sb-.*-auth-token(\.\d+)?$/.test(name),
     );
     for (const name of jar) {
       event.response.headers.append(
@@ -186,7 +199,9 @@ export async function deleteAccount(): Promise<boolean> {
  */
 export async function checkEmail(email: string): Promise<{ exists: boolean; hasPasskey: boolean }> {
   'use server';
-  const clean = String(email ?? '').trim().toLowerCase();
+  const clean = String(email ?? '')
+    .trim()
+    .toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
     throw new Error('Enter a valid email address');
   }

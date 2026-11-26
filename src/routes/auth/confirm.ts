@@ -14,10 +14,7 @@ import { createSupabaseRequestClient } from '../../server/supabase';
 
 /** A 302 that carries any session cookies the auth flow queued on the
  *  response stub — merged manually so it never depends on the host. */
-function redirectTo(
-  event: RequestEvent & { response: ResponseStub },
-  path: string,
-): Response {
+function redirectTo(event: RequestEvent & { response: ResponseStub }, path: string): Response {
   const origin = new URL(event.request.url).origin;
   const headers = new Headers({ location: `${origin}${path}` });
   for (const cookie of event.response.headers.getSetCookie()) {
@@ -56,9 +53,7 @@ export const GET: APIHandler = async (event) => {
   }
   // One-hop landing from the sign-in cookie (invite flow): same-origin
   // paths only, consumed on use.
-  const next = e.request.headers
-    .get('cookie')
-    ?.match(/(?:^|;\s*)fd_next=(\/[^\s;]*)/)?.[1];
+  const next = e.request.headers.get('cookie')?.match(/(?:^|;\s*)fd_next=(\/[^\s;]*)/)?.[1];
   const safeNext = next && !next.startsWith('//') ? decodeURIComponent(next) : '/';
   if (safeNext !== '/') {
     e.response.headers.append(

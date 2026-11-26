@@ -14,7 +14,12 @@ import {
   notificationsStream,
   type NotificationRow,
 } from '../lib/notifications';
-import { isChatRow, hrefToPath, notificationHref, notificationLine } from '../lib/notification-text';
+import {
+  isChatRow,
+  hrefToPath,
+  notificationHref,
+  notificationLine,
+} from '../lib/notification-text';
 import { isScopeOpen } from '../lib/open-scopes';
 import { resolveAccessRequest } from '../lib/access';
 import { getMe } from '../lib/auth';
@@ -106,7 +111,11 @@ export function NotificationFeed() {
       current.map((row) => (row.key === toast.key ? { ...row, busy: true } : row)),
     );
     try {
-      await resolveAccessRequest({ boardId: toast.board_id ?? '', userId: toast.subject_id ?? '', grant });
+      await resolveAccessRequest({
+        boardId: toast.board_id ?? '',
+        userId: toast.subject_id ?? '',
+        grant,
+      });
     } catch {
       // the request is still on /notifications if this failed
     }
@@ -151,7 +160,10 @@ export function NotificationFeed() {
           // is quietly read (Slack's "you're already there").
           const visible = fresh.filter(
             (row) =>
-              !((row.kind === 'mention' || row.kind === 'chat' || row.kind === 'comment') && isScopeOpen(row)),
+              !(
+                (row.kind === 'mention' || row.kind === 'chat' || row.kind === 'comment') &&
+                isScopeOpen(row)
+              ),
           );
           for (const row of fresh) {
             if (row.kind === 'mention' || row.kind === 'chat' || row.kind === 'comment') {

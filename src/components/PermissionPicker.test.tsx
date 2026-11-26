@@ -12,10 +12,7 @@ import { render } from '@solidjs/testing-library';
 import { flush } from 'solid-js';
 
 import { PermissionPicker } from './PermissionPicker';
-import {
-  toggleWorkspaceInSelection,
-  type PermissionSelection,
-} from '../lib/mcp-permissions';
+import { toggleWorkspaceInSelection, type PermissionSelection } from '../lib/mcp-permissions';
 
 // ── fixtures ──────────────────────────────────────────────────────────────
 
@@ -58,9 +55,7 @@ describe('PermissionPicker with an unselected org', () => {
     // selection.workspaces.ws1.cards of undefined → TypeError. Now the
     // org expands into a hint, and no entity row exists to open.
     expect(utils.getByText('Acme')).toBeInTheDocument();
-    expect(
-      utils.getByText(/no access granted — turn this workspace on/i),
-    ).toBeInTheDocument();
+    expect(utils.getByText(/no access granted — turn this workspace on/i)).toBeInTheDocument();
     expect(utils.queryByText('Boards')).not.toBeInTheDocument();
     expect(utils.queryByLabelText('toggle all Boards')).not.toBeInTheDocument();
   });
@@ -90,9 +85,7 @@ describe('PermissionPicker with an unselected org', () => {
     flush();
     expect(changes).toHaveLength(1);
     expect(changes[0].workspaces.ws1).toBeUndefined();
-    expect(
-      utils.getByText(/no access granted — turn this workspace on/i),
-    ).toBeInTheDocument();
+    expect(utils.getByText(/no access granted — turn this workspace on/i)).toBeInTheDocument();
     expect(utils.queryByText('Read boards')).not.toBeInTheDocument();
   });
 });

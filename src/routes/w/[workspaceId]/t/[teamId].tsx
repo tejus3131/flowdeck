@@ -87,8 +87,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
     return view.workspace.id ? view : null;
   });
   const team = createMemo(
-    () =>
-      detail()?.teams.find((entry) => entry.id === props.params.teamId) ?? null,
+    () => detail()?.teams.find((entry) => entry.id === props.params.teamId) ?? null,
   );
   const deactivated = createMemo(
     () => detail()?.deactivatedTeams.find((entry) => entry.id === props.params.teamId) ?? null,
@@ -143,7 +142,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
   const isTeamAdmin = () =>
     team()?.members.some((m) => m.user_id === me()?.id && m.role === 'admin') ?? false;
-  const canManage = () => (team() !== null) && (isAdmin() || isTeamAdmin());
+  const canManage = () => team() !== null && (isAdmin() || isTeamAdmin());
 
   const [error, setError] = createSignal<string | null>(null);
   const [notice, setNotice] = createSignal<string | null>(null);
@@ -157,8 +156,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
       if (!grant) continue;
       out.push({
         boardId,
-        boardName:
-          detail()?.boards.find((b) => b.id === boardId)?.name ?? 'A board',
+        boardName: detail()?.boards.find((b) => b.id === boardId)?.name ?? 'A board',
         access: grant.access,
       });
     }
@@ -185,10 +183,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
     const name = nameDraft().trim();
     setRenaming(false);
     if (!name || name === team()?.name) return;
-    void action(
-      () => updateTeam({ teamId: props.params.teamId, name }),
-      'Team renamed ✓',
-    );
+    void action(() => updateTeam({ teamId: props.params.teamId, name }), 'Team renamed ✓');
   };
   const saveDescription = () => {
     const description = descriptionDraft().trim();
@@ -212,7 +207,10 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
           >
             <p class="mt-8 text-sm text-neutral-400">
               This team doesn't exist in this workspace.{' '}
-              <a href={`/w/${props.params.workspaceId}/members`} class="text-indigo-600 underline dark:text-indigo-400">
+              <a
+                href={`/w/${props.params.workspaceId}/members`}
+                class="text-indigo-600 underline dark:text-indigo-400"
+              >
                 Back to members
               </a>
             </p>
@@ -237,7 +235,10 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
                     onInput={(event) => setNameDraft(event.currentTarget.value)}
                     autofocus
                   />
-                  <button type="submit" class="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                  <button
+                    type="submit"
+                    class="text-xs font-semibold text-indigo-600 dark:text-indigo-400"
+                  >
                     Save
                   </button>
                 </form>
@@ -276,7 +277,10 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
                     value={descriptionDraft()}
                     onInput={(event) => setDescriptionDraft(event.currentTarget.value)}
                   />
-                  <button type="submit" class="shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                  <button
+                    type="submit"
+                    class="shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400"
+                  >
                     Save
                   </button>
                 </form>
@@ -315,8 +319,8 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
               🗄️ This team is decommissioned
             </p>
             <p class="mt-1 text-xs text-neutral-400">
-              Old @mentions keep naming it, but it has no members and no board access.
-              Reinstating brings the name back — people and access are granted fresh.
+              Old @mentions keep naming it, but it has no members and no board access. Reinstating
+              brings the name back — people and access are granted fresh.
             </p>
             <Show when={isAdmin()}>
               <button
@@ -336,7 +340,10 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
         </Show>
 
         <Show when={error()}>
-          <p role="alert" class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950 dark:text-red-400">
+          <p
+            role="alert"
+            class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950 dark:text-red-400"
+          >
             {error()}
           </p>
         </Show>
@@ -364,8 +371,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
             <ul class="divide-y divide-neutral-200 rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
               <For each={team()?.members}>
                 {(member) => {
-                  const person = () =>
-                    detail()?.members.find((m) => m.user_id === member.user_id);
+                  const person = () => detail()?.members.find((m) => m.user_id === member.user_id);
                   return (
                     <li class="flex items-center gap-3 px-4 py-3">
                       <Avatar
@@ -500,9 +506,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
                     )}
                   >
                     {(member) => (
-                      <option value={member.user_id}>
-                        {member.display_name ?? member.email}
-                      </option>
+                      <option value={member.user_id}>{member.display_name ?? member.email}</option>
                     )}
                   </For>
                 </select>
@@ -532,21 +536,25 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
             <ul class="flex flex-col gap-1.5">
               <For each={boards()}>
                 {(grant) => (
-                    <li class="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm dark:border-neutral-800">
-                      <a href={`/b/${grant.boardId}`} class="min-w-0 flex-1 truncate font-medium hover:text-indigo-600 dark:hover:text-indigo-400">
-                        {grant.boardName}
-                      </a>
-                      <span
-                        class={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          grant.access === 'edit'
-                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
-                            : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
-                        }`}
-                      >
-                        {grant.access === 'edit' ? 'Write' : 'View'}
-                      </span>
-                    </li>
-              )}</For>
+                  <li class="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm dark:border-neutral-800">
+                    <a
+                      href={`/b/${grant.boardId}`}
+                      class="min-w-0 flex-1 truncate font-medium hover:text-indigo-600 dark:hover:text-indigo-400"
+                    >
+                      {grant.boardName}
+                    </a>
+                    <span
+                      class={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        grant.access === 'edit'
+                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                          : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
+                      }`}
+                    >
+                      {grant.access === 'edit' ? 'Write' : 'View'}
+                    </span>
+                  </li>
+                )}
+              </For>
             </ul>
           </Show>
         </section>
@@ -554,4 +562,3 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
     </main>
   );
 }
-

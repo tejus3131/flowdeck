@@ -11,9 +11,33 @@ import type { BoardSnapshot, CardRow, ListRow } from './boards';
 // ── fixtures ──────────────────────────────────────────────────────────────
 
 const lists = (over: ListRow[] = []): ListRow[] => [
-  { id: 'l1', board_id: 'b1', name: 'To do', position: 1, created_at: '', client_op: null, description: '' },
-  { id: 'l2', board_id: 'b1', name: 'Doing', position: 2, created_at: '', client_op: null, description: '' },
-  { id: 'l3', board_id: 'b1', name: 'Done', position: 3, created_at: '', client_op: null, description: '' },
+  {
+    id: 'l1',
+    board_id: 'b1',
+    name: 'To do',
+    position: 1,
+    created_at: '',
+    client_op: null,
+    description: '',
+  },
+  {
+    id: 'l2',
+    board_id: 'b1',
+    name: 'Doing',
+    position: 2,
+    created_at: '',
+    client_op: null,
+    description: '',
+  },
+  {
+    id: 'l3',
+    board_id: 'b1',
+    name: 'Done',
+    position: 3,
+    created_at: '',
+    client_op: null,
+    description: '',
+  },
   ...over,
 ];
 
@@ -39,7 +63,17 @@ const card = (id: string, listId: string, position: number, title = id): CardVie
 });
 
 const snapshot = (cards: CardView[], ls = lists()): BoardSnapshot => ({
-  board: { id: 'b1', name: 'Board', owner_id: 'u1', workspace_id: null, created_at: '', updated_at: '', client_op: null, description: '', access_delegation: false },
+  board: {
+    id: 'b1',
+    name: 'Board',
+    owner_id: 'u1',
+    workspace_id: null,
+    created_at: '',
+    updated_at: '',
+    client_op: null,
+    description: '',
+    access_delegation: false,
+  },
   lists: ls,
   cards,
   revision: 1,
@@ -48,7 +82,17 @@ const snapshot = (cards: CardView[], ls = lists()): BoardSnapshot => ({
 });
 
 const EMPTY: BoardSnapshot = {
-  board: { id: '', name: '', owner_id: '', workspace_id: null, created_at: '', updated_at: '', client_op: null, description: '', access_delegation: false },
+  board: {
+    id: '',
+    name: '',
+    owner_id: '',
+    workspace_id: null,
+    created_at: '',
+    updated_at: '',
+    client_op: null,
+    description: '',
+    access_delegation: false,
+  },
   lists: [],
   cards: [],
   revision: 0,
@@ -247,7 +291,7 @@ describe('sync engine', () => {
     h.sent[0].reject(new Error('not allowed'));
     await settle();
     // Probe: does a fresh durable emission converge the view?
-    h.push(snapshot([card("c1", "l1", 1)]));
+    h.push(snapshot([card('c1', 'l1', 1)]));
     await settle();
     expect(h.engine.view().cards.find((c) => c.id === 'c1')?.list_id).toBe('l1');
     expect(h.engine.failed().length).toBe(1);
@@ -402,10 +446,7 @@ describe('sync engine', () => {
     // (the durable fixture lacks client_op — stamp it via the payload check)
     h.push({
       ...snapshot([card('c1', 'l1', 1), card('real-9', 'l1', 2, 'Relayed')]),
-      cards: [
-        card('c1', 'l1', 1),
-        { ...card('real-9', 'l1', 2, 'Relayed'), client_op: 'op-77' },
-      ],
+      cards: [card('c1', 'l1', 1), { ...card('real-9', 'l1', 2, 'Relayed'), client_op: 'op-77' }],
     });
     await settle();
     expect(h.engine.view().cards.some((c) => c.id === 'real-9')).toBe(true);
@@ -452,7 +493,10 @@ describe('sync engine', () => {
     h.engine.applyRemote(remoteSpec(move), 'op-sort');
     flush();
     const order = () =>
-      h.engine.view().cards.filter((c) => c.list_id === 'l1').map((c) => c.id);
+      h.engine
+        .view()
+        .cards.filter((c) => c.list_id === 'l1')
+        .map((c) => c.id);
     expect(order()).toEqual(['c2', 'c3', 'c1']); // c1 LAST — where the echo will keep it
 
     // And the durable echo retires without any visual change.
@@ -463,7 +507,8 @@ describe('sync engine', () => {
     h.dispose();
   });
 
-  it('a relayed move guards against an older echo, then retires on its own', async () => {    const h = makeHarness(snapshot([card('c1', 'l1', 1)]));
+  it('a relayed move guards against an older echo, then retires on its own', async () => {
+    const h = makeHarness(snapshot([card('c1', 'l1', 1)]));
     await settle();
 
     // A→x chain: the author moved the card to l2; we predict it.

@@ -61,9 +61,13 @@ describe('perf marks', () => {
 
   it('a stale tracked fetch cannot consume a newer open (the timeline race)', async () => {
     let resolveFirst: (value: number) => void = () => {};
-    const first = perfTrack('t-race', () => new Promise<number>((resolve) => {
-      resolveFirst = resolve;
-    }));
+    const first = perfTrack(
+      't-race',
+      () =>
+        new Promise<number>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
     // The user closes and reopens before the first fetch resolves: the
     // second open replaces the mark, then resolves.
     const second = perfTrack('t-race', () => Promise.resolve(2));
@@ -81,7 +85,11 @@ describe('perf marks', () => {
   });
 
   it('records a failed track too (slow failures are slow opens)', async () => {
-    await expect(perfTrack('t-fail', async () => { throw new Error('boom'); })).rejects.toThrow('boom');
+    await expect(
+      perfTrack('t-fail', async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
     expect(stat('t-fail')).toMatchObject({ count: 1 });
   });
 

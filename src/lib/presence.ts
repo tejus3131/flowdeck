@@ -44,13 +44,16 @@ export function createBoardPresence(
     ({ profile, enabled }) => {
       if (!profile || !enabled || channel) return;
       client = browserClient();
-      const self = channel ?? client!.channel(`presence-board-${boardId}`, {
-        config: { presence: { key: profile.id } },
-      });
+      const self =
+        channel ??
+        client!.channel(`presence-board-${boardId}`, {
+          config: { presence: { key: profile.id } },
+        });
       channel = self;
 
       self
-        .on('presence', { event: 'sync' }, () => {          const state = self.presenceState<Record<string, unknown>>();
+        .on('presence', { event: 'sync' }, () => {
+          const state = self.presenceState<Record<string, unknown>>();
           const users: PresenceUser[] = [];
           for (const [key, metas] of Object.entries(state)) {
             if (key === profile.id) continue;

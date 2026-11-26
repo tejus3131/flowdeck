@@ -66,7 +66,10 @@ function withReferences(markdown: string, cardNumbers?: number[]): string {
       return `${lead}[#${num}](flowdeck-card-ref:${num})`;
     },
   );
-  return converted.replace(/\u0001(\d+)\u0001/g, (_all, index: string) => spans[Number(index)] ?? '');
+  return converted.replace(
+    /\u0001(\d+)\u0001/g,
+    (_all, index: string) => spans[Number(index)] ?? '',
+  );
 }
 
 interface LinkToken {
@@ -112,7 +115,10 @@ const renderer = {
       const label = (tokens ?? []).map((t) => t.raw ?? t.text ?? '').join('') || 'card';
       if (!UUID.test(cardId)) return label;
       const params = new URLSearchParams(query ?? '');
-      const attrs = [params.get('c') ? ` data-comment-id="${params.get('c')}"` : '', params.get('e') ? ` data-event="${params.get('e')}"` : ''].join('');
+      const attrs = [
+        params.get('c') ? ` data-comment-id="${params.get('c')}"` : '',
+        params.get('e') ? ` data-event="${params.get('e')}"` : '',
+      ].join('');
       return `<a href="#card-${cardId}" data-card-id="${cardId}"${attrs}>${label}</a>`;
     }
     // Tag references travel as tag:<uuid> — the chip links to search.
@@ -201,14 +207,24 @@ export function renderMarkdown(source: string, context?: MarkdownContext): strin
   const doc = new DOMParser().parseFromString(clean, 'text/html');
   for (const frame of [...doc.querySelectorAll('iframe')]) {
     const src = frame.getAttribute('src') ?? '';
-    const ok = Object.keys(VIDEO_HOSTS).some((host) =>
-      src.startsWith(`https://${host}`) ||
-      src.startsWith(`https://www.${host}`) ||
-      src.startsWith('https://player.vimeo.com'),
+    const ok = Object.keys(VIDEO_HOSTS).some(
+      (host) =>
+        src.startsWith(`https://${host}`) ||
+        src.startsWith(`https://www.${host}`) ||
+        src.startsWith('https://player.vimeo.com'),
     );
     if (!ok) frame.remove();
   }
-  styleReferences(doc, context?.members, context?.accessibleCardIds, context?.teams, context?.cardRefs, context?.crossCards, context?.tags, context?.boards);
+  styleReferences(
+    doc,
+    context?.members,
+    context?.accessibleCardIds,
+    context?.teams,
+    context?.cardRefs,
+    context?.crossCards,
+    context?.tags,
+    context?.boards,
+  );
   return doc.body.innerHTML;
 }
 
@@ -273,7 +289,11 @@ function styleReferences(
     }
     const cross = crossCards?.get(cardId);
     // "Board › Card title" — same shape as # citations.
-    chip.textContent = cross ? (cross.title ? `${cross.board} › ${cross.title}` : cross.board) : (anchor.textContent ?? 'card');
+    chip.textContent = cross
+      ? cross.title
+        ? `${cross.board} › ${cross.title}`
+        : cross.board
+      : (anchor.textContent ?? 'card');
     anchor.replaceWith(chip);
   }
   // Board chips: the viewer's boards resolve to their CURRENT name;
@@ -320,7 +340,8 @@ function styleReferences(
     chip.textContent = '@All';
     anchor.replaceWith(chip);
   }
-  for (const anchor of [...doc.querySelectorAll('a[data-team-id]')]) {    const team = teamsById.get(anchor.getAttribute('data-team-id') ?? '');
+  for (const anchor of [...doc.querySelectorAll('a[data-team-id]')]) {
+    const team = teamsById.get(anchor.getAttribute('data-team-id') ?? '');
     const chip = doc.createElement('span');
     chip.className = 'fd-mention fd-team-ref';
     chip.setAttribute('data-team-id', anchor.getAttribute('data-team-id') ?? '');

@@ -89,7 +89,9 @@ export const getBoards = query(async (): Promise<BoardSummary[]> => {
   const workspaceId = await currentWorkspaceId(supabase);
   const queryBuilder = supabase
     .from('boards')
-    .select('id, name, description, owner_id, workspace_id, created_at, updated_at, client_op, access_delegation');
+    .select(
+      'id, name, description, owner_id, workspace_id, created_at, updated_at, client_op, access_delegation',
+    );
   const { data, error } = workspaceId
     ? await queryBuilder.eq('workspace_id', workspaceId).order('updated_at', { ascending: false })
     : await queryBuilder.order('updated_at', { ascending: false });
@@ -137,14 +139,30 @@ export const boardsStream = live(async function* (): AsyncGenerator<BoardsSnapsh
     // Access grants are part of the list's shape: a board another admin
     // grants me appears the moment the override row lands (and disappears
     // on revoke) — no refresh needed.
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'board_access' }, control.onChanged)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_access' },
+      control.onChanged,
+    )
     // Role changes and team grants reshape the whole list too (made admin
     // → every workspace board appears, live) — the "whatever screen I'm
     // on updates" rule.
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, control.onChanged)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'workspace_members' },
+      control.onChanged,
+    )
     .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, control.onChanged)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, control.onChanged)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'board_team_access' }, control.onChanged)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'team_members' },
+      control.onChanged,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_team_access' },
+      control.onChanged,
+    )
     // See boardStream: a rejected binding surfaces only as a `system`
     // error after the join reply. Log it loudly.
     .on('system', {}, (payload: { status?: string; message?: string }) => {
@@ -217,7 +235,9 @@ async function boardsSnapshot(
 ): Promise<BoardsSnapshot> {
   const { data, error } = await supabase
     .from('boards')
-    .select('id, name, description, owner_id, workspace_id, created_at, updated_at, client_op, access_delegation')
+    .select(
+      'id, name, description, owner_id, workspace_id, created_at, updated_at, client_op, access_delegation',
+    )
     .order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
   // Who's on each board (what RLS shows this viewer — admins see all
@@ -230,14 +250,26 @@ async function boardsSnapshot(
   ]);
   const teamNames = new Map((teamRows.data ?? []).map((row) => [row.id as string, row.name]));
   const access: Record<string, BoardAccessInfo> = {};
-  for (const row of (accessRows.data ?? []) as { board_id: string; user_id: string; access: 'edit' | 'view' }[]) {
+  for (const row of (accessRows.data ?? []) as {
+    board_id: string;
+    user_id: string;
+    access: 'edit' | 'view';
+  }[]) {
     const bucket = access[row.board_id] ?? { users: [], teams: [] };
     bucket.users.push({ userId: row.user_id, access: row.access });
     access[row.board_id] = bucket;
   }
-  for (const row of (teamAccessRows.data ?? []) as { board_id: string; team_id: string; access: 'edit' | 'view' }[]) {
+  for (const row of (teamAccessRows.data ?? []) as {
+    board_id: string;
+    team_id: string;
+    access: 'edit' | 'view';
+  }[]) {
     const bucket = access[row.board_id] ?? { users: [], teams: [] };
-    bucket.teams.push({ teamId: row.team_id, name: teamNames.get(row.team_id) ?? 'team', access: row.access });
+    bucket.teams.push({
+      teamId: row.team_id,
+      name: teamNames.get(row.team_id) ?? 'team',
+      access: row.access,
+    });
     access[row.board_id] = bucket;
   }
   return { boards: data ?? [], access };
@@ -269,9 +301,7 @@ export async function getWorkspaceBoardList(
 }
 
 /** One board snapshot, for tests and one-off reads. */
-export async function getBoardSnapshot(
-  boardId: string,
-): Promise<BoardSnapshot> {
+export async function getBoardSnapshot(boardId: string): Promise<BoardSnapshot> {
   'use server';
   const supabase = createSupabaseRequestClient();
   return snapshot(supabase, assertId(boardId, 'board id'));
@@ -307,9 +337,7 @@ export async function getBoardRevision(boardId: string): Promise<number | null> 
  * connection drops, `live()` reconnects and this generator starts over —
  * first value current, never behind.
  */
-export const boardStream = live(async function* (
-  boardId: string,
-): AsyncGenerator<BoardSnapshot> {
+export const boardStream = live(async function* (boardId: string): AsyncGenerator<BoardSnapshot> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
@@ -346,7 +374,8 @@ export const boardStream = live(async function* (
       'postgres_changes',
       { event: '*', schema: 'public', table: 'lists', filter: `board_id=eq.${id}` },
       (payload: { eventType: string; new: unknown; old: { id?: string } }) => {
-        if (payload.eventType === 'DELETE') push({ kind: 'list-delete', id: String(payload.old?.id) });
+        if (payload.eventType === 'DELETE')
+          push({ kind: 'list-delete', id: String(payload.old?.id) });
         else push({ kind: 'list-upsert', row: payload.new as ListRow });
       },
     )
@@ -354,7 +383,8 @@ export const boardStream = live(async function* (
       'postgres_changes',
       { event: '*', schema: 'public', table: 'cards', filter: `board_id=eq.${id}` },
       (payload: { eventType: string; new: { id?: string }; old: { id?: string } }) => {
-        if (payload.eventType === 'DELETE') push({ kind: 'card-delete', id: String(payload.old?.id) });
+        if (payload.eventType === 'DELETE')
+          push({ kind: 'card-delete', id: String(payload.old?.id) });
         else push({ kind: 'card-touch', id: String(payload.new?.id) });
       },
     )
@@ -400,8 +430,11 @@ export const boardStream = live(async function* (
     )
     // Same for the tag links; the workspace's tag VOCABULARY (a rename)
     // reshapes chips on cards we cannot name — full resync.
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'card_tags' }, (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
-      push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'card_tags' },
+      (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
+        push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
     )
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () =>
       push({ kind: 'resync' }),
@@ -506,7 +539,11 @@ async function snapshot(
   const startedAt = Date.now();
   const [boards, lists, cards, revisionRow, access, stats] = await Promise.all([
     supabase.from('boards').select('*').eq('id', boardId).maybeSingle(),
-    supabase.from('lists').select('*').eq('board_id', boardId).order('position', { ascending: true }),
+    supabase
+      .from('lists')
+      .select('*')
+      .eq('board_id', boardId)
+      .order('position', { ascending: true }),
     supabase
       .from('cards')
       .select('*, card_tags(tag_id, tags(id, name))')
@@ -515,11 +552,7 @@ async function snapshot(
     // The trustworthy per-board cursor (migration 0032): bumped by a
     // trigger in the same transaction as every board-scoped change —
     // deletions included, unlike the old activity head.
-    supabase
-      .from('board_revisions')
-      .select('revision')
-      .eq('board_id', boardId)
-      .maybeSingle(),
+    supabase.from('board_revisions').select('revision').eq('board_id', boardId).maybeSingle(),
     supabase.rpc('user_board_access', { p_board_id: boardId }),
     supabase.rpc('board_card_comment_stats', { p_board_id: boardId }),
   ]);
@@ -565,9 +598,9 @@ async function snapshot(
     };
   }
   const statMap = new Map(
-    ((stats.data ?? []) as { card_id: string; comment_count: number; last_comment_at: string }[]).map(
-      (row) => [row.card_id, row],
-    ),
+    (
+      (stats.data ?? []) as { card_id: string; comment_count: number; last_comment_at: string }[]
+    ).map((row) => [row.card_id, row]),
   );
   const assigneeMap = new Map<string, string[]>();
   for (const row of (assignees.data ?? []) as { card_id: string; user_id: string }[]) {
@@ -745,8 +778,7 @@ export async function createBoard(
       .eq('id', workspaceTarget)
       .maybeSingle();
     const policy = (workspace?.board_creation as string | undefined) ?? 'team_admins';
-    const allowed =
-      policy === 'everyone' || (policy === 'team_admins' && adminTeamIds.length > 0);
+    const allowed = policy === 'everyone' || (policy === 'team_admins' && adminTeamIds.length > 0);
     if (!allowed) {
       throw new Error('You need the owner or an admin to create boards in this workspace');
     }
@@ -876,7 +908,8 @@ export async function createList(boardId: string, name: string, clientOp?: strin
   const { data: position, error: allocError } = await supabase.rpc('allocate_list_position', {
     p_board_id: id,
   });
-  if (allocError || position == null) throw new Error(allocError?.message ?? 'position allocation failed');
+  if (allocError || position == null)
+    throw new Error(allocError?.message ?? 'position allocation failed');
   const { error } = await supabase.from('lists').insert({
     board_id: id,
     name: listName,
@@ -888,10 +921,7 @@ export async function createList(boardId: string, name: string, clientOp?: strin
 }
 
 /** List settings: rename and/or set the description (editors only). */
-export async function updateList(
-  listId: string,
-  patch: { name?: string; description?: string },
-) {
+export async function updateList(listId: string, patch: { name?: string; description?: string }) {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(listId, 'list id');
@@ -918,7 +948,9 @@ export async function deleteList(listId: string) {
     .eq('list_id', id);
   if (countError) throw new Error(countError.message);
   if ((count ?? 0) > 0) {
-    throw friendlyError(`This list still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`);
+    throw friendlyError(
+      `This list still holds ${count} card${count === 1 ? '' : 's'} — move or resolve them first`,
+    );
   }
   const { error } = await supabase.from('lists').delete().eq('id', id);
   if (error) throw new Error(error.message);
@@ -927,18 +959,18 @@ export async function deleteList(listId: string) {
 // ── card mutations ────────────────────────────────────────────────────────
 
 /** Add a card at the end of a list. Returns the card id. */
-export async function createCard(listId: string, title: string, clientOp?: string): Promise<string> {
+export async function createCard(
+  listId: string,
+  title: string,
+  clientOp?: string,
+): Promise<string> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(listId, 'list id');
   const user = await requireUser(supabase);
   const cardTitle = cleanText(title, 'Card title', 200);
 
-  const { data: list } = await supabase
-    .from('lists')
-    .select('board_id')
-    .eq('id', id)
-    .maybeSingle();
+  const { data: list } = await supabase.from('lists').select('board_id').eq('id', id).maybeSingle();
   if (!list) throw new Error('List not found');
 
   // Atomic append: the allocator serializes concurrent creators on a
@@ -947,7 +979,8 @@ export async function createCard(listId: string, title: string, clientOp?: strin
   const { data: position, error: allocError } = await supabase.rpc('allocate_card_position', {
     p_list_id: id,
   });
-  if (allocError || position == null) throw new Error(allocError?.message ?? 'position allocation failed');
+  if (allocError || position == null)
+    throw new Error(allocError?.message ?? 'position allocation failed');
 
   const { data: card, error } = await supabase
     .from('cards')
@@ -1073,13 +1106,12 @@ export async function updateCard(
   }
   // Assignments: replace the set (the assignees live in a join table).
   if (patch.assignees !== undefined) {
-    const next = [...new Set(patch.assignees)].filter((userId) =>
-      /^[0-9a-f-]{36}$/i.test(userId),
-    );
+    const next = [...new Set(patch.assignees)].filter((userId) => /^[0-9a-f-]{36}$/i.test(userId));
     const { data: previous } = await supabase
       .from('card_assignees')
       .select('user_id')
-      .eq('card_id', resolved);    const { error: delError } = await supabase
+      .eq('card_id', resolved);
+    const { error: delError } = await supabase
       .from('card_assignees')
       .delete()
       .eq('card_id', resolved);
@@ -1140,9 +1172,7 @@ export async function updateCard(
       const mentioned = mentionedUsers(patch.description);
       const teams = mentionedTeams(patch.description);
       if (mentioned.length > 0 || teams.length > 0) {
-        const invisible = new Set(
-          await filterInaccessible(supabase, card.board_id, mentioned),
-        );
+        const invisible = new Set(await filterInaccessible(supabase, card.board_id, mentioned));
         const direct = mentioned.filter((userId) => !invisible.has(userId));
         let teamMentions: string[] = [];
         if (teams.length > 0) {
@@ -1150,9 +1180,9 @@ export async function updateCard(
             .from('team_members')
             .select('user_id')
             .in('team_id', teams);
-          teamMentions = [
-            ...new Set((teamRows ?? []).map((row) => row.user_id as string)),
-          ].filter((userId) => !invisible.has(userId));
+          teamMentions = [...new Set((teamRows ?? []).map((row) => row.user_id as string))].filter(
+            (userId) => !invisible.has(userId),
+          );
         }
         // Description mentions respect each person's card level; the
         // audience is just the mention targets (no quiet rows for edits).
@@ -1241,7 +1271,8 @@ export async function findOrCreateTag(
     .eq('workspace_id', wsId)
     .eq('name', name)
     .maybeSingle();
-  if (existing) return { id: existing.id, name: existing.name, description: existing.description ?? '' };
+  if (existing)
+    return { id: existing.id, name: existing.name, description: existing.description ?? '' };
   const { data, error } = await supabase
     .from('tags')
     .insert({ workspace_id: wsId, name, description: String(description ?? '').slice(0, 500) })
@@ -1332,7 +1363,7 @@ async function logCardEvent(
 
 /** The card's durable id: the given id, or — when the caller opened the
  *  card while its provisional (relayed) row was still in view — the row
- *  carrying the same client_op. RLS gates the fallback to visible cards. */async function resolveCardId(
+ *  carrying the same client_op. RLS gates the fallback to visible cards. */ async function resolveCardId(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
   cardId: string,
   clientOp?: string | null,
@@ -1379,7 +1410,6 @@ export async function unresolveCard(cardId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-
 /**
  * Move a card to a list at a fractional position. The client computes the
  * midpoint between neighbours (see board-store.ts); the server trusts the
@@ -1398,11 +1428,7 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
   // Timeline: read the source list BEFORE the write flips it.
   const [{ data: target }, { data: cardBefore }] = await Promise.all([
     supabase.from('lists').select('board_id, name').eq('id', listId).maybeSingle(),
-    supabase
-      .from('cards')
-      .select('board_id, lists(name)')
-      .eq('id', id)
-      .maybeSingle(),
+    supabase.from('cards').select('board_id, lists(name)').eq('id', id).maybeSingle(),
   ]);
   if (!target) throw new Error('List not found');
   // A card's list must stay on the card's board — a cross-board list_id
@@ -1419,11 +1445,9 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
     .maybeSingle();
   if (resolved?.resolved_at) throw friendlyError('This card is resolved — unresolve it first');
   const fromName =
-    ((cardBefore?.lists as { name: string | null } | null | undefined)?.name as string | undefined) ?? null;
-  const { error } = await supabase
-    .from('cards')
-    .update({ list_id: listId, position })
-    .eq('id', id);
+    ((cardBefore?.lists as { name: string | null } | null | undefined)?.name as
+      string | undefined) ?? null;
+  const { error } = await supabase.from('cards').update({ list_id: listId, position }).eq('id', id);
   if (error) throw new Error(error.message);
   await logActivity(supabase, user.id, target.board_id, 'card.moved', {});
   // Only real list changes enter the timeline — same-list reorders are
@@ -1482,7 +1506,9 @@ export async function getCardComments(
   const resolved = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
   let query = supabase
     .from('card_comments')
-    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)')
+    .select(
+      'id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)',
+    )
     .eq('card_id', resolved)
     .order('seq', { ascending: false })
     .limit(limit);
@@ -1509,9 +1535,8 @@ export async function getCardComments(
       avatar_url:
         (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
           ?.avatar_url ?? null,
-      author:
-        (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
-  }));
+      author: (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+    }));
 }
 
 /**
@@ -1557,7 +1582,9 @@ export const cardCommentsStream = live(async function* (
     const startedAt = Date.now();
     const { data, error } = await supabase
       .from('card_comments')
-      .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)')
+      .select(
+        'id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)',
+      )
       .eq('card_id', id)
       .order('seq', { ascending: false })
       .limit(30);
@@ -1582,8 +1609,7 @@ export const cardCommentsStream = live(async function* (
         avatar_url:
           (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
             ?.avatar_url ?? null,
-        author:
-          (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+        author: (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
       }));
   }
 
@@ -1613,7 +1639,13 @@ export async function addComment(
   body: string,
   clientOp?: string,
   cardClientOp?: string | null,
-): Promise<{ id: string; createdAt: string; author: string; authorId: string; avatarUrl: string | null }> {
+): Promise<{
+  id: string;
+  createdAt: string;
+  author: string;
+  authorId: string;
+  avatarUrl: string | null;
+}> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(cardId, 'card id');
@@ -1644,7 +1676,9 @@ export async function addComment(
       seq,
       ...(clientOp ? { client_op: clientOp } : {}),
     })
-    .select('id, created_at, user_id, profiles!card_comments_user_id_fkey(display_name, avatar_url)')
+    .select(
+      'id, created_at, user_id, profiles!card_comments_user_id_fkey(display_name, avatar_url)',
+    )
     .single();
   if (error || !comment) throw new Error(error?.message ?? 'Could not post the comment');
   await logActivity(supabase, user.id, card.board_id, 'comment.created', {});
@@ -1682,8 +1716,9 @@ export async function addComment(
         .from('team_members')
         .select('user_id')
         .in('team_id', teamIds);
-      teamMentions = [...new Set((teamRows ?? []).map((row) => row.user_id as string))]
-        .filter((userId) => audience.includes(userId));
+      teamMentions = [...new Set((teamRows ?? []).map((row) => row.user_id as string))].filter(
+        (userId) => audience.includes(userId),
+      );
     }
     await notifyChatActivity(supabase, {
       scopeType: 'card',
@@ -1729,10 +1764,8 @@ export async function addComment(
     id: comment.id,
     createdAt: comment.created_at,
     authorId: comment.user_id ?? user.id,
-    avatarUrl:
-      (comment.profiles as { avatar_url: string | null } | null)?.avatar_url ?? null,
-    author:
-      (comment.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+    avatarUrl: (comment.profiles as { avatar_url: string | null } | null)?.avatar_url ?? null,
+    author: (comment.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
   };
 }
 
@@ -1846,7 +1879,9 @@ async function boardChatSnapshot(
   const startedAt = Date.now();
   const { data, error } = await supabase
     .from('board_messages')
-    .select('id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!board_messages_user_id_fkey(display_name, avatar_url)')
+    .select(
+      'id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!board_messages_user_id_fkey(display_name, avatar_url)',
+    )
     .eq('board_id', boardId)
     .order('seq', { ascending: false })
     .limit(100);
@@ -1871,8 +1906,7 @@ async function boardChatSnapshot(
       avatar_url:
         (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
           ?.avatar_url ?? null,
-      author:
-        (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+      author: (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
     }));
 }
 
@@ -1936,7 +1970,13 @@ export async function postBoardMessage(
   boardId: string,
   body: string,
   clientOp?: string,
-): Promise<{ id: string; createdAt: string; authorId: string; avatarUrl: string | null; author: string }> {
+): Promise<{
+  id: string;
+  createdAt: string;
+  authorId: string;
+  avatarUrl: string | null;
+  author: string;
+}> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
@@ -1958,7 +1998,9 @@ export async function postBoardMessage(
       seq,
       ...(clientOp ? { client_op: clientOp } : {}),
     })
-    .select('id, created_at, user_id, profiles!board_messages_user_id_fkey(display_name, avatar_url)')
+    .select(
+      'id, created_at, user_id, profiles!board_messages_user_id_fkey(display_name, avatar_url)',
+    )
     .single();
   if (error || !message) throw new Error(error?.message ?? 'Could not post the message');
   await logActivity(supabase, user.id, id, 'chat.message', {});
@@ -1981,8 +2023,9 @@ export async function postBoardMessage(
         .from('team_members')
         .select('user_id')
         .in('team_id', teamIds);
-      teamMentions = [...new Set((teamRows ?? []).map((row) => row.user_id as string))]
-        .filter((userId) => audience.includes(userId));
+      teamMentions = [...new Set((teamRows ?? []).map((row) => row.user_id as string))].filter(
+        (userId) => audience.includes(userId),
+      );
     }
     await notifyChatActivity(supabase, {
       scopeType: 'board',
@@ -2025,10 +2068,8 @@ export async function postBoardMessage(
     id: message.id,
     createdAt: message.created_at,
     authorId: message.user_id ?? user.id,
-    avatarUrl:
-      (message.profiles as { avatar_url: string | null } | null)?.avatar_url ?? null,
-    author:
-      (message.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
+    avatarUrl: (message.profiles as { avatar_url: string | null } | null)?.avatar_url ?? null,
+    author: (message.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
   };
 }
 
@@ -2141,7 +2182,8 @@ async function logActivity(
   boardId: string,
   type: string,
   payload: Record<string, string | number | boolean | null>,
-) {  // RLS: only members insert activity; the caller just performed a member
+) {
+  // RLS: only members insert activity; the caller just performed a member
   // action, so their own identity satisfies the policy. Failures are
   // logged, not thrown — an activity row must never fail a mutation.
   const { error } = await supabase
@@ -2296,10 +2338,7 @@ export async function searchCards(filters: {
       .from('card_assignees')
       .select('card_id')
       .in('user_id', assigneeIds);
-    query = query.in(
-      'id',
-      [...new Set((mine ?? []).map((row) => row.card_id as string))],
-    );
+    query = query.in('id', [...new Set((mine ?? []).map((row) => row.card_id as string))]);
   }
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -2334,8 +2373,7 @@ export async function searchCards(filters: {
       if (filters.untagged && hit.tags.length > 0) return false;
       if (priorities.length > 0 || includeNoPriority) {
         const ok =
-          priorities.includes(hit.priority ?? '') ||
-          (includeNoPriority && hit.priority == null);
+          priorities.includes(hit.priority ?? '') || (includeNoPriority && hit.priority == null);
         if (!ok) return false;
       }
       if (assigneeIds.length > 0 || includeUnassigned) {

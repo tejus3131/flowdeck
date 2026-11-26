@@ -158,9 +158,7 @@ export function UserMenu(props: { profile: () => MeProfile }) {
               <span class="block truncate text-sm font-semibold">
                 {props.profile().display_name || props.profile().email}
               </span>
-              <span class="block truncate text-xs text-neutral-400">
-                {props.profile().email}
-              </span>
+              <span class="block truncate text-xs text-neutral-400">{props.profile().email}</span>
             </span>
           </a>
 
@@ -213,12 +211,26 @@ export function UserMenu(props: { profile: () => MeProfile }) {
                     )}
                   </For>
                 </div>
-                <Show when={(statusEmoji().trim() || statusText().trim()) && !(myStatus()?.emoji === statusEmoji().trim() && myStatus()?.label === statusText().trim())}>
+                <Show
+                  when={
+                    (statusEmoji().trim() || statusText().trim()) &&
+                    !(
+                      myStatus()?.emoji === statusEmoji().trim() &&
+                      myStatus()?.label === statusText().trim()
+                    )
+                  }
+                >
                   <button
                     type="button"
                     title="Save this as a one-click preset"
                     class="self-start text-[11px] font-medium text-neutral-400 hover:text-indigo-500"
-                    onClick={() => void saveStatusPreset({ emoji: statusEmoji().trim() || null, label: statusText().trim() || null, dnd: statusDnd() })}
+                    onClick={() =>
+                      void saveStatusPreset({
+                        emoji: statusEmoji().trim() || null,
+                        label: statusText().trim() || null,
+                        dnd: statusDnd(),
+                      })
+                    }
                   >
                     💾 Save as preset
                   </button>
@@ -258,7 +270,9 @@ export function UserMenu(props: { profile: () => MeProfile }) {
                 </span>
               </span>
             </button>
-            <Show when={(myStatus()?.presets.length ?? 0) > 0 || (myStatus()?.emoji || myStatus()?.label)}>
+            <Show
+              when={(myStatus()?.presets.length ?? 0) > 0 || myStatus()?.emoji || myStatus()?.label}
+            >
               <div class="flex flex-wrap gap-1 px-2 pb-1">
                 <Show when={myStatus()?.emoji || myStatus()?.label}>
                   <button
@@ -277,9 +291,16 @@ export function UserMenu(props: { profile: () => MeProfile }) {
                         type="button"
                         title={preset.dnd ? 'Apply (do not disturb)' : 'Apply'}
                         class="text-[11px] font-medium text-neutral-600 hover:text-indigo-600 dark:text-neutral-300 dark:hover:text-indigo-400"
-                        onClick={() => void setStatus({ emoji: preset.emoji, label: preset.label, dnd: preset.dnd, minutes: null })}
+                        onClick={() =>
+                          void setStatus({
+                            emoji: preset.emoji,
+                            label: preset.label,
+                            dnd: preset.dnd,
+                            minutes: null,
+                          })
+                        }
                       >
-                        {preset.emoji ?? '💬'} {preset.label ?? preset.dnd ? preset.label : ''}
+                        {preset.emoji ?? '💬'} {(preset.label ?? preset.dnd) ? preset.label : ''}
                         {preset.dnd ? ' 🔕' : ''}
                       </button>
                       <button
@@ -313,7 +334,8 @@ export function UserMenu(props: { profile: () => MeProfile }) {
                       {
                         'bg-neutral-100 opacity-100 dark:bg-neutral-800':
                           (parseTheme(props.profile().theme) ?? 'system') === theme.value,
-                        'opacity-50': (parseTheme(props.profile().theme) ?? 'system') !== theme.value,
+                        'opacity-50':
+                          (parseTheme(props.profile().theme) ?? 'system') !== theme.value,
                       },
                     ]}
                     onClick={() => void quickTheme(theme.value)}

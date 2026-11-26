@@ -25,18 +25,19 @@ AI agents. Solo-maintained, free-tier resources, deliberate over clever.
 ## Commands
 
 ```bash
-pnpm install      # setup
+pnpm install      # setup (installs the pre-commit hooks)
 pnpm dev          # dev server
 pnpm build        # production build (also generates dist/server/wrangler.json)
 pnpm test         # vitest
 pnpm typecheck    # tsc --noEmit — must pass before any PR
 pnpm lint         # oxlint src — 0 errors required (warnings: pre-existing, don't add)
+pnpm preflight    # lint + typecheck + tests — the exact gate CI runs
+pnpm format       # prettier write (format:check runs in CI once wired)
 supabase start && supabase db reset   # local stack for server work
 ```
 
-Run `pnpm typecheck && pnpm test && pnpm lint` before committing. The CI
-quality workflow runs the same things, path-gated — don't make it find
-what you already knew.
+Run `pnpm preflight` before committing. Pre-commit hooks format and lint
+staged files automatically; preflight is the full check.
 
 ## Read the docs in this order (the "init" sequence)
 
@@ -84,6 +85,15 @@ re-read `docs/architecture.md`.
 - **Self-review before every PR:** run the `pr-prep` skill
   (`.agents/skills/pr-prep/SKILL.md`) — it is the checklist the maintainer
   reviews against.
+- **After you push:** post a change-explanation comment on the PR — what
+  changed from the reviewer's point of view, the riskiest part, what to
+  look at hardest. Agents authoring the PR write this themselves; a PR
+  whose diff is its only explanation is incomplete.
+- **Review discipline:** reviews resolve conversations, they don't silence
+  them; a review finding nothing in a >200-line PR probably didn't look;
+  performance-sensitive changes carry numbers, not adjectives.
+- **Never edit a merged migration** — CI blocks it (the migration guard).
+  Write a new migration instead.
 - **Merge commits with conflict resolution:** after resolving, verify the
   tree is marker-free — `git grep -n '^<<<<<<<\|^>>>>>>>' HEAD` must return
   nothing — before pushing. (This rule is written in blood.)
@@ -105,7 +115,7 @@ re-read `docs/architecture.md`.
 - Prefer small, reversible steps. Never delete files, rewrite history,
   push, publish, or spend money unless explicitly asked.
 - Keep AI-generated comments out of code unless they carry real
-  information; comments in this repo explain *why*, not *what*.
+  information; comments in this repo explain _why_, not _what_.
 
 ## Gotchas learned the hard way (don't re-learn them)
 
@@ -119,6 +129,9 @@ re-read `docs/architecture.md`.
   or props.
 - Migration guard is fail-closed; if it fails your PR, the diff actually
   touched `supabase/migrations/**` — write the guard note in the PR.
+- Never suppress a Solid diagnostics code (`[CODE] …`) — fix the cause.
+- Keep op kinds in the registries (`board-ops`, `workspace-ops`) — never
+  inline a mutation outside the engine.
 
 ---
 

@@ -45,7 +45,12 @@ export default function UserProfilePage(props: RouteProps<'/u/:userId'>) {
         {(person) => (
           <>
             <div class="flex items-center gap-4">
-              <Avatar src={person().avatar_url} name={person().display_name} email={person().email} size="lg" />
+              <Avatar
+                src={person().avatar_url}
+                name={person().display_name}
+                email={person().email}
+                size="lg"
+              />
               <div class="min-w-0">
                 <h1 class="truncate text-xl font-bold tracking-tight">
                   {person().display_name ?? person().email ?? 'Someone'}
@@ -68,10 +73,14 @@ export default function UserProfilePage(props: RouteProps<'/u/:userId'>) {
             </div>
 
             <section class="mt-8">
-              <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-400">Teams you share</h2>
+              <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-400">
+                Teams you share
+              </h2>
               <Show
                 when={person().teams.length > 0}
-                fallback={<p class="mt-2 text-sm text-neutral-400">No shared teams in your workspaces.</p>}
+                fallback={
+                  <p class="mt-2 text-sm text-neutral-400">No shared teams in your workspaces.</p>
+                }
               >
                 <ul class="mt-3 divide-y divide-neutral-200 rounded-2xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
                   <For each={person().teams}>
@@ -82,9 +91,13 @@ export default function UserProfilePage(props: RouteProps<'/u/:userId'>) {
                         </span>
                         <span class="min-w-0 flex-1">
                           <span class="block truncate text-sm font-medium">{team.teamName}</span>
-                          <span class="block truncate text-xs text-neutral-400">{team.workspaceName}</span>
+                          <span class="block truncate text-xs text-neutral-400">
+                            {team.workspaceName}
+                          </span>
                         </span>
-                        <span class={`rounded-full px-2 py-0.5 text-[11px] font-medium ${TEAM_ROLE_STYLE[team.role] ?? TEAM_ROLE_STYLE.member}`}>
+                        <span
+                          class={`rounded-full px-2 py-0.5 text-[11px] font-medium ${TEAM_ROLE_STYLE[team.role] ?? TEAM_ROLE_STYLE.member}`}
+                        >
                           {team.role === 'admin' ? 'team admin' : 'member'}
                         </span>
                         <a
@@ -104,10 +117,12 @@ export default function UserProfilePage(props: RouteProps<'/u/:userId'>) {
       </Show>
 
       <section class="mt-10 rounded-2xl border border-dashed border-neutral-300 p-5 dark:border-neutral-700">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-400">Work with agents</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-neutral-400">
+          Work with agents
+        </h2>
         <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-          Connect Claude, Cursor, or your own AI agents to this workspace — they act with your permissions,
-          nothing more.
+          Connect Claude, Cursor, or your own AI agents to this workspace — they act with your
+          permissions, nothing more.
         </p>
         <div class="mt-3 flex flex-wrap gap-2">
           <a
