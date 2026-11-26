@@ -350,3 +350,45 @@ describe('applyFold', () => {
     expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t9']);
   });
 });
+
+// ── foldTimelineBurst: the live timeline's hot path (phase 3) ─────────────
+
+import { foldTimelineBurst } from './board-fold';
+import type { CardEventRow } from './boards';
+
+const evt = (id: number, kind = 'created'): CardEventRow => ({
+  id,
+  kind,
+  detail: {},
+  actor_id: null,
+  created_at: `2026-01-0${Math.min(id, 9)}T00:00:00Z`,
+  agent: false,
+});
+
+describe('foldTimelineBurst', () => {
+  it('an in-order burst extends the page — rows ship, no re-query', () => {
+    const page = [evt(1), evt(2)];
+    expect(foldTimelineBurst(page, [evt(3), evt(4)])).toMatchObject([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+    ]);
+  });
+
+  it('an empty burst folds null — the caller re-fetches (or idles)', () => {
+    expect(foldTimelineBurst([evt(1)], [])).toBeNull();
+  });
+
+  it('an out-of-order burst folds null — one re-fetch, never a guess', () => {
+    expect(foldTimelineBurst([evt(1), evt(3)], [evt(2)])).toBeNull();
+  });
+
+  it('the page stays bounded at 100 rows (the trail window)', () => {
+    const page = Array.from({ length: 99 }, (_, i) => evt(i + 1));
+    const folded = foldTimelineBurst(page, [evt(100), evt(101)]);
+    expect(folded?.length).toBe(100);
+    expect(folded?.at(-1)?.id).toBe(101);
+    expect(folded?.at(0)?.id).toBe(2); // the oldest slid out
+  });
+});

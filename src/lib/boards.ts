@@ -12,7 +12,7 @@ import { query } from '@solidjs/router';
 import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
 
-import { applyFold, planFold, type FoldEvent, type TagRow } from './board-fold';
+import { applyFold, foldTimelineBurst, planFold, type FoldEvent, type TagRow } from './board-fold';
 import { createSupabaseRequestClient } from '../server/supabase';
 import { friendlyError } from '../server/friendly';
 import {
@@ -1464,6 +1464,104 @@ async function logCardEvent(
     console.error('card event failed:', cause);
   }
 }
+
+// ── the card's timeline, LIVE (phase 3: the 10s poll dies) ──────────────
+//
+// The events log is append-only per card, so the stream is cheap: the
+// first value is the current page, then each burst of INSERT events
+// carries its own rows (ADR-3: rows ship — no re-query on the hot path).
+// The monotonic bigint id makes the append exact: anything out of order
+// (a missed event, a replay) falls back to one re-fetch instead of a
+// guess.
+export const cardEventsStream = live(async function* (
+  cardId: string,
+): AsyncGenerator<CardEventRow[]> {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const id = assertId(cardId, 'card id');
+
+  // Session-before-subscribe (the boardStream lesson).
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error('Sign in to view this card');
+
+  /** The burst's raw rows, straight from the events payload. */
+  const batch: CardEventRow[] = [];
+  const control = producerControls();
+  const channel = supabase
+    .channel(`card-events:${id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'events',
+        filter: `card_id=eq.${id}`,
+      },
+      (payload: { new: unknown }) => {
+        const row = payload.new as {
+          id: number;
+          kind: string;
+          detail: Record<string, unknown> | null;
+          actor_id: string | null;
+          created_at: string;
+          agent: boolean | null;
+        } | null;
+        if (row) {
+          batch.push({
+            id: Number(row.id),
+            kind: row.kind,
+            detail: (row.detail ?? {}) as Record<string, unknown>,
+            actor_id: row.actor_id,
+            created_at: row.created_at,
+            agent: row.agent ?? false,
+          });
+          control.onChanged();
+        }
+      },
+    )
+    .on('system', {}, (payload: { status?: string; message?: string }) => {
+      if (payload?.status === 'error') {
+        console.error('[cardEventsStream] realtime system error:', payload.message);
+      }
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('cardEventsStream channel error:', err);
+      if (status === 'CHANNEL_ERROR') console.error('cardEventsStream channel error status');
+    });
+
+  try {
+    let rows = await fetchCardEvents(id);
+    let lastId = rows.at(-1)?.id ?? 0;
+    yield rows;
+    while (true) {
+      if (!control.pending) {
+        await new Promise<void>((resolve) => {
+          control.wake = resolve;
+        });
+      }
+      if (control.dead) return; // viewer went away — drop the channel
+      control.pending = false;
+      await new Promise((resolve) => setTimeout(resolve, 80)); // debounce bursts
+      if (!control.pending) {
+        const arrived = batch.splice(0, batch.length);
+        const folded = foldTimelineBurst(rows, arrived);
+        if (folded) {
+          // Rows ship: the burst extends the page, no query at all.
+          rows = folded;
+          lastId = rows.at(-1)!.id;
+        } else {
+          // Empty burst woken by transport chatter, or an out-of-order
+          // arrival: one re-fetch is the truth.
+          rows = await fetchCardEvents(id);
+          lastId = rows.at(-1)?.id ?? 0;
+        }
+        yield rows;
+      }
+    }
+  } finally {
+    void supabase.removeChannel(channel);
+  }
+});
 
 /** The card's durable id: the given id, or — when the caller opened the
  *  card while its provisional (relayed) row was still in view — the row

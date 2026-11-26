@@ -7,7 +7,7 @@ import { Avatar } from '../../components/Avatar';
 import { PriorityPill } from '../../components/PriorityPill';
 import { TagChip } from '../../components/TagChip';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
-import { perfFirstValue, perfTrack, perfStart, perfEnd, perfCancel } from '../../lib/perf';
+import { perfFirstValue, perfTrack } from '../../lib/perf';
 import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
 import { useEntities } from '../../lib/entity-store';
 import { planDrop } from '../../lib/card-drop';
@@ -58,37 +58,38 @@ import {
   boardChatStream,
   boardStream,
   cardCommentsStream,
+  cardEventsStream,
+  chatSeq,
   createCard,
   createList,
   deleteBoard,
+  deleteBoardMessage,
+  deleteComment,
   deleteList,
+  editBoardMessage,
+  editComment,
   findOrCreateTag,
-  getBoardSnapshot,
-  getBoardRevision,
-  getCrossBoardCards,
-  getWorkspaceBoardList,
-  type CrossCard,
   getBoardChatSnapshot,
+  getBoardRevision,
+  getBoardSnapshot,
   getCardComments,
   getCardEvents,
-  type CardEventRow,
-  chatSeq,
-  editComment,
-  deleteComment,
+  getCrossBoardCards,
+  getWorkspaceBoardList,
   moveCard as moveCardServer,
-  resolveCard as resolveCardServer,
-  unresolveCard as unresolveCardServer,
   postBoardMessage,
-  editBoardMessage,
-  deleteBoardMessage,
+  resolveCard as resolveCardServer,
   type BoardMessageRow,
-  updateBoard as updateBoardServer,
-  updateList as updateListServer,
-  updateCard as updateCardServer,
   type BoardSnapshot,
+  type CardEventRow,
   type CardView,
   type CommentRow,
+  type CrossCard,
   type ListRow,
+  unresolveCard as unresolveCardServer,
+  updateBoard as updateBoardServer,
+  updateCard as updateCardServer,
+  updateList as updateListServer,
 } from '../../lib/boards';
 import {
   getMyWorkspaces,
@@ -3558,9 +3559,45 @@ function CardDrawer(props: {
   };
 
   // ── the activity timeline: every change to this card ────────────────
-  // Events are slow-moving (a trail, not a chat): fetch on settings-tab
-  // open and poll gently while it's open — no live connection needed.
-  const [events, setEvents] = createSignal<CardEventRow[]>([]);
+  // LIVE (phase 3, ADR-4): the events log streams its own rows and the
+  // 10s poll is gone. The engine rides only the settings tab — the key
+  // empties when it closes and the source idles without a channel.
+  // The open mark keeps its old contract (ends at the first paint —
+  // the cached page on a warm open, the live page cold).
+  type TimelineSnapshot = { list: CardEventRow[] };
+  const eventsLive = liveQuery(cardEventsStream, 'card-events');
+  const timelineEngine = createEngine<TimelineSnapshot>({
+    streamSource: (key) =>
+      (async function* (): AsyncGenerator<TimelineSnapshot> {
+        if (!key) {
+          yield { list: [] };
+          return;
+        }
+        for await (const list of await perfFirstValue(
+          cachedStream(`card-timeline:${key}`, () => eventsLive(key), 'card-timeline-revalidate'),
+          'card-timeline-open',
+        )) {
+          yield { list };
+        }
+      })(),
+    key: () => (tab() === 'settings' ? cardIdNow() : ''),
+    empty: { list: [] },
+    clone: (snapshot) => ({ list: snapshot.list.slice() }),
+    merge: (draft, snapshot) => {
+      // Read-only trail: the durable list wins outright; the rows are
+      // identity-stable (the stream reuses row objects), so unchanged
+      // emissions write nothing.
+      if (
+        draft.list.length !== snapshot.list.length ||
+        draft.list.some((row, i) => row !== snapshot.list[i])
+      ) {
+        draft.list = snapshot.list;
+      }
+    },
+    status: () => eventsLive.status(tab() === 'settings' ? cardIdNow() : ''),
+    refresh: async () => ({ list: await getCardEvents(cardIdNow()) }),
+  });
+  const events = () => timelineEngine.view().list;
   // The timeline's rows re-slice when the workspace's tag vocabulary
   // changes: <For>'s callback is an untracked scope, so the chips' name
   // lookups inside eventLine never re-run on a rename by themselves. A
@@ -3570,64 +3607,6 @@ function CardDrawer(props: {
     void props.workspaceTags.length;
     return events().slice();
   });
-  createEffect(
-    // Only the SETTINGS tab polls; other tabs and the closed drawer hold
-    // nothing open.
-    () => (tab() === 'settings' ? cardIdNow() : ''),
-    (id) => {
-      if (!id) {
-        setEvents([]);
-        return;
-      }
-      let alive = true;
-      // Perf mark: the settings-tab open ends at the first PAINT — the
-      // cached page (a warm open, ~1ms) or the fetch (a cold open). The
-      // fetch itself carries its own mark, card-timeline-fetch. The token
-      // plus the painted flag close two races: a failed cold open still
-      // records (a slow failure is a slow open), and a cache read that
-      // resolves AFTER the fetch never paints stale rows over fresh ones.
-      const openToken = perfStart('card-timeline-open');
-      let painted = false;
-      const load = async (first: boolean) => {
-        try {
-          const rows = first
-            ? await perfTrack('card-timeline-fetch', () => getCardEvents(id))
-            : await getCardEvents(id);
-          if (alive) {
-            setEvents(rows);
-            cachePut(`card-timeline:${id}`, rows);
-            if (first) {
-              painted = true;
-              perfEnd('card-timeline-open', openToken);
-            }
-          }
-        } catch {
-          // The timeline is best-effort decoration — but the open mark
-          // must not dangle on a failed cold fetch.
-          if (first) perfEnd('card-timeline-open', openToken);
-        }
-      };
-      // Stale-while-revalidate: the cache paints instantly when this
-      // card's timeline was seen before; the fetch revalidates either
-      // way. Whichever paints first ends the open mark (the other end
-      // no-ops on the token).
-      void cacheGet<CardEventRow[]>(`card-timeline:${id}`).then((cached) => {
-        if (alive && cached && !painted) {
-          setEvents(cached);
-          perfEnd('card-timeline-open', openToken);
-        }
-      });
-      void load(true);
-      const timer = setInterval(() => void load(false), 10_000);
-      return () => {
-        alive = false;
-        clearInterval(timer);
-        // An open abandoned before its data arrived is not a sample —
-        // cancel quietly so it does not linger in perfInFlight either.
-        perfCancel('card-timeline-open', openToken);
-      };
-    },
-  );
   /** The actor's display name — the workspace roster first (members can
    *  vanish; the trail must keep naming them), falling back gracefully. */
   const actorName = (actorId: string | null) => {

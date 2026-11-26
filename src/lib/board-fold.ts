@@ -16,7 +16,7 @@
 // re-snapshot; the stream periodically re-syncs (see boardStream); the
 // client engine's durable poll re-fetches every 20s regardless; and every
 // reconnect starts from a fresh full snapshot.
-import type { BoardSummary, BoardSnapshot, CardView, ListRow } from './boards';
+import type { BoardSummary, BoardSnapshot, CardEventRow, CardView, ListRow } from './boards';
 
 /** One realtime event, narrowed to what the fold needs. The stream's
  *  channel handlers translate postgres_changes payloads into these. */
@@ -278,4 +278,22 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
     draft.revision = plan.revision;
   }
   return false;
+}
+
+/**
+ * Fold a burst of arrived event rows into a card's timeline page (pure;
+ * the card-events stream's hot path — ADR-3: rows ship, no re-query).
+ * The log is append-only with a monotonic bigint id, so an in-order
+ * burst extends the page; an empty burst or anything out of order (a
+ * missed event, a replayed delivery) means the caller re-fetches — null.
+ * The page stays bounded at 100 (the trail's window).
+ */
+export function foldTimelineBurst(
+  page: CardEventRow[],
+  arrived: CardEventRow[],
+): CardEventRow[] | null {
+  if (arrived.length === 0) return null;
+  const lastId = page.at(-1)?.id ?? 0;
+  if (!arrived.every((row) => row.id > lastId)) return null;
+  return [...page, ...arrived].slice(-100);
 }
