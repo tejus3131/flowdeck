@@ -58,11 +58,14 @@ Deterministic review aids; read-only except labels + one report comment:
 - **Labels** (bot-owned; human labels never touched): `migration`,
   `mcp`, `server`, `client`, `docs`, `infra`, `sync-engine`, `cache`,
   `fold`, `misc` — computed from the diff, pruned when stale.
-- **Migration guard** (blocking): modifying, deleting, or renaming an
-  existing migration fails the PR (L0 rule 1 — migrations are
-  append-only; editing one desyncs every database that already applied
-  it). Diffs the **merge base**, not the branch tip, so a base branch
-  that moved mid-PR can't false-positive.
+  Same-repo PRs only (fork PRs run with a read-only token; the writes
+  would 403).
+- **Migration guard** (blocking, runs for every PR including forks):
+  modifying, deleting, or renaming an existing migration fails the PR
+  (L0 rule 1 — migrations are append-only; editing one desyncs every
+  database that already applied it). Diffs the **merge base**, not the
+  branch tip, so a base branch that moved mid-PR can't false-positive.
+  Fails closed: a failed diff is a red check, never "clean".
 - **MCP tool report**: when `supabase/functions/mcp` changes, diffs the
   TOOLS array against the base and posts ONE comment (upserted per
   push) listing added/removed tools or noting behavior-only changes.

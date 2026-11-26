@@ -30,14 +30,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  classify:
+  # The guard runs for EVERY PR including forks — it needs no write
+  # access, and an edited migration from a fork must fail just the same.
+  migration-guard:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-          fetch-depth: 0 # the migration guard and tool diff need history
+          fetch-depth: 0 # the guard diffs history
 
       - name: Migration guard (append-only)
         run: |
@@ -77,6 +79,20 @@ jobs:
           done
           if [ "$bad" = "1" ]; then exit 1; fi
           echo "migration guard: clean"
+
+  # Labels + the MCP tool report need WRITE access — fork PRs run with
+  # a read-only token, so these steps would 403 and fail the workflow
+  # through no fault of the PR. Same-repo PRs only.
+  classify:
+    needs: migration-guard
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the tool diff needs history
 
       - name: Apply labels
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
