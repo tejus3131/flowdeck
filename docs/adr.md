@@ -253,3 +253,28 @@ A leaked deploy token is IP-bound, time-bound, minimally scoped, and
 rotates. The residual risk — a compromised runner during a deploy run —
 is bounded by TTL + scope + rotation. When (if) Cloudflare or Supabase
 ship OIDC federation, this ADR is superseded by a new one.
+
+## ADR-16: Frozen design token layer
+
+**Context.** The UI redesign (phase 6) needs its visual decisions made
+_before_ component code moves, or every contributor re-derives taste per
+PR. Two sourced research reports (`docs/research/`) were filtered into
+adopt/adapt/skip findings (`docs/design-findings.md`), and the adopted
+numbers were frozen as tokens (`docs/design-system.md`).
+
+**Decision.** `docs/design-system.md` is the single source of truth for
+visual values: color (OKLCH; warm/cool gray and indigo/violet accent as
+named experiment axes until the playground picks), typography (Inter,
+1.5 line-height, 708px measure, no 700 weight), spacing (8px grid),
+radius (semantic aliases), motion (the 100/200/300ms budget; rbd +
+Notion + Linear curves; spring easing reserved for completion moments;
+`prefers-reduced-motion` globally), and elevation (two levels).
+Components read tokens; they never hardcode. A value that doesn't exist
+gets added to the token file first.
+
+**Consequences.** Token changes reopen this decision and require a new
+ADR (or an explicit amendment line here) in the same PR. The experiment
+axes (gray, accent) resolve by feel in the playground, and their
+resolution is recorded as an amendment to this ADR — not a silent edit.
+The token layer is CSS-first (custom properties); Tailwind 4 reads the
+same values via `@theme`, so there is exactly one place a color lives.

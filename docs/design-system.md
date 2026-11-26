@@ -50,7 +50,25 @@ by feel becomes the default and the other stays as a one-token swap.
 per theme — perceptually even, no "yellow looks brighter than blue":
 
 ```css
---fd-tag-1..8: oklch(0.75 0.14 <hue>) … /* hues: 25, 60, 145, 195, 250, 300, 340, 80 */;
+/* light */
+--fd-tag-1: oklch(0.75 0.14 25); /* amber   */
+--fd-tag-2: oklch(0.75 0.14 80); /* lime    */
+--fd-tag-3: oklch(0.75 0.14 145); /* green   */
+--fd-tag-4: oklch(0.75 0.14 195); /* sky     */
+--fd-tag-5: oklch(0.75 0.14 250); /* blue    */
+--fd-tag-6: oklch(0.75 0.14 300); /* violet  */
+--fd-tag-7: oklch(0.75 0.14 340); /* pink    */
+--fd-tag-8: oklch(0.75 0.14 60); /* gold    */
+/* dark — one lightness step down (0.70) so chips hold contrast on
+   dark surfaces without washing out */
+--fd-tag-1: oklch(0.7 0.13 25);
+--fd-tag-2: oklch(0.7 0.13 80);
+--fd-tag-3: oklch(0.7 0.13 145);
+--fd-tag-4: oklch(0.7 0.13 195);
+--fd-tag-5: oklch(0.7 0.13 250);
+--fd-tag-6: oklch(0.7 0.13 300);
+--fd-tag-7: oklch(0.7 0.13 340);
+--fd-tag-8: oklch(0.7 0.13 60);
 ```
 
 **60/30/10 discipline:** grays carry ~60% (surfaces, text), secondary
@@ -78,7 +96,12 @@ Weights: 400 body, 500 emphasis/labels, 600 titles. No 700 — Inter at
 
 ## Spacing & radius
 
-Canva's 8px grid, Notion's semantic radius aliases:
+Canva's 8px grid, Notion's semantic radius aliases. The values sit
+between the research suggestions (8/12/16) and Linear's dominant 8px —
+a deliberate middle: chips and inputs read tighter than Notion's 12,
+drawers softer than Linear's 8. The findings filter overrules the
+research here on feel; the playground's P-variants stress-test these
+before any component adopts them.
 
 ```css
 --fd-space-1: 4px;
@@ -103,6 +126,7 @@ frequency rule):
 --fd-dur-2: 200ms; /* displacement, exits */
 --fd-dur-3: 300ms; /* drawer/popover enters */
 --fd-ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* enters — Notion */
+--fd-ease-panel: cubic-bezier(0.32, 0.72, 0, 1); /* drawer/overlay motion — Linear */
 --fd-ease-move: cubic-bezier(0.2, 0, 0, 1); /* drag displacement — rbd */
 --fd-ease-drop: cubic-bezier(0.2, 1, 0.1, 1); /* drop settle — rbd */
 --fd-ease-spring: cubic-bezier(0.45, 1.45, 0.8, 1); /* completion ONLY */
