@@ -200,8 +200,8 @@ not GitHub.
      unauthenticated by design, rate-limited), token, protocol, resource
      metadata. The PAT (`Bearer fd_…`) is its security model — identical
      to prod, which has no Access on the app domain.
-   The rule: bypass paths are protocol plumbing, never app surfaces. The
-   UI and `/mcp/authorize` (the human consent page) stay behind Access.
+     The rule: bypass paths are protocol plumbing, never app surfaces. The
+     UI and `/mcp/authorize` (the human consent page) stay behind Access.
 4. Preview Supabase: auth site URL + redirect URLs = preview domain;
    signups invite-only.
 5. Create one preview PAT (in the preview DB) for probe-mcp; store as a
