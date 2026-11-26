@@ -573,10 +573,16 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
       await new Promise((resolve) => setTimeout(resolve, 80));
       if (!control.pending) {
         const raw = batch.splice(0, batch.length);
-        // Resolve raw attaches BEFORE planning: the vocabulary carries
-        // what the burst's tag-upserts delivered. An attach whose name
-        // is still unknown (an event race this stream never saw) degrades
-        // to a card-touch — one card fetch, never a guessed chip name.
+        // The burst's tag-upserts feed the vocabulary BEFORE attaches
+        // resolve: the whole debounced burst has arrived by now, so a tag
+        // created and linked in the same window resolves together — no
+        // needless card fetch for it.
+        for (const event of raw) {
+          if (event.kind === 'tag-upsert') tagNames.set(event.row.id, event.row.name);
+        }
+        // An attach whose name is STILL unknown after that (a race this
+        // stream never saw) degrades to a card-touch — one card fetch,
+        // never a guessed chip name.
         const events: FoldEvent[] = raw.map((event) => {
           if (event.kind !== 'card-tag-attach-raw') return event;
           const name = tagNames.get(event.tagId);
@@ -589,7 +595,6 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
             : { kind: 'card-touch', id: event.cardId };
         });
         const plan = planFold(events);
-        for (const [tagId, row] of plan.tagUpserts) tagNames.set(tagId, row.name);
         // Visibility-shaping changes (and the periodic drift bound) fold
         // to a full re-snapshot; everything else applies in memory.
         if (plan.resync || ++batches % RESYNC_EVERY_BATCHES === 0) {
