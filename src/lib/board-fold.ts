@@ -39,6 +39,15 @@ export type FoldEvent =
    *  cards' embedded chips in memory — no re-snapshot (ADR-3: the old
    *  `resync` on any tags change is gone). */
   | { kind: 'tag-upsert'; row: TagRow }
+  /** card_tags INSERT — the join row ships in the event (ADR-3), the tag
+   *  name resolved by the stream (the fold stays pure — it never
+   *  fetches; an unresolvable attach degrades to card-touch upstream). */
+  | { kind: 'card-tag-attach'; cardId: string; tag: { id: string; name: string } }
+  /** card_tags DELETE — the tag leaves the card. */
+  | { kind: 'card-tag-detach'; cardId: string; tagId: string }
+  /** card_assignees INSERT/DELETE — join rows folded directly (assignees
+   *  are user ids; nothing to resolve). */
+  | { kind: 'card-assignee-set'; cardId: string; userId: string; assigned: boolean }
   /** board_revisions UPDATE — the exact server cursor (migration 0032). */
   | { kind: 'revision'; value: number }
   /** A visibility-shaping change (board_access, board_team_access, team
@@ -55,6 +64,10 @@ export type FoldPlan = {
   cardDeletes: Set<string>;
   /** The vocabulary rows the burst carried, id → last event wins. */
   tagUpserts: Map<string, TagRow>;
+  /** Join rows, card → tag id → last op wins (name undefined on detach). */
+  cardTagOps: Map<string, Map<string, { name?: string; attached: boolean }>>;
+  /** Assignee join rows, card → user id → last op wins. */
+  assigneeOps: Map<string, Map<string, boolean>>;
   /** The exact server revision when ≥ 0; -1 = no revision event arrived. */
   revision: number;
   /** True when only a full re-snapshot answers the burst. */
@@ -72,6 +85,8 @@ export function planFold(events: FoldEvent[]): FoldPlan {
     cardTouches: new Set(),
     cardDeletes: new Set(),
     tagUpserts: new Map(),
+    cardTagOps: new Map(),
+    assigneeOps: new Map(),
     revision: -1,
     resync: false,
   };
@@ -95,6 +110,24 @@ export function planFold(events: FoldEvent[]): FoldPlan {
       case 'tag-upsert':
         plan.tagUpserts.set(event.row.id, event.row);
         break;
+      case 'card-tag-attach': {
+        const ops = plan.cardTagOps.get(event.cardId) ?? new Map();
+        plan.cardTagOps.set(event.cardId, ops);
+        ops.set(event.tag.id, { name: event.tag.name, attached: true });
+        break;
+      }
+      case 'card-tag-detach': {
+        const ops = plan.cardTagOps.get(event.cardId) ?? new Map();
+        plan.cardTagOps.set(event.cardId, ops);
+        ops.set(event.tagId, { attached: false });
+        break;
+      }
+      case 'card-assignee-set': {
+        const ops = plan.assigneeOps.get(event.cardId) ?? new Map();
+        plan.assigneeOps.set(event.cardId, ops);
+        ops.set(event.userId, event.assigned);
+        break;
+      }
       case 'revision':
         plan.revision = Math.max(plan.revision, event.value);
         break;
@@ -154,6 +187,35 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
   // events may or may not ride the same burst — either way they're gone).
   if (plan.listDeletes.size > 0) {
     draft.cards = draft.cards.filter((card) => !plan.listDeletes.has(card.list_id));
+  }
+
+  // Join rows fold in place — O(1) per op, no fetch (ADR-3). Applied
+  // BEFORE the card-views block: a fetched view is the fresher truth for
+  // its card and overwrites whatever the events predicted. Events for
+  // cards this board doesn't hold (the unfiltered card-side channels
+  // hear other boards too) skip — the periodic re-sync bounds drift.
+  if (plan.cardTagOps.size > 0 || plan.assigneeOps.size > 0) {
+    const byId = new Map(draft.cards.map((card) => [card.id, card]));
+    for (const [cardId, tagOps] of plan.cardTagOps) {
+      const card = byId.get(cardId);
+      if (!card) continue;
+      for (const [tagId, op] of tagOps) {
+        const without = card.tags.filter((tag) => tag.id !== tagId);
+        card.tags = op.attached
+          ? [...without, { id: tagId, name: op.name ?? '' }].sort((a, b) =>
+              a.name.localeCompare(b.name),
+            )
+          : without;
+      }
+    }
+    for (const [cardId, userOps] of plan.assigneeOps) {
+      const card = byId.get(cardId);
+      if (!card) continue;
+      for (const [userId, assigned] of userOps) {
+        const without = card.assignees.filter((id) => id !== userId);
+        card.assignees = assigned ? [...without, userId] : without;
+      }
+    }
   }
 
   if (plan.cardDeletes.size > 0 || views.length > 0) {

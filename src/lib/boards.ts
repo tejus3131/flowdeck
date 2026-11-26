@@ -367,9 +367,11 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
   // The fold (Phase 2b): events land as FoldEvents, the loop debounces a
   // burst and folds it into the in-memory snapshot instead of re-querying
   // the board — no database work on the hot path, echoes land in the
-  // debounce window.
-  const batch: FoldEvent[] = [];
-  const push = (event: FoldEvent) => {
+  // debounce window. A card-tag ATTACH lands raw — its tag name resolves
+  // at plan time against the vocabulary below, so the fold stays pure.
+  type RawFoldEvent = FoldEvent | { kind: 'card-tag-attach-raw'; cardId: string; tagId: string };
+  const batch: RawFoldEvent[] = [];
+  const push = (event: RawFoldEvent) => {
     batch.push(event);
     control.onChanged();
   };
@@ -431,21 +433,48 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
         push({ kind: 'board-row', row: payload.new as BoardSummary });
       },
     )
-    // Assignments reshape the board too (avatars on cards): the card's
-    // view is re-fetched for the touched card only.
+    // Assignments ship their join rows (ADR-3 — phase 2): user ids fold
+    // directly — nothing to resolve, no card fetch.
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'card_assignees' },
-      (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
-        push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
+      (payload: {
+        eventType: string;
+        new: { card_id?: string; user_id?: string } | null;
+        old: { card_id?: string; user_id?: string } | null;
+      }) => {
+        const row = payload.new ?? payload.old;
+        const cardId = String(row?.card_id ?? '');
+        const userId = String(row?.user_id ?? '');
+        if (!cardId || !userId) return; // a malformed payload — nothing to fold
+        push({
+          kind: 'card-assignee-set',
+          cardId,
+          userId,
+          assigned: payload.eventType !== 'DELETE',
+        });
+      },
     )
-    // Same for the tag links; the workspace's tag VOCABULARY (a rename)
-    // reshapes chips on cards we cannot name — full resync.
+    // Tag links ship their join rows too (ADR-3 — phase 2). The attach's
+    // tag NAME is not in the payload: it lands raw and resolves at plan
+    // time against the stream's vocabulary (seeded by the first
+    // snapshot, kept current by tag-upserts) — an unresolvable attach
+    // degrades to one card fetch, never a guess.
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'card_tags' },
-      (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
-        push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
+      (payload: {
+        eventType: string;
+        new: { card_id?: string; tag_id?: string } | null;
+        old: { card_id?: string; tag_id?: string } | null;
+      }) => {
+        const row = payload.new ?? payload.old;
+        const cardId = String(row?.card_id ?? '');
+        const tagId = String(row?.tag_id ?? '');
+        if (!cardId || !tagId) return; // a malformed payload — nothing to fold
+        if (payload.eventType === 'DELETE') push({ kind: 'card-tag-detach', cardId, tagId });
+        else push({ kind: 'card-tag-attach-raw', cardId, tagId });
+      },
     );
 
   // The workspace's tag VOCABULARY rides scoped row events (ADR-3,
@@ -508,9 +537,20 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
       if (status === 'TIMED_OUT') console.error('boardStream channel timed out');
     });
 
+  /** The tag vocabulary this stream keeps for join-row resolution
+   *  (ADR-3): seeded by every full snapshot's chips, kept current by
+   *  tag-upsert events as they fold. Attach events resolve against it
+   *  at plan time — by then the whole debounced burst has arrived, so a
+   *  tag created and linked in the same window resolves together. */
+  const tagNames = new Map<string, string>();
+  const seedVocabulary = (value: BoardSnapshot) => {
+    for (const card of value.cards) for (const tag of card.tags) tagNames.set(tag.id, tag.name);
+  };
+
   try {
     // Current value first — the reconnect contract.
     let current = await snapshot(supabase, id);
+    seedVocabulary(current);
     yield current;
     while (true) {
       if (!control.pending) {
@@ -523,8 +563,24 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
       // Debounce bursts: one fold for a flurry of changes.
       await new Promise((resolve) => setTimeout(resolve, 80));
       if (!control.pending) {
-        const events = batch.splice(0, batch.length);
+        const raw = batch.splice(0, batch.length);
+        // Resolve raw attaches BEFORE planning: the vocabulary carries
+        // what the burst's tag-upserts delivered. An attach whose name
+        // is still unknown (an event race this stream never saw) degrades
+        // to a card-touch — one card fetch, never a guessed chip name.
+        const events: FoldEvent[] = raw.map((event) => {
+          if (event.kind !== 'card-tag-attach-raw') return event;
+          const name = tagNames.get(event.tagId);
+          return name
+            ? {
+                kind: 'card-tag-attach',
+                cardId: event.cardId,
+                tag: { id: event.tagId, name },
+              }
+            : { kind: 'card-touch', id: event.cardId };
+        });
         const plan = planFold(events);
+        for (const [tagId, row] of plan.tagUpserts) tagNames.set(tagId, row.name);
         // Visibility-shaping changes (and the periodic drift bound) fold
         // to a full re-snapshot; everything else applies in memory.
         if (plan.resync || ++batches % RESYNC_EVERY_BATCHES === 0) {
@@ -532,6 +588,7 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
             `[boardStream ${id.slice(0, 8)}] ${plan.resync ? 'visibility change' : 'periodic re-sync'} — re-snapshotting`,
           );
           current = await snapshot(supabase, id);
+          seedVocabulary(current);
         } else {
           const views = await fetchCardViews(supabase, id, plan.cardTouches);
           const next: BoardSnapshot = {
@@ -541,6 +598,7 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
           };
           if (applyFold(next, plan, views)) {
             current = await snapshot(supabase, id);
+            seedVocabulary(current);
           } else {
             current = next;
           }
