@@ -4,7 +4,7 @@
       "url": "https://mcp.posthog.com/mcp",
       "type": "http"
     },
-    "flowdeck preview": {
+    "flowdeck-preview": {
       "url": "https://preview.flowdeck.tejusgupta.dev/api/mcp",
       "type": "http"
     },
