@@ -6,9 +6,11 @@ description: The production release routine for Flowdeck — open the release PR
 # Prod release — the routine
 
 Flowdeck deploys continuously from `preview` (auto) and from `main`
-(release click). A prod release = one PR from `preview` into `main`,
-merged, then the `production` environment approval. This skill is the
-whole run; `docs/ci-cd.md` is the source of truth it distills.
+(release click). A prod release = one PR from `preview` into `main`
+(merged with a **merge commit** — main's ruleset allows merge commits;
+preview's stays squash-only), then the `production` environment
+approval. This skill is the whole run; `docs/ci-cd.md` is the source
+of truth it distills.
 
 ## 0. Preconditions
 
@@ -113,7 +115,11 @@ list in the description.
 ## 7. Merge and approve the deploy
 
 ```bash
-gh pr merge <num> --squash   # squash is the only allowed method
+gh pr merge <num> --merge   # release PRs merge with a MERGE COMMIT, not
+                            # squash: squash diverges main from preview
+                            # (the squash commit exists only on main) and
+                            # forces "absorb main's history" merges later.
+                            # Only main's ruleset allows merge commits.
 ```
 
 Merging `main` triggers `deploy-prod` (path-based, ordered matrix). It

@@ -107,9 +107,20 @@ Every deploy is a visible release — no deploy happens without a record:
   changelog is the release history, assembled by GitHub.
 - **Deployment record**: one success `Deployment` on the `preview` /
   `production` environment per deploy — the Environments tab is the
-  browsable deploy history. A failed leg never produces a success
-  release: the release step runs after the deploy legs, not instead of
-  them.
+  browsable deploy history. The record is the one the environment gate
+  creates when the deploy job starts (its `ref` is the branch name, so
+  the release step matches it by SHA, not by `ref`) and is marked
+  success only in the release step, after every leg passed. A failed
+  leg never produces a success release: the release step runs after
+  the deploy legs, not instead of them.
+- **Release PR merge method**: release PRs (`preview` → `main`) merge
+  with a **merge commit** (main's ruleset allows merge commits; the
+  preview ruleset stays squash-only for feature PRs). Squashing a
+  release diverges `main` from `preview` — the squash commit exists
+  only on `main`, so the next release's diff and commit list drift and
+  "absorb main's history into preview" merges become necessary. The
+  merge commit keeps the merge-base aligned and rollback is a single
+  revert of it.
 
 ### W4 — `keep-alive` (cron, weekly)
 
