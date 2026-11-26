@@ -6,6 +6,12 @@ taxonomy, the instrumentation rules, and the dashboards that read them.
 Companion: [`performance-rules.md`](./performance-rules.md) (the perf marks
 feed the sink described here).
 
+**This doc is the system-telemetry layer** — is the machine healthy. The
+behavioral layer (what humans do, how it becomes a decision) lives in
+[`data-playbook.md`](./data-playbook.md): the behavior event taxonomy,
+journeys, feedback, experiments at our scale, and the weekly/monthly/
+quarterly decision cadence. Read both before adding any event.
+
 ## The stack
 
 | Tool            | What it gives us                                                                         | Free tier                                                                                                 | Cost control                                                            |
@@ -47,6 +53,11 @@ adds its event — the observability mirror of performance-rules 12).
 - **Experiments need one primary metric, declared up front** — a
   `panel_open` p95, a `mutation_echo` p95, or a `page_open` retention
   shape. An experiment with no metric is a flag, not an experiment.
+- **At our traffic, ship-and-observe beats A/B** — the sample-size math
+  makes a true test take years, and underpowered tests manufacture fake
+  winners. The holdout pattern (5–10% kept on the old surface) is the
+  only causal comparison we can afford. Full reasoning and the flag
+  lifecycle rules: [`data-playbook.md`](./data-playbook.md).
 - Experiments run on preview before prod (the same review the code gets).
 - Flag requests are metered (1M/mo) but cheap; do **not** poll flags in a
   loop or fork them per entity.
@@ -61,6 +72,10 @@ adds its event — the observability mirror of performance-rules 12).
 4. **MCP**: `mcp_tool_call` by tool and op — which agent surfaces are used,
    and what they cost (row counts, latency).
 5. **Cost**: PostHog events/mo against the 1M cap, replays against 5K.
+
+The weekly decision ritual reads one dashboard (the adoption one) plus
+sync health — the cadence and the questions each tile answers are in
+[`data-playbook.md`](./data-playbook.md).
 
 ## Rules
 
