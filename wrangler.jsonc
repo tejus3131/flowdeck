@@ -4,6 +4,14 @@
   // in workerd (dev) / deploys it as the Worker (build). Static assets are
   // served by the platform from dist/client; everything else hits the
   // Solid handler.
+  //
+  // Environments (docs/ci-cd.md): the top level IS production (worker
+  // `flowdeck`, prod Supabase); `env.preview` deploys as
+  // `flowdeck-preview` with the preview project's URL. Client env
+  // (VITE_*) is baked at build time — CI feeds the right values per
+  // environment; nothing here holds secrets. Custom domains are attached
+  // in the dashboard and survive deploys (deliberately not `routes`, so
+  // deploys never fight the dashboard).
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "flowdeck",
   "main": "virtual:solid-ssr-handler",
@@ -18,5 +26,13 @@
   },
   "vars": {
     "SUPABASE_URL": "https://ylarhvcbpppujpjnpxkq.supabase.co"
+  },
+  "env": {
+    "preview": {
+      "name": "flowdeck-preview",
+      "vars": {
+        "SUPABASE_URL": "https://nopozruoekakakvwfpmh.supabase.co"
+      }
+    }
   }
 }

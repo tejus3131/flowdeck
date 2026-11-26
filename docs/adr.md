@@ -200,3 +200,59 @@ already deploy-order-tolerant (see the 0032 fallback in `snapshot()`).
 **Consequences.** Docs-only PRs deploy nothing. A migration-only PR doesn't
 rebuild the worker. The order is a rule — code that requires a migration
 ships in the same merge, never before it.
+
+## ADR-15: CI credentials policy
+
+**Context.** The threat: CI runs are a popular exfiltration target
+(malicious PRs, compromised third-party actions, leaked logs). The ideal —
+per-run, short-lived minted credentials via GitHub's OIDC federation —
+exists for AWS/GCP/Azure/Vault. Neither Cloudflare nor Supabase supports
+OIDC federation for their API tokens (verified against current docs:
+wrangler in CI takes a static API token; Supabase CLI takes a static
+access token). Minting per-run tokens via each provider's API would
+require storing a *token-minting* token (Cloudflare "API Tokens: Edit",
+Supabase account-wide) — strictly more dangerous than the tokens being
+minted. Rejected.
+
+**Decision.** Layered mitigation instead:
+
+1. **PR runs touch zero provider credentials.** The quality workflow runs
+   against the local Supabase stack only — no `SUPABASE_ACCESS_TOKEN`, no
+   Cloudflare token, no DB passwords reach pull_request workflows at all.
+   Deploy credentials exist only in the `preview` and `production`
+   environments, which only protected-branch merges can enter.
+2. **Minimum scope.** Cloudflare token: "Edit Cloudflare Workers" on this
+   account + zone only. Supabase: `db push` uses the per-project DB
+   password (`--db-url`), not the account-wide access token; the access
+   token is used only for `functions deploy`.
+3. **TTL + rotation.** Cloudflare tokens get a TTL (90 days) — expiry
+   forces rotation; the calendar reminder is the rotation runbook.
+   Supabase access token rotated quarterly.
+4. **IP restriction: evaluated, dropped.** GitHub-hosted runner ranges
+   are huge, rotate weekly, and maintaining the allowlist is a chore
+   with modest security return. TTL + scope + env-gating carry the
+   policy. Cloudflare tokens get a TTL (90 days) — expiry forces
+   rotation; the calendar reminder is the rotation runbook. Supabase
+   access token rotated quarterly.
+5. **GitHub hardening.** Default `GITHUB_TOKEN` read-only (set); fork PRs
+   get no workflows (set); every workflow pins actions to full commit
+   SHAs; per-workflow `permissions:` blocks; `persist-credentials:
+   false` on checkout; no `pull_request_target` + PR-head checkout
+   patterns, ever.
+6. **Environments as the gate.** `production` requires a reviewer;
+   `preview` is merge-gated. Credentials live in environments, not
+   repo-level, wherever possible.
+
+**Consequences.** A compromised PR cannot reach any provider credential.
+A leaked deploy token is IP-bound, time-bound, minimally scoped, and
+rotates. The residual risk — a compromised runner during a deploy run —
+is bounded by TTL + scope + rotation. When (if) Cloudflare or Supabase
+ship OIDC federation, this ADR is superseded by a new one.
+
+**Decision.** CI inspects changed paths and deploys in order:
+migrations → edge functions → worker. Schema lands before code; the app is
+already deploy-order-tolerant (see the 0032 fallback in `snapshot()`).
+
+**Consequences.** Docs-only PRs deploy nothing. A migration-only PR doesn't
+rebuild the worker. The order is a rule — code that requires a migration
+ships in the same merge, never before it.

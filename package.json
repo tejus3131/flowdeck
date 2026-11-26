@@ -1,8 +1,9 @@
 {
-  "name": "example-fullstack",
+  "name": "flowdeck",
   "version": "0.0.0",
-  "description": "",
+  "description": "Team workspace: boards, cards, chats, and an MCP server for AI agents",
   "type": "module",
+  "packageManager": "pnpm@11.14.0",
   "scripts": {
     "dev": "vite",
     "dev:node": "DEV_EDGE=0 vite",
@@ -10,7 +11,8 @@
     "start": "node --env-file-if-exists=.env dist/server/node.js",
     "serve": "vite preview",
     "test": "vitest",
-    "lint": "oxlint src"
+    "lint": "oxlint src",
+    "typecheck": "tsc --noEmit"
   },
   "license": "MIT",
   "devDependencies": {
