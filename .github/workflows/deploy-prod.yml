@@ -159,8 +159,14 @@ jobs:
             gh release create "$TAG" --target "$GITHUB_SHA" --title "Release — $TAG" \
               --notes "$body" --generate-notes
           fi
-          DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments?ref=$GITHUB_SHA&environment=production" \
-            --jq '.[0].id // ""')
+          # Reuse the deployment the environment gate created when this job
+          # started (its `ref` is the BRANCH name — "main"/"preview" — not
+          # the SHA, so a ref-filtered lookup misses it and mints a second
+          # record). Match on the SHA client-side instead: one deployment
+          # record per deploy, the gate's, marked success only here —
+          # after every leg passed.
+          DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments?environment=production&per_page=20" \
+            --jq "[.[] | select(.sha == \"$GITHUB_SHA\")][0].id // \"\"")
           if [ -z "$DEPLOY_ID" ]; then
             # required_contexts=[] skips GitHub's commit-status validation:
             # when omitted, the API verifies required contexts and fails with
