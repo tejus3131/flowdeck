@@ -34,6 +34,8 @@ const EMPTY_DETAIL: WorkspaceDetail = {
 
 export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
   const workspaceLive = liveQuery(workspaceStream, 'workspace');
+  // Declared before the engine: its ingest closure references the store.
+  const entities = useEntities();
   const engine = createEngine<WorkspaceDetail>({
     streamSource: (key) =>
       perfFirstValue(
@@ -75,7 +77,6 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
   // The vocabulary reads through the entity store (phase 1, ADR-1): the
   // detail gate below keeps the Loading state honest, and every row —
   // name, description — resolves from the one store reference.
-  const entities = useEntities();
   const tags = createMemo(() => entities.tagsOfWorkspace(props.params.workspaceId));
 
   // Card counts per tag — visible cards only (RLS on card_tags).

@@ -169,6 +169,13 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // liveQuery: one shared channel per board, request-scoped on the server
   // (SSR renders the first value and closes), reconnecting on the client.
   const boardLive = liveQuery(boardStream, 'board');
+  // The L2 entity store (phase 1): both engines normalize their durable
+  // snapshots into it — every chip on this page resolves tag names from
+  // it, so a rename re-renders them all in the frame it lands (the
+  // canonical test). Declared BEFORE the engines: their ingest closures
+  // reference it, and while those only fire on async durable emissions
+  // today, the reference must not depend on that.
+  const entities = useEntities();
   const engine = createBoardEngine(
     // Perf mark: board open → first snapshot (docs/performance.md budget).
     // The cached stream seeds the view instantly on a warm open; the live
@@ -213,11 +220,6 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
     (snap) => entities.ingestBoardSnapshot(snap),
   );
   const view = engine.view;
-  // The L2 entity store (phase 1): both engines below normalize their
-  // durable snapshots into it — every chip on this page resolves tag
-  // names from it, so a rename re-renders them all in the frame it
-  // lands (the canonical test).
-  const entities = useEntities();
   const me = createMemo(() => getMe());
   const navigate = useNavigate();
 
@@ -2567,7 +2569,7 @@ function SmartTextarea(props: {
         })
         .slice(0, 6)
         .map((member) => {
-          const label = (member.display_name ?? member.email ?? 'member').replace(/[\](\[]/g, '');
+          const label = (member.display_name ?? member.email ?? 'member').replace(/[\]([]/g, '');
           return {
             key: member.user_id,
             label,
@@ -2602,7 +2604,7 @@ function SmartTextarea(props: {
         .filter((team) => !q || team.name.toLowerCase().includes(q))
         .slice(0, 3)
         .map((team) => {
-          const label = team.name.replace(/[\](\[]/g, '');
+          const label = team.name.replace(/[\]([]/g, '');
           return {
             key: `team:${team.id}`,
             label: `${label} · team`,

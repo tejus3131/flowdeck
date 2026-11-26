@@ -47,6 +47,8 @@ const TIME_WINDOWS: Array<{ id: string; label: string; days: number | null }> = 
 
 export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>) {
   const workspaceLive = liveQuery(workspaceStream, 'workspace');
+  // Declared before the engine: its ingest closure references the store.
+  const entities = useEntities();
   const engine = createEngine<WorkspaceDetail>({
     streamSource: (key) =>
       perfFirstValue(
@@ -86,7 +88,6 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
   // The tag row resolves from the entity store (phase 1, ADR-1): a rename
   // on ANY surface — here, the board, another tab — lands as one store
   // write and this page's heading, chips, and links move in that frame.
-  const entities = useEntities();
   const tag = createMemo(() => entities.tagById(props.params.tagId) ?? null);
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
 
