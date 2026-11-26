@@ -49,6 +49,7 @@ where not exists (
   select 1 from public.events e
   where e.kind = ce.kind
     and e.card_id = ce.card_id
+    and e.actor_id is not distinct from ce.actor_id
     and e.created_at = ce.created_at
     and e.detail = ce.detail
 )
