@@ -131,20 +131,13 @@ type Ctx = {
   teamName: string;
 };
 
-async function contextFor(
-  supabase: Client,
-  row: NewNotification,
-): Promise<Ctx> {
+async function contextFor(supabase: Client, row: NewNotification): Promise<Ctx> {
   const boardId = row.boardId ?? null;
   const cardId = row.cardId ?? null;
   const actorId = row.actorId ?? null;
   const subjectId = row.subjectId ?? null;
   // Board-scope rows (chat + its mentions) land with the chat panel open.
-  const url = boardId
-    ? cardId
-      ? `/b/${boardId}?card=${cardId}`
-      : `/b/${boardId}?chat=1`
-    : '/';
+  const url = boardId ? (cardId ? `/b/${boardId}?card=${cardId}` : `/b/${boardId}?chat=1`) : '/';
   const teamId = row.subjectTeamId ?? null;
   const [board, card, actor, subject, team] = await Promise.all([
     boardId
@@ -165,7 +158,8 @@ async function contextFor(
   ]);
   const cardRow = card.data as { number: number | null; title: string | null } | null;
   const boardName = (board.data as { name: string | null } | null)?.name ?? 'a board';
-  const cardLabel = cardRow?.number !== null && cardRow?.number !== undefined ? `#${cardRow.number}` : boardName;
+  const cardLabel =
+    cardRow?.number !== null && cardRow?.number !== undefined ? `#${cardRow.number}` : boardName;
   return {
     boardId: boardId,
     cardId: cardId,
@@ -174,7 +168,8 @@ async function contextFor(
     cardTitle: cardRow?.title ?? '',
     boardName,
     actorName: (actor.data as { display_name: string | null } | null)?.display_name ?? 'Someone',
-    subjectName: (subject.data as { display_name: string | null } | null)?.display_name ?? 'someone',
+    subjectName:
+      (subject.data as { display_name: string | null } | null)?.display_name ?? 'someone',
     teamName: (team.data as { name: string | null } | null)?.name ?? 'a team',
   };
 }
@@ -185,11 +180,26 @@ function payloadFor(row: NewNotification, ctx: Ctx, recipient: string): PushPayl
   const fallbackBody = row.body ?? ctx.cardTitle;
   switch (row.kind) {
     case 'mention':
-      return { title: `${ctx.actorName} mentioned you on ${where}`, body: fallbackBody, url: ctx.url, tag: row.cardId ?? row.boardId ?? row.kind };
+      return {
+        title: `${ctx.actorName} mentioned you on ${where}`,
+        body: fallbackBody,
+        url: ctx.url,
+        tag: row.cardId ?? row.boardId ?? row.kind,
+      };
     case 'assignment':
-      return { title: `${ctx.actorName} assigned you to ${where}`, body: ctx.cardTitle, url: ctx.url, tag: row.cardId ?? row.boardId ?? row.kind };
+      return {
+        title: `${ctx.actorName} assigned you to ${where}`,
+        body: ctx.cardTitle,
+        url: ctx.url,
+        tag: row.cardId ?? row.boardId ?? row.kind,
+      };
     case 'comment':
-      return { title: `${ctx.actorName} commented on ${where}`, body: fallbackBody, url: ctx.url, tag: row.cardId ?? row.boardId ?? row.kind };
+      return {
+        title: `${ctx.actorName} commented on ${where}`,
+        body: fallbackBody,
+        url: ctx.url,
+        tag: row.cardId ?? row.boardId ?? row.kind,
+      };
     case 'access_request':
       return {
         title: `${ctx.actorName} asked you to grant ${ctx.subjectName} access to ${ctx.boardName}`,
@@ -286,7 +296,10 @@ export async function insertNotifications(rows: NewNotification[]): Promise<void
   const supabase = createSupabaseRequestClient();
   const seen = new Set<string>();
   const unique = rows.filter((row) => {
-    if (!row.userId || seen.has(`${row.userId}:${row.kind}:${row.cardId ?? ''}:${row.subjectId ?? ''}`)) {
+    if (
+      !row.userId ||
+      seen.has(`${row.userId}:${row.kind}:${row.cardId ?? ''}:${row.subjectId ?? ''}`)
+    ) {
       return false;
     }
     seen.add(`${row.userId}:${row.kind}:${row.cardId ?? ''}:${row.subjectId ?? ''}`);
@@ -326,16 +339,14 @@ export async function insertNotifications(rows: NewNotification[]): Promise<void
   }
 }
 
-export async function notifyUsers(
-  input: {
-    recipients: string[];
-    kind: 'mention' | 'assignment' | 'comment';
-    cardId: string;
-    boardId: string;
-    actorId: string;
-    body?: string;
-  },
-): Promise<void> {
+export async function notifyUsers(input: {
+  recipients: string[];
+  kind: 'mention' | 'assignment' | 'comment';
+  cardId: string;
+  boardId: string;
+  actorId: string;
+  body?: string;
+}): Promise<void> {
   const recipients = [...new Set(input.recipients)].filter(
     (userId) => userId && userId !== input.actorId,
   );
@@ -372,13 +383,11 @@ export async function notifyTeamMentions(
     .from('team_members')
     .select('user_id')
     .in('team_id', input.teamIds);
-  const candidates = [
-    ...new Set((memberRows ?? []).map((row) => row.user_id as string)),
-  ].filter((userId) => userId && userId !== input.actorId);
-  if (candidates.length === 0) return;
-  const invisible = new Set(
-    await filterInaccessible(supabase, input.boardId, candidates),
+  const candidates = [...new Set((memberRows ?? []).map((row) => row.user_id as string))].filter(
+    (userId) => userId && userId !== input.actorId,
   );
+  if (candidates.length === 0) return;
+  const invisible = new Set(await filterInaccessible(supabase, input.boardId, candidates));
   await insertNotifications(
     candidates
       .filter((userId) => !invisible.has(userId))
@@ -404,13 +413,16 @@ export async function notifyTeamMentions(
 export async function dismissAccessRequests(
   boardId: string,
   subject: { userId?: string | null; teamId?: string | null },
-): Promise<{
-  user_id: string;
-  actor_id: string | null;
-  card_id: string | null;
-  subject_id: string | null;
-  subject_team_id: string | null;
-}[] | null> {
+): Promise<
+  | {
+      user_id: string;
+      actor_id: string | null;
+      card_id: string | null;
+      subject_id: string | null;
+      subject_team_id: string | null;
+    }[]
+  | null
+> {
   const supabase = createSupabaseServiceClient();
   let select = supabase
     .from('notifications')
@@ -439,7 +451,10 @@ export async function dismissAccessRequests(
     .delete()
     .eq('kind', 'access_request')
     .eq('board_id', boardId)
-    .in('user_id', pending.map((row) => row.user_id));
+    .in(
+      'user_id',
+      pending.map((row) => row.user_id),
+    );
   if (subject.teamId) remove = remove.eq('subject_team_id', subject.teamId);
   else remove = remove.eq('subject_id', subject.userId ?? '');
   const { error: delError } = await remove;

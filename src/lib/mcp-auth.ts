@@ -49,60 +49,61 @@ export async function mcpAuthSignedIn(): Promise<boolean> {
  * this workspace allows THEM to create boards (role + board_creation
  * policy + team-admin).
  */
-export const listMyWorkspaceChoices = query(async (): Promise<
-  {
-    id: string;
-    name: string;
-    role: 'member' | 'admin' | 'owner';
-    board_creation: string;
-    is_team_admin: boolean;
-  }[]
-> => {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
-  // ONLY MY OWN membership rows. RLS deliberately exposes every peer's
-  // membership row (the roster needs it) — without this filter the
-  // picker rendered one dropdown per MEMBER (a 3-member workspace showed
-  // 3 dropdowns), and the cap could take another member's role.
-  const { data } = await supabase
-    .from('workspace_members')
-    .select('workspace_id, role, workspaces(name, board_creation)')
-    .eq('user_id', user.id)
-    .order('created_at');
-  const rows = (data ?? []) as {
-    workspace_id: string;
-    role: string;
-    workspaces: { name: string | null; board_creation: string | null } | null;
-  }[];
-  // Team-admin per workspace: my admin seats on teams of those workspaces
-  // (workspace_members has no relation to team_members — a second query).
-  const { data: adminSeats } = user
-    ? await supabase
-        .from('team_members')
-        .select('teams(workspace_id)')
-        .eq('user_id', user.id)
-        .eq('role', 'admin')
-    : { data: null };
-  const teamAdminOf = new Set(
-    ((adminSeats ?? []) as { teams: { workspace_id: string | null } | null }[])
-      .map((seat) => seat.teams?.workspace_id)
-      .filter((id): id is string => Boolean(id)),
-  );
-  return rows.map((row) => ({
-    id: row.workspace_id,
-    name: (row.workspaces?.name ?? 'Workspace') as string,
-    role: (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
-      | 'member'
-      | 'admin'
-      | 'owner',
-    board_creation: (row.workspaces?.board_creation ?? 'team_admins') as string,
-    is_team_admin: teamAdminOf.has(row.workspace_id),
-  }));
-}, 'my-ws-choices');
+export const listMyWorkspaceChoices = query(
+  async (): Promise<
+    {
+      id: string;
+      name: string;
+      role: 'member' | 'admin' | 'owner';
+      board_creation: string;
+      is_team_admin: boolean;
+    }[]
+  > => {
+    'use server';
+    const supabase = createSupabaseRequestClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return [];
+    // ONLY MY OWN membership rows. RLS deliberately exposes every peer's
+    // membership row (the roster needs it) — without this filter the
+    // picker rendered one dropdown per MEMBER (a 3-member workspace showed
+    // 3 dropdowns), and the cap could take another member's role.
+    const { data } = await supabase
+      .from('workspace_members')
+      .select('workspace_id, role, workspaces(name, board_creation)')
+      .eq('user_id', user.id)
+      .order('created_at');
+    const rows = (data ?? []) as {
+      workspace_id: string;
+      role: string;
+      workspaces: { name: string | null; board_creation: string | null } | null;
+    }[];
+    // Team-admin per workspace: my admin seats on teams of those workspaces
+    // (workspace_members has no relation to team_members — a second query).
+    const { data: adminSeats } = user
+      ? await supabase
+          .from('team_members')
+          .select('teams(workspace_id)')
+          .eq('user_id', user.id)
+          .eq('role', 'admin')
+      : { data: null };
+    const teamAdminOf = new Set(
+      ((adminSeats ?? []) as { teams: { workspace_id: string | null } | null }[])
+        .map((seat) => seat.teams?.workspace_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    return rows.map((row) => ({
+      id: row.workspace_id,
+      name: (row.workspaces?.name ?? 'Workspace') as string,
+      role: (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
+        'member' | 'admin' | 'owner',
+      board_creation: (row.workspaces?.board_creation ?? 'team_admins') as string,
+      is_team_admin: teamAdminOf.has(row.workspace_id),
+    }));
+  },
+  'my-ws-choices',
+);
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -110,7 +111,9 @@ function isHttpUrl(value: string): boolean {
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
     // http is fine for local clients (127.0.0.1/localhost) only.
     if (url.protocol === 'http:') {
-      return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+      return (
+        url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]'
+      );
     }
     return url.hostname.length > 0 && !url.hash;
   } catch {
@@ -128,7 +131,9 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
   } = await supabase.auth.getUser();
   if (!user) throw new Error('You need to sign in first');
 
-  const clientId = String(input.clientId ?? '').trim().slice(0, 100);
+  const clientId = String(input.clientId ?? '')
+    .trim()
+    .slice(0, 100);
   const redirectUri = String(input.redirectUri ?? '').trim();
   const codeChallenge = String(input.codeChallenge ?? '').trim();
   const challengeMethod = String(input.challengeMethod ?? 'S256').trim();
@@ -171,9 +176,7 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
     for (const row of memberRows) {
       const boardCreation = row.workspaces?.board_creation ?? 'team_admins';
       const role = (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
-        | 'member'
-        | 'admin'
-        | 'owner';
+        'member' | 'admin' | 'owner';
       caps[row.workspace_id] = {
         role,
         canCreateBoards:
@@ -205,9 +208,13 @@ export async function approveMcpClient(input: McpAuthorizeInput): Promise<{ redi
 
   // The connection's name: user-chosen on the consent page, bounded and
   // trimmed; the edge mints it onto the token (falling back to a default).
-  const connectionName = String(input.connectionName ?? '').trim().slice(0, 80) || null;
+  const connectionName =
+    String(input.connectionName ?? '')
+      .trim()
+      .slice(0, 80) || null;
 
-  const code = `mcp_${randomBytes(24).toString('hex')}`;  const codeHash = createHash('sha256').update(code).digest('hex');
+  const code = `mcp_${randomBytes(24).toString('hex')}`;
+  const codeHash = createHash('sha256').update(code).digest('hex');
   const { error } = await supabase.from('mcp_auth_codes').insert({
     code_hash: codeHash,
     user_id: user.id,

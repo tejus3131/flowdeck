@@ -33,10 +33,7 @@ export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
         // by the router and the call RESOLVES with no payload — only a
         // real acceptance returns { workspaceId }, and only that navigates.
         const result = (await enterWorkspaceOrdered(() => acceptInvite(props.params.token))) as
-          | { workspaceId?: string }
-          | null
-          | undefined
-          | 'superseded';
+          { workspaceId?: string } | null | undefined | 'superseded';
         if (result === 'superseded') {
           // A newer workspace choice owns the outcome (the global switcher
           // is mounted on this page too). Leave quietly instead of

@@ -12,7 +12,12 @@ import {
   notificationsStream,
   type NotificationRow,
 } from '../lib/notifications';
-import { isChatRow, hrefToPath, notificationHref, notificationLine } from '../lib/notification-text';
+import {
+  isChatRow,
+  hrefToPath,
+  notificationHref,
+  notificationLine,
+} from '../lib/notification-text';
 import { isRowSeen, markSeenOptimistic } from '../lib/inbox-seen';
 import { stampBoardChatSeen } from '../lib/board-chat-seen';
 import { markSeen } from '../lib/seen';
@@ -31,7 +36,9 @@ export function NotificationBell() {
   // Answers given from the panel, by notification id — an invite stays
   // locked in its answered state even across bell re-opens (the invite
   // itself and the workspace membership live server-side).
-  const [inviteAnswers, setInviteAnswers] = createSignal<Record<string, 'accepted' | 'declined'>>({});
+  const [inviteAnswers, setInviteAnswers] = createSignal<Record<string, 'accepted' | 'declined'>>(
+    {},
+  );
   let root: HTMLDivElement | undefined;
 
   // The inbox is live; rows land here once (shared liveQuery channel).
@@ -180,7 +187,9 @@ export function NotificationBell() {
               when={shown().length > 0}
               fallback={
                 <p class="px-4 py-10 text-center text-sm text-neutral-400">
-                  {unread().length === 0 && !showRead() ? 'All caught up 🎉' : 'Nothing matches that search.'}
+                  {unread().length === 0 && !showRead()
+                    ? 'All caught up 🎉'
+                    : 'Nothing matches that search.'}
                 </p>
               }
             >
@@ -192,7 +201,9 @@ export function NotificationBell() {
                       <li class="flex items-start gap-2.5 px-4 py-3">
                         <Show
                           when={row.actor_name}
-                          fallback={<span class="mt-0.5 h-7 w-7 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-700" />}
+                          fallback={
+                            <span class="mt-0.5 h-7 w-7 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-700" />
+                          }
                         >
                           <Avatar name={row.actor_name} size="sm" />
                         </Show>
@@ -203,7 +214,9 @@ export function NotificationBell() {
                         >
                           <span class="block text-sm leading-snug">{line().text}</span>
                           <Show when={line().detail}>
-                            <span class="block truncate text-xs text-neutral-400">{line().detail}</span>
+                            <span class="block truncate text-xs text-neutral-400">
+                              {line().detail}
+                            </span>
                           </Show>
                           <span class="mt-0.5 block text-[11px] text-neutral-400">
                             {new Date(row.created_at).toLocaleString(undefined, {
@@ -237,7 +250,8 @@ export function NotificationBell() {
                                   });
                                   // A decline shouldn't keep begging for
                                   // attention — read it too.
-                                  if (state === 'declined') void markNotificationSeen(row.id).catch(() => {});
+                                  if (state === 'declined')
+                                    void markNotificationSeen(row.id).catch(() => {});
                                   markSeenOptimistic(row.id);
                                 }}
                               />
@@ -276,9 +290,7 @@ export function NotificationBell() {
                   class="flex w-full items-center justify-between rounded-lg px-1 py-1 text-xs font-medium text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                   onClick={() => setShowChat(!showChat())}
                 >
-                  <span>
-                    💬 Chat activity{chatCount() > 0 ? ` · ${chatCount()} new` : ''}
-                  </span>
+                  <span>💬 Chat activity{chatCount() > 0 ? ` · ${chatCount()} new` : ''}</span>
                   <span>{showChat() ? '▴' : '▾'}</span>
                 </button>
                 <Show when={showChat()}>

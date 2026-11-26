@@ -3,7 +3,12 @@
 import { revalidate, useNavigate } from '@solidjs/router';
 import { For, Show, createMemo, createSignal, onSettled } from 'solid-js';
 
-import { createWorkspace, enterWorkspaceOrdered, getMyWorkspaces, switchWorkspaceOrdered } from '../lib/workspaces';
+import {
+  createWorkspace,
+  enterWorkspaceOrdered,
+  getMyWorkspaces,
+  switchWorkspaceOrdered,
+} from '../lib/workspaces';
 import { errorMessage } from '../lib/error-message';
 
 export function WorkspaceSwitcher() {
@@ -54,9 +59,7 @@ export function WorkspaceSwitcher() {
       // linger under a new active choice — land on the dashboard instead.
       navigate('/');
     } catch (cause) {
-      setSwitchError(
-        errorMessage(cause, 'Could not switch workspace'),
-      );
+      setSwitchError(errorMessage(cause, 'Could not switch workspace'));
     } finally {
       setBusy(null);
     }
@@ -85,146 +88,148 @@ export function WorkspaceSwitcher() {
 
   return (
     <div ref={root} class="relative">
-        <button
-          type="button"
-          aria-haspopup="menu"
-          aria-expanded={open() ? 'true' : 'false'}
-          title="Switch workspace"
-          class="flex max-w-44 items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-          onClick={() => setOpen(!open())}
-        >
-          <span class="truncate">{current()?.name ?? (workspaces().length > 0 ? 'Workspace' : 'Create workspace')}</span>
-          <span class="text-[10px] text-neutral-400">▼</span>
-        </button>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open() ? 'true' : 'false'}
+        title="Switch workspace"
+        class="flex max-w-44 items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        onClick={() => setOpen(!open())}
+      >
+        <span class="truncate">
+          {current()?.name ?? (workspaces().length > 0 ? 'Workspace' : 'Create workspace')}
+        </span>
+        <span class="text-[10px] text-neutral-400">▼</span>
+      </button>
 
-        <Show when={open()}>
-          <div
-            role="menu"
-            class="absolute left-0 top-full z-50 mt-2 w-64 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl dark:border-neutral-800 dark:bg-neutral-900"
-          >
-            <p class="px-2 pb-1 pt-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-              Workspaces
-            </p>
-            <Show when={switchError()}>
-              <p class="px-2 pb-1 text-xs text-red-500">{switchError()}</p>
-            </Show>
-            <For each={workspaces()}>
-              {(workspace) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={busy() !== null}
-                  class="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-2 text-left text-sm hover:bg-neutral-100 disabled:opacity-60 dark:hover:bg-neutral-800"
-                  onClick={() => void pick(workspace.id)}
-                >
-                  <span class="min-w-0">
-                    <span class="block truncate font-medium">{workspace.name}</span>
-                    <span class="block text-xs capitalize text-neutral-400">
-                      {workspace.role}
-                      {workspace.current ? ' · current' : ''}
-                    </span>
-                  </span>
-                  <Show when={workspace.current}>
-                    <span class="text-xs text-indigo-500">●</span>
-                  </Show>
-                </button>
-              )}
-            </For>
-            <Show
-              when={current() && canManage()}
-              fallback={
-                <Show when={current()}>
-                  <a
-                    role="menuitem"
-                    href={`/w/${current()?.id}/members`}
-                    class="mt-1 block rounded-xl px-2 py-2 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    onClick={() => setOpen(false)}
-                  >
-                    View members
-                  </a>
-                  <a
-                    role="menuitem"
-                    href={`/w/${current()?.id}/tags`}
-                    class="mt-1 block rounded-xl px-2 py-2 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    onClick={() => setOpen(false)}
-                  >
-                    Tags
-                  </a>
-                </Show>
-              }
-            >
-              <div class="my-1 h-px bg-neutral-200 dark:bg-neutral-800" />
-              <a
-                role="menuitem"
-                href={`/w/${current()?.id}/members`}
-                class="block rounded-xl px-2 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
-                onClick={() => setOpen(false)}
-              >
-                Members &amp; invites
-              </a>
-              <a
-                role="menuitem"
-                href={`/w/${current()?.id}/tags`}
-                class="block rounded-xl px-2 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
-                onClick={() => setOpen(false)}
-              >
-                Tags
-              </a>
-            </Show>
-            <div class="my-1 h-px bg-neutral-200 dark:bg-neutral-800" />
-            <Show
-              when={!creating()}
-              fallback={
-                <form
-                  class="px-1 py-1"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void create();
-                  }}
-                >
-                  <input
-                    class="w-full text-sm"
-                    placeholder="Workspace name…"
-                    value={newName()}
-                    onInput={(event) => setNewName(event.currentTarget.value)}
-                    autofocus
-                  />
-                  <Show when={createError()}>
-                    <p class="mt-1 text-xs text-red-500">{createError()}</p>
-                  </Show>
-                  <div class="mt-1.5 flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={!newName().trim() || busy() !== null}
-                      class="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-                    >
-                      {busy() === 'create' ? 'Creating…' : 'Create'}
-                    </button>
-                    <button
-                      type="button"
-                      class="text-xs font-medium text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                      onClick={() => {
-                        setCreating(false);
-                        setCreateError(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              }
-            >
+      <Show when={open()}>
+        <div
+          role="menu"
+          class="absolute left-0 top-full z-50 mt-2 w-64 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <p class="px-2 pb-1 pt-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+            Workspaces
+          </p>
+          <Show when={switchError()}>
+            <p class="px-2 pb-1 text-xs text-red-500">{switchError()}</p>
+          </Show>
+          <For each={workspaces()}>
+            {(workspace) => (
               <button
                 type="button"
                 role="menuitem"
-                class="block w-full rounded-xl px-2 py-2 text-left text-sm font-medium text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-                onClick={() => setCreating(true)}
+                disabled={busy() !== null}
+                class="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-2 text-left text-sm hover:bg-neutral-100 disabled:opacity-60 dark:hover:bg-neutral-800"
+                onClick={() => void pick(workspace.id)}
               >
-                + New workspace
+                <span class="min-w-0">
+                  <span class="block truncate font-medium">{workspace.name}</span>
+                  <span class="block text-xs capitalize text-neutral-400">
+                    {workspace.role}
+                    {workspace.current ? ' · current' : ''}
+                  </span>
+                </span>
+                <Show when={workspace.current}>
+                  <span class="text-xs text-indigo-500">●</span>
+                </Show>
               </button>
-            </Show>
-          </div>
-        </Show>
-      </div>
+            )}
+          </For>
+          <Show
+            when={current() && canManage()}
+            fallback={
+              <Show when={current()}>
+                <a
+                  role="menuitem"
+                  href={`/w/${current()?.id}/members`}
+                  class="mt-1 block rounded-xl px-2 py-2 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  onClick={() => setOpen(false)}
+                >
+                  View members
+                </a>
+                <a
+                  role="menuitem"
+                  href={`/w/${current()?.id}/tags`}
+                  class="mt-1 block rounded-xl px-2 py-2 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  onClick={() => setOpen(false)}
+                >
+                  Tags
+                </a>
+              </Show>
+            }
+          >
+            <div class="my-1 h-px bg-neutral-200 dark:bg-neutral-800" />
+            <a
+              role="menuitem"
+              href={`/w/${current()?.id}/members`}
+              class="block rounded-xl px-2 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+              onClick={() => setOpen(false)}
+            >
+              Members &amp; invites
+            </a>
+            <a
+              role="menuitem"
+              href={`/w/${current()?.id}/tags`}
+              class="block rounded-xl px-2 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+              onClick={() => setOpen(false)}
+            >
+              Tags
+            </a>
+          </Show>
+          <div class="my-1 h-px bg-neutral-200 dark:bg-neutral-800" />
+          <Show
+            when={!creating()}
+            fallback={
+              <form
+                class="px-1 py-1"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void create();
+                }}
+              >
+                <input
+                  class="w-full text-sm"
+                  placeholder="Workspace name…"
+                  value={newName()}
+                  onInput={(event) => setNewName(event.currentTarget.value)}
+                  autofocus
+                />
+                <Show when={createError()}>
+                  <p class="mt-1 text-xs text-red-500">{createError()}</p>
+                </Show>
+                <div class="mt-1.5 flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={!newName().trim() || busy() !== null}
+                    class="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    {busy() === 'create' ? 'Creating…' : 'Create'}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs font-medium text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                    onClick={() => {
+                      setCreating(false);
+                      setCreateError(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            }
+          >
+            <button
+              type="button"
+              role="menuitem"
+              class="block w-full rounded-xl px-2 py-2 text-left text-sm font-medium text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+              onClick={() => setCreating(true)}
+            >
+              + New workspace
+            </button>
+          </Show>
+        </div>
+      </Show>
+    </div>
   );
 }

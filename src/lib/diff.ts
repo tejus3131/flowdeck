@@ -7,9 +7,7 @@
  */
 
 export type DiffOp =
-  | { type: 'same'; text: string }
-  | { type: 'del'; text: string }
-  | { type: 'add'; text: string };
+  { type: 'same'; text: string } | { type: 'del'; text: string } | { type: 'add'; text: string };
 
 /** Beyond this many total lines, diffing stops being worth it — the
  *  timeline shows the whole old block and the whole new one instead. */
@@ -45,10 +43,13 @@ function lcsDiff(a: string[], b: string[]): DiffOp[] {
   // midA[i..] and midB[j..].
   const m = midA.length;
   const n = midB.length;
-  const lcs: number[][] = Array.from({ length: m + 1 }, () => Array.from({ length: n + 1 }, () => 0));
+  const lcs: number[][] = Array.from({ length: m + 1 }, () =>
+    Array.from({ length: n + 1 }, () => 0),
+  );
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
-      lcs[i][j] = midA[i] === midB[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      lcs[i][j] =
+        midA[i] === midB[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
     }
   }
   // Walk the matrix: matches stay, skips delete, inserts add.

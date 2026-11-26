@@ -52,9 +52,7 @@ export function writeThemeCookie(theme: Theme): void {
 /** The currently-effective choice from the cookie (pre-hydration truth). */
 export function readThemeCookieClient(): Theme {
   if (typeof document === 'undefined') return 'system';
-  const match = document.cookie.match(
-    new RegExp(`(?:^|; )${THEME_COOKIE}=(system|light|dark)`),
-  );
+  const match = document.cookie.match(new RegExp(`(?:^|; )${THEME_COOKIE}=(system|light|dark)`));
   return parseTheme(match?.[1]) ?? 'system';
 }
 

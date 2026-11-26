@@ -205,24 +205,31 @@ export async function resolveAccessRequest(input: {
   if (me?.role !== 'owner' && me?.role !== 'admin') {
     throw new Error('Only owners and admins can resolve access requests');
   }
-  const pending = (await dismissAccessRequests(input.boardId, {
-    userId: input.userId ?? null,
-    teamId: input.teamId ?? null,
-  })) ?? [];
+  const pending =
+    (await dismissAccessRequests(input.boardId, {
+      userId: input.userId ?? null,
+      teamId: input.teamId ?? null,
+    })) ?? [];
   const rows: NewNotification[] = [];
-  const askers = [...new Set(pending.map((row) => row.actor_id).filter((id): id is string => !!id))];
+  const askers = [
+    ...new Set(pending.map((row) => row.actor_id).filter((id): id is string => !!id)),
+  ];
   if (input.grant) {
     if (isTeam) {
-      const { error } = await supabase.from('board_team_access').upsert(
-        { board_id: input.boardId, team_id: input.teamId!, access: 'edit' as const },
-        { onConflict: 'board_id,team_id' },
-      );
+      const { error } = await supabase
+        .from('board_team_access')
+        .upsert(
+          { board_id: input.boardId, team_id: input.teamId!, access: 'edit' as const },
+          { onConflict: 'board_id,team_id' },
+        );
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await supabase.from('board_access').upsert(
-        { board_id: input.boardId, user_id: input.userId!, access: 'edit' as const },
-        { onConflict: 'board_id,user_id' },
-      );
+      const { error } = await supabase
+        .from('board_access')
+        .upsert(
+          { board_id: input.boardId, user_id: input.userId!, access: 'edit' as const },
+          { onConflict: 'board_id,user_id' },
+        );
       if (error) throw new Error(error.message);
     }
     // Every asker learns the request succeeded ("you provided the access").
@@ -232,7 +239,7 @@ export async function resolveAccessRequest(input: {
         kind: 'access_provided',
         boardId: input.boardId,
         actorId: auth.user.id,
-        subjectId: isTeam ? null : input.userId ?? null,
+        subjectId: isTeam ? null : (input.userId ?? null),
         subjectTeamId: isTeam ? input.teamId : null,
         cardId: pending.find((row) => row.actor_id === asker)?.card_id ?? null,
       });
@@ -246,7 +253,9 @@ export async function resolveAccessRequest(input: {
         .eq('team_id', input.teamId!);
       const memberIds = [...new Set((members ?? []).map((row) => row.user_id as string))];
       const mentionRows = pending.filter((row) => row.actor_id && row.card_id);
-      for (const row of new Map(mentionRows.map((row) => [`${row.actor_id}:${row.card_id}`, row])).values()) {
+      for (const row of new Map(
+        mentionRows.map((row) => [`${row.actor_id}:${row.card_id}`, row]),
+      ).values()) {
         for (const memberId of memberIds) {
           rows.push({
             userId: memberId,
@@ -267,7 +276,9 @@ export async function resolveAccessRequest(input: {
       }
     } else {
       const mentionRows = pending.filter((row) => row.actor_id && row.card_id);
-      for (const row of new Map(mentionRows.map((row) => [`${row.actor_id}:${row.card_id}`, row])).values()) {
+      for (const row of new Map(
+        mentionRows.map((row) => [`${row.actor_id}:${row.card_id}`, row]),
+      ).values()) {
         rows.push({
           userId: input.userId!,
           kind: 'mention',
@@ -290,7 +301,7 @@ export async function resolveAccessRequest(input: {
         kind: 'access_denied',
         boardId: input.boardId,
         actorId: auth.user.id,
-        subjectId: isTeam ? null : input.userId ?? null,
+        subjectId: isTeam ? null : (input.userId ?? null),
         subjectTeamId: isTeam ? input.teamId : null,
       });
     }

@@ -14,7 +14,9 @@ page.on('response', (res) => {
     errors.push(`[${res.status()}] ${res.request().method()} ${url.slice(0, 90)}`);
   }
 });
-await page.goto(`${BASE}/auth/confirm?token_hash=${process.argv[2]}&type=${process.argv[3]}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`${BASE}/auth/confirm?token_hash=${process.argv[2]}&type=${process.argv[3]}`, {
+  waitUntil: 'domcontentloaded',
+});
 await page.waitForTimeout(1500);
 console.log('signed in:', page.url());
 // The notification's href: the invite accept page.

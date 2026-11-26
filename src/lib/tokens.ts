@@ -45,41 +45,35 @@ export type ConnectionDetail = ApiTokenSummary & {
   legacy_workspace_scope: string[] | null;
 };
 
-export const getConnection = query(
-  async (tokenId: string): Promise<ConnectionDetail | null> => {
-    'use server';
-    const supabase = createSupabaseRequestClient();
-    const { data } = await supabase
-      .from('api_tokens')
-      .select(
-        'id, name, created_at, last_used_at, workspace_ops, allowed_ops, workspace_scope',
-      )
-      .eq('id', tokenId)
-      .maybeSingle();
-    if (!data) return null;
-    return {
-      id: data.id,
-      name: data.name,
-      created_at: data.created_at,
-      last_used_at: data.last_used_at,
-      workspace_ops: data.workspace_ops ?? null,
-      legacy_allowed_ops: data.workspace_ops ? null : (data.allowed_ops ?? null),
-      legacy_workspace_scope: data.workspace_ops ? null : (data.workspace_scope ?? null),
-    };
-  },
-  'connection',
-);
+export const getConnection = query(async (tokenId: string): Promise<ConnectionDetail | null> => {
+  'use server';
+  const supabase = createSupabaseRequestClient();
+  const { data } = await supabase
+    .from('api_tokens')
+    .select('id, name, created_at, last_used_at, workspace_ops, allowed_ops, workspace_scope')
+    .eq('id', tokenId)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: data.id,
+    name: data.name,
+    created_at: data.created_at,
+    last_used_at: data.last_used_at,
+    workspace_ops: data.workspace_ops ?? null,
+    legacy_allowed_ops: data.workspace_ops ? null : (data.allowed_ops ?? null),
+    legacy_workspace_scope: data.workspace_ops ? null : (data.workspace_scope ?? null),
+  };
+}, 'connection');
 
 /** Rename a connection (own tokens only — RLS enforces it). */
 export async function renameConnection(tokenId: string, name: string): Promise<void> {
   'use server';
-  const clean = String(name ?? '').trim().slice(0, 80);
+  const clean = String(name ?? '')
+    .trim()
+    .slice(0, 80);
   if (!clean) throw new Error('Connection name cannot be empty');
   const supabase = createSupabaseRequestClient();
-  const { error } = await supabase
-    .from('api_tokens')
-    .update({ name: clean })
-    .eq('id', tokenId);
+  const { error } = await supabase.from('api_tokens').update({ name: clean }).eq('id', tokenId);
   if (error) throw new Error(error.message);
 }
 
@@ -128,9 +122,7 @@ export async function updateConnectionPermissions(
     for (const row of memberRows) {
       const boardCreation = row.workspaces?.board_creation ?? 'team_admins';
       const role = (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
-        | 'member'
-        | 'admin'
-        | 'owner';
+        'member' | 'admin' | 'owner';
       caps[row.workspace_id] = {
         role,
         canCreateBoards:
@@ -220,9 +212,7 @@ async function capsForUsers(
     workspaces: { board_creation: string | null } | null;
   }[]) {
     const role = (row.role === 'owner' || row.role === 'admin' ? row.role : 'member') as
-      | 'member'
-      | 'admin'
-      | 'owner';
+      'member' | 'admin' | 'owner';
     const perUser = caps.get(row.user_id) ?? new Map<string, WorkspaceCap>();
     perUser.set(
       row.workspace_id,

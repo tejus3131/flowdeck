@@ -105,3 +105,65 @@ Also:
   in the repository.
 
 <!-- END solid-2.0-primer -->
+
+---
+
+# Flowdeck development rules
+
+How work happens in this repo — for humans and agents alike. The layer
+contracts ([`docs/layers/`](docs/layers/)) say what code goes where; this
+says how changes ship.
+
+## Before you push
+
+1. **`pnpm preflight`** (lint + typecheck + tests) — the same gate CI
+   runs. Pre-commit hooks format and lint staged files; preflight is
+   the full check.
+2. **Self-review the diff** before opening the PR — read it as a
+   reviewer would: does any change violate a layer contract? Does a
+   one-row change trigger a resync/refetch anywhere (the canonical
+   test in `docs/architecture.md`)? Are docs updated in the same
+   commit when behavior changed?
+3. **Never edit a merged migration** — CI blocks it (the migration
+   guard). Write a new migration instead.
+
+## PR descriptions
+
+Every PR answers, in this order:
+
+- **What** — the change in one or two sentences, plain language.
+- **Why** — the problem or reason; link the issue/card if one exists.
+- **How** — the approach, and _why this approach_ over alternatives
+  when it's structural (an ADR-worthy choice gets a line in
+  `docs/adr.md` in the same PR).
+- **Verification** — what you ran (preflight, specific tests, manual
+  steps) and what you measured (perf before/after when a view's
+  loading changed — performance-rules 7).
+- **Docs** — which docs changed with it, or "none needed" and why.
+
+## After you push
+
+The PR gets deterministic automation (labels, migration guard, MCP tool
+report — see `docs/ci-cd.md`). **The author posts a change explanation
+comment**: what changed from the reviewer's point of view — the files
+that matter, the riskiest part, what to look at hardest. Agents authoring
+the PR write this comment themselves; it is not optional. A PR whose
+diff is its only explanation is incomplete.
+
+## Review discipline
+
+- Reviews resolve conversations; they don't silence them.
+- A review that finds nothing in a >200-line PR probably didn't look.
+- Structural changes cite the layer contract or ADR they follow (or
+  propose a new one).
+- Performance-sensitive changes carry numbers, not adjectives.
+
+## Agent-specific
+
+- Read `docs/architecture.md` and the layer contracts before
+  structural work; cite them in the PR.
+- The canonical test is the review heuristic: a one-row change (tag
+  rename) that causes a resync, poll, or refetch anywhere is a bug.
+- Never suppress a Solid diagnostics code — fix the cause.
+- Keep op kinds in the registries (`board-ops`, `workspace-ops`) —
+  never inline a mutation outside the engine.

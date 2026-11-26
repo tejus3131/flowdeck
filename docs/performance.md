@@ -16,7 +16,7 @@ live-stream echoes retire the op, failures surface with the exact error. No
 spinner on any mutation, edits feel instant, other viewers see provisional
 predictions within milliseconds.
 
-The **read path** undoes it. Every *opening* in the app is a cold fetch:
+The **read path** undoes it. Every _opening_ in the app is a cold fetch:
 
 - **Card timeline** — `getCardEvents` runs on every Settings-tab open
   (a server-function round trip: Worker → Supabase over HTTPS → back), then
@@ -48,7 +48,7 @@ The same design keeps showing up in every fast collaboration product:
   and each delta re-renders one cell.
 - **Notion** — added a client-side SQLite cache (WASM, SharedWorker + OPFS)
   in front of the existing API. Page navigation got ~20% faster overall and
-  28–33% faster for users far from their servers. They did *not* rewrite the
+  28–33% faster for users far from their servers. They did _not_ rewrite the
   app — they added the cache layer.
 - **Slack / Superhuman** — persistent push connection plus local stores; the
   client almost never fetches on open.
@@ -89,7 +89,8 @@ SolidStart to their client model. Extend, don't replace.
    guard and revert semantics) untouched. Wire-level delta payloads can
    follow later if profiling shows the wire matters; the expensive part
    (six queries × viewers × changes) is gone.
-3. **Prefetch by journey.** Warm the cache where the user is *about* to go:
+
+3. **Prefetch by journey.** Warm the cache where the user is _about_ to go:
    a notification arrives → its card, board and chats stream into the cache
    on `requestIdleCallback`; a board-grant arrives → the board snapshot
    loads in the background; the dashboard → the most recently used boards.
@@ -109,25 +110,25 @@ optimistic mutations; the cache completes the picture on the read side.
 
 Each phase lands as its own PR, each leaves the app fully working.
 
-| Phase | What | Status |
-| --- | --- | --- |
-| 0 | **Profiling** — perf marks on every slow open path (board, chats, timeline, comments), a `?perf=1` debug panel with p50/p95 per label, server-side slow-path logs | in flight |
-| 1 | **Cache layer** — IndexedDB store + stale-while-revalidate hydration for board snapshots, chats, comments, timelines | in flight |
-| 2 | **Delta sync** — 2a: trustworthy revision (`board_revisions`, migration 0032) ✓ · 2b: realtime events fold into the per-connection snapshot instead of full re-queries (engine and wire shape unchanged) | 2b in flight |
-| 3 | **Prefetch by journey** — notification-driven and grant-driven cache warming | in flight |
-| 4 | **Idle refresh + eviction** — TTL/LRU background refresh so cached data stays fresh without user action | planned |
+| Phase | What                                                                                                                                                                                                     | Status       |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 0     | **Profiling** — perf marks on every slow open path (board, chats, timeline, comments), a `?perf=1` debug panel with p50/p95 per label, server-side slow-path logs                                        | in flight    |
+| 1     | **Cache layer** — IndexedDB store + stale-while-revalidate hydration for board snapshots, chats, comments, timelines                                                                                     | in flight    |
+| 2     | **Delta sync** — 2a: trustworthy revision (`board_revisions`, migration 0032) ✓ · 2b: realtime events fold into the per-connection snapshot instead of full re-queries (engine and wire shape unchanged) | 2b in flight |
+| 3     | **Prefetch by journey** — notification-driven and grant-driven cache warming                                                                                                                             | in flight    |
+| 4     | **Idle refresh + eviction** — TTL/LRU background refresh so cached data stays fresh without user action                                                                                                  | planned      |
 
 ## Budgets
 
 "Fast" needs numbers, and the perf marks (Phase 0) measure them. Targets:
 
-| Path | Budget |
-| --- | --- |
-| Warm open of any cached view (paint from cache) | ≤ 100 ms |
-| Warm open to interactive (composer usable) | ≤ 200 ms |
-| Cold open of a panel (first visit, cache empty) | ≤ 1.5 s p95 |
+| Path                                              | Budget       |
+| ------------------------------------------------- | ------------ |
+| Warm open of any cached view (paint from cache)   | ≤ 100 ms     |
+| Warm open to interactive (composer usable)        | ≤ 200 ms     |
+| Cold open of a panel (first visit, cache empty)   | ≤ 1.5 s p95  |
 | Local mutation → visible to another viewer (echo) | ≤ 500 ms p95 |
-| Delta apply (revalidate) on an open view | ≤ 300 ms p95 |
+| Delta apply (revalidate) on an open view          | ≤ 300 ms p95 |
 
 Cold opens are bounded by physics (browser → Worker → Supabase and back);
 the budget above is honest about that. Everything the user does a second

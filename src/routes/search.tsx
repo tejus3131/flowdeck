@@ -63,7 +63,13 @@ export default function SearchPage() {
     },
   );
 
-  const [searchParams, setSearchParams] = useSearchParams<{ tag?: string; q?: string; priority?: string; resolved?: string; board?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams<{
+    tag?: string;
+    q?: string;
+    priority?: string;
+    resolved?: string;
+    board?: string;
+  }>();
   const [query, setQuery] = createSignal('');
   const [selectedTags, setSelectedTags] = createSignal<string[]>([]);
   const [priorities, setPriorities] = createSignal<string[]>([]);
@@ -122,7 +128,11 @@ export default function SearchPage() {
   createEffect(
     () => (detail()?.boards.length ?? 0) > 0 && searchParams.board,
     (boardId) => {
-      if (boardId && detail()?.boards.some((b) => b.id === boardId) && !boards().includes(boardId)) {
+      if (
+        boardId &&
+        detail()?.boards.some((b) => b.id === boardId) &&
+        !boards().includes(boardId)
+      ) {
         setBoards([boardId]);
         setDirty(true);
       }
@@ -314,7 +324,10 @@ export default function SearchPage() {
       {/* ── results ────────────────────────────────────────────────────── */}
       {/* No unmount-remount while re-searching: stale results stay on
           screen (the flash fix) — the loader only shows a cold start. */}
-      <Show when={hits().length > 0 || !busy()} fallback={<p class="mt-8 text-sm text-neutral-400">Searching…</p>}>
+      <Show
+        when={hits().length > 0 || !busy()}
+        fallback={<p class="mt-8 text-sm text-neutral-400">Searching…</p>}
+      >
         <p class="mt-6 text-xs text-neutral-400">
           {hits().length} card{hits().length === 1 ? '' : 's'}
         </p>
@@ -333,9 +346,15 @@ export default function SearchPage() {
                     <div class="min-w-0 flex-1">
                       <p class="break-words text-sm font-semibold">{hit.title}</p>
                       <p class="mt-0.5 text-xs text-neutral-400">
-                        on <span class="font-medium text-neutral-500 dark:text-neutral-300">{hit.board_name}</span>
-                        {' '}· by {memberName(hit.created_by) ?? 'a former member'}
-                        {' '}· {new Date(hit.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        on{' '}
+                        <span class="font-medium text-neutral-500 dark:text-neutral-300">
+                          {hit.board_name}
+                        </span>{' '}
+                        · by {memberName(hit.created_by) ?? 'a former member'} ·{' '}
+                        {new Date(hit.updated_at).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
                       </p>
                       <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <Show when={hit.resolved_at}>
@@ -355,7 +374,8 @@ export default function SearchPage() {
                         </For>
                         <For each={hit.assignees}>
                           {(userId) => {
-                            const person = () => detail()?.members.find((m) => m.user_id === userId);
+                            const person = () =>
+                              detail()?.members.find((m) => m.user_id === userId);
                             return (
                               <Avatar
                                 src={person()?.avatar_url}

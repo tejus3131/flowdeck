@@ -68,9 +68,7 @@ export function PermissionPicker(props: {
   const capOf = (ws: WsChoice) => capFromChoice(ws);
 
   const toggleIn = (set: () => Set<string>, key: string) =>
-    set().has(key)
-      ? new Set([...set()].filter((k) => k !== key))
-      : new Set([...set(), key]);
+    set().has(key) ? new Set([...set()].filter((k) => k !== key)) : new Set([...set(), key]);
 
   /** Entity tri-state inside a bucket. */
   const entityState = (
@@ -84,8 +82,8 @@ export function PermissionPicker(props: {
     if (!entity) return null;
     const sel =
       bucket === 'workspaces'
-        ? props.selection.workspaces[bucketId ?? '']?.[entityId] ?? []
-        : props.selection.account[entityId] ?? [];
+        ? (props.selection.workspaces[bucketId ?? '']?.[entityId] ?? [])
+        : (props.selection.account[entityId] ?? []);
     const offered = offeredActions(entity, cap).map((a) => a.id);
     if (offered.length === 0) return null;
     if (sel.length === 0) return null;
@@ -118,9 +116,7 @@ export function PermissionPicker(props: {
           <TriState
             state={orgState(ws)}
             label={`toggle everything in ${ws.name}`}
-            onChange={() =>
-              props.onChange(toggleWorkspaceInSelection(props.selection, ws.id, cap))
-            }
+            onChange={() => props.onChange(toggleWorkspaceInSelection(props.selection, ws.id, cap))}
           />
           <button
             type="button"
@@ -174,7 +170,7 @@ export function PermissionPicker(props: {
         ? // An unselected org has no key in the selection — never read
           // through undefined (expanding an entity while its org is off
           // used to crash here).
-          props.selection.workspaces[bucketId ?? ''] ?? {}
+          (props.selection.workspaces[bucketId ?? ''] ?? {})
         : props.selection.account;
     /** One checkbox row for an action. */
     const actionCheckbox = (action: PermissionAction) => (
@@ -211,7 +207,9 @@ export function PermissionPicker(props: {
             state={entityState(bucket, bucketId, entityId, cap)}
             label={`toggle all ${entity.label}`}
             onChange={() =>
-              props.onChange(toggleEntityInSelection(props.selection, bucket, bucketId, entityId, cap))
+              props.onChange(
+                toggleEntityInSelection(props.selection, bucket, bucketId, entityId, cap),
+              )
             }
           />
           <button
@@ -225,9 +223,7 @@ export function PermissionPicker(props: {
         </div>
         <Show when={expanded()}>
           <div class="grid grid-cols-1 gap-1.5 border-t border-neutral-200 px-3 py-2 sm:grid-cols-2 dark:border-neutral-700">
-            <For each={offeredActions(entity, cap)}>
-              {(action) => actionCheckbox(action)}
-            </For>
+            <For each={offeredActions(entity, cap)}>{(action) => actionCheckbox(action)}</For>
           </div>
         </Show>
       </div>
