@@ -1,0 +1,118 @@
+# Deploy production — merge into `main` (via the preview→main release
+# PR, approved by the `production` environment's required reviewer).
+# Same path-based ordered matrix as preview (ADR-14), against prod refs.
+name: deploy-prod
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'supabase/migrations/**'
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - 'env.ts'
+      - 'vite.config.ts'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-prod.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false # queue deploys; never cancel a mid-deploy
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      migrations: ${{ steps.filter.outputs.migrations }}
+      functions: ${{ steps.filter.outputs.functions }}
+      worker: ${{ steps.filter.outputs.worker }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            migrations:
+              - 'supabase/migrations/**'
+              - 'supabase/config.toml'
+            functions:
+              - 'supabase/functions/**'
+            worker:
+              - 'src/**'
+              - 'public/**'
+              - 'env.ts'
+              - 'vite.config.ts'
+              - 'wrangler.jsonc'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+
+  deploy:
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true' || needs.changes.outputs.functions == 'true' || needs.changes.outputs.worker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The supabase CLI is NOT preinstalled on ubuntu-latest (see
+      # deploy-preview.yml). Pinned to match local dev.
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
+        with:
+          version: 3.4.0
+
+      # 1. Schema first (ADR-14). IPv4 note: see deploy-preview.yml —
+      #    migrations go through the session pooler (GitHub runners are
+      #    IPv4-only; db.<ref> is IPv6-only).
+      - name: Push migrations
+        if: needs.changes.outputs.migrations == 'true'
+        run: supabase db push --db-url "postgresql://postgres.${{ vars.SUPABASE_PROJECT_REF }}:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ vars.SUPABASE_POOLER_HOST }}:5432/postgres"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # 2. Edge functions (MCP).
+      - name: Deploy MCP edge function
+        if: needs.changes.outputs.functions == 'true'
+        run: supabase functions deploy mcp --no-verify-jwt --remote=${{ vars.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # 3. Worker — build with the prod project's public client env.
+      - name: Build
+        if: needs.changes.outputs.worker == 'true'
+        run: pnpm build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Deploy worker (production)
+        if: needs.changes.outputs.worker == 'true'
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

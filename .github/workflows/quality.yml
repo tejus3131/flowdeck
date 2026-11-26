@@ -1,0 +1,168 @@
+# Quality gate — runs on every PR to preview/main. Zero provider
+# credentials reach this workflow (ADR-15): the Supabase stack runs LOCALLY
+# on the runner, so PR code cannot exfiltrate deploy tokens.
+#
+# Split by what changed (the Docker stack is ~60% of a run and only
+# matters when server/DB code moved):
+#   lint+typecheck — always
+#   build+client tests — UI PRs (src/, public/)
+#   docker+server tests — server PRs (supabase/, src/server/, src/lib/)
+# A docs-only PR runs lint+typecheck only (~15s).
+name: quality
+
+on:
+  pull_request:
+    branches: [main, preview]
+    # ready_for_review is REQUIRED: draft-gated jobs (client/server/
+    # functions) skip on drafts, and marking ready fires no synchronize
+    # — without this type the full checks never run for drafted PRs and
+    # branch protection shows pending checks forever.
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read # paths-filter lists changed files via the API
+
+concurrency:
+  group: quality-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      server: ${{ steps.filter.outputs.server }}
+      functions: ${{ steps.filter.outputs.functions }}
+    steps:
+      # No checkout: paths-filter lists changed files via the API on
+      # pull_request events — the clone would be wasted on every PR.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            ui:
+              - 'src/**'
+              - 'public/**'
+              # env/config-only PRs must hit the build gate: the env
+              # schema fails the BUILD on validation, and only the
+              # client job builds.
+              - 'env.ts'
+              - 'vite.config.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            server:
+              - 'supabase/migrations/**'
+              - 'supabase/config.toml'
+              - 'src/server/**'
+              - 'src/lib/**'
+              - 'src/types/**'
+              - 'env.ts'
+              - 'vite.config.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            # MCP edge functions: the server test project never touches
+            # them — a functions-only PR shouldn't pay for the Docker
+            # stack. The tool report (pr-intel) covers the review side.
+            functions:
+              - 'supabase/functions/**'
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  client:
+    needs: classify
+    if: needs.classify.outputs.ui == 'true' && github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Build with repo-level public vars — a PR run has no environment
+      # context; the preview project's public values give the gate a
+      # representative build. The artifact is discarded; prod builds
+      # happen in deploy-prod with the production environment's values.
+      - name: Build
+        run: pnpm build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.PREVIEW_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.PREVIEW_SUPABASE_PUBLISHABLE_KEY }}
+      - name: Client tests (jsdom)
+        run: pnpm vitest run --project client
+
+  server:
+    needs: classify
+    if: needs.classify.outputs.server == 'true' && github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The local Supabase stack: migrations apply fresh, db-guards
+      # self-seeds its fixture (see src/server/db-guards.test.ts).
+      # CLI pinned (not latest): a floating CLI means floating
+      # local-stack container digests — the server tests' environment
+      # would change with zero code changes. Keep in lockstep with
+      # local dev and the deploy workflows.
+      - name: Start local Supabase stack
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
+        with:
+          version: 3.4.0
+      - name: Start stack + run migrations
+        run: supabase start && supabase db reset
+      - name: Server tests (node)
+        run: pnpm vitest run --project server
+        env:
+          # The server project's env stub reads process.env at call time.
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_PUBLISHABLE_KEY: test-publishable-key-placeholder-value
+          SUPABASE_SECRET_KEY: test-secret-key-placeholder-value
+
+  # MCP edge functions: nothing in the test projects exercises them —
+  # this job type-checks the function with deno (the honest tool: the
+  # deps are https://esm.sh/ imports). Without it, a syntax/type break
+  # in mcp/index.ts sails through quality green and the deploy workflow
+  # pushes a broken function to prod. Review coverage comes from
+  # pr-intel's tool report.
+  functions:
+    needs: classify
+    if: needs.classify.outputs.functions == 'true' && github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.9.8 # pinned: a floating v2.x could redden the job on a bad release
+      - name: Type-check MCP function
+        run: deno check supabase/functions/mcp/index.ts
