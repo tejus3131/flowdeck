@@ -48,6 +48,14 @@ export type FoldEvent =
   /** card_assignees INSERT/DELETE — join rows folded directly (assignees
    *  are user ids; nothing to resolve). */
   | { kind: 'card-assignee-set'; cardId: string; userId: string; assigned: boolean }
+  /** card_counters INSERT/UPDATE (ADR-7): the trigger's row IS the event —
+   *  the unseen badge folds in O(1), no card fetch, no aggregation. */
+  | {
+      kind: 'card-counter';
+      cardId: string;
+      commentCount: number;
+      lastCommentAt: string | null;
+    }
   /** board_revisions UPDATE — the exact server cursor (migration 0032). */
   | { kind: 'revision'; value: number }
   /** A visibility-shaping change (board_access, board_team_access, team
@@ -68,6 +76,8 @@ export type FoldPlan = {
   cardTagOps: Map<string, Map<string, { name?: string; attached: boolean }>>;
   /** Assignee join rows, card → user id → last op wins. */
   assigneeOps: Map<string, Map<string, boolean>>;
+  /** Counter rows, card → the trigger's freshest values. */
+  cardCounters: Map<string, { commentCount: number; lastCommentAt: string | null }>;
   /** The exact server revision when ≥ 0; -1 = no revision event arrived. */
   revision: number;
   /** True when only a full re-snapshot answers the burst. */
@@ -87,6 +97,7 @@ export function planFold(events: FoldEvent[]): FoldPlan {
     tagUpserts: new Map(),
     cardTagOps: new Map(),
     assigneeOps: new Map(),
+    cardCounters: new Map(),
     revision: -1,
     resync: false,
   };
@@ -128,6 +139,12 @@ export function planFold(events: FoldEvent[]): FoldPlan {
         ops.set(event.userId, event.assigned);
         break;
       }
+      case 'card-counter':
+        plan.cardCounters.set(event.cardId, {
+          commentCount: event.commentCount,
+          lastCommentAt: event.lastCommentAt,
+        });
+        break;
       case 'revision':
         plan.revision = Math.max(plan.revision, event.value);
         break;
@@ -194,7 +211,7 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
   // its card and overwrites whatever the events predicted. Events for
   // cards this board doesn't hold (the unfiltered card-side channels
   // hear other boards too) skip — the periodic re-sync bounds drift.
-  if (plan.cardTagOps.size > 0 || plan.assigneeOps.size > 0) {
+  if (plan.cardTagOps.size > 0 || plan.assigneeOps.size > 0 || plan.cardCounters.size > 0) {
     const byId = new Map(draft.cards.map((card) => [card.id, card]));
     for (const [cardId, tagOps] of plan.cardTagOps) {
       const card = byId.get(cardId);
@@ -215,6 +232,12 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
         const without = card.assignees.filter((id) => id !== userId);
         card.assignees = assigned ? [...without, userId] : without;
       }
+    }
+    for (const [cardId, counter] of plan.cardCounters) {
+      const card = byId.get(cardId);
+      if (!card) continue;
+      card.comment_count = counter.commentCount;
+      card.last_comment_at = counter.lastCommentAt;
     }
   }
 

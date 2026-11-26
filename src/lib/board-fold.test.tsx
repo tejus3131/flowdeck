@@ -121,6 +121,18 @@ describe('planFold', () => {
     expect(plan.assigneeOps.get('c1')?.get('u2')).toBe(false);
   });
 
+  it('routes counter rows, LAST per card wins', () => {
+    const plan = planFold([
+      { kind: 'card-counter', cardId: 'c1', commentCount: 3, lastCommentAt: 't3' },
+      { kind: 'card-counter', cardId: 'c1', commentCount: 4, lastCommentAt: 't4' },
+      { kind: 'card-counter', cardId: 'c2', commentCount: 1, lastCommentAt: null },
+    ]);
+    expect(plan.cardCounters.get('c1')).toEqual({ commentCount: 4, lastCommentAt: 't4' });
+    expect(plan.cardCounters.get('c2')).toEqual({ commentCount: 1, lastCommentAt: null });
+    expect(plan.resync).toBe(false);
+    expect(plan.cardTouches.size).toBe(0);
+  });
+
   it('join rows ask for NEITHER a resync NOR a card fetch', () => {
     const plan = planFold([
       { kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't1', name: 'alpha' } },
@@ -300,6 +312,29 @@ describe('applyFold', () => {
       { kind: 'card-assignee-set', cardId: 'other-board-card', userId: 'u1', assigned: true },
     ]);
     expect(draft).toEqual(frozen);
+  });
+
+  it('a counter row folds the unseen badge in O(1) — and a fetched view in the same burst still wins', () => {
+    const draft = snapshot([list('l1', 1)], [card('c1', 'l1', 1)]);
+    fold(draft, [
+      { kind: 'card-counter', cardId: 'c1', commentCount: 7, lastCommentAt: '2026-01-01' },
+    ]);
+    expect(draft.cards[0]!.comment_count).toBe(7);
+    expect(draft.cards[0]!.last_comment_at).toBe('2026-01-01');
+    // Unknown cards (the channel hears other boards) skip quietly.
+    const frozen: BoardSnapshot = JSON.parse(JSON.stringify(draft));
+    fold(draft, [
+      { kind: 'card-counter', cardId: 'other-card', commentCount: 9, lastCommentAt: null },
+    ]);
+    expect(draft).toEqual(frozen);
+    // A same-burst fetch is fresher: its view overwrites the counter.
+    fold(
+      draft,
+      [{ kind: 'card-counter', cardId: 'c1', commentCount: 99, lastCommentAt: '1999-01-01' }],
+      [{ ...card('c1', 'l1', 1), comment_count: 8, last_comment_at: '2026-01-02' }],
+    );
+    expect(draft.cards[0]!.comment_count).toBe(8);
+    expect(draft.cards[0]!.last_comment_at).toBe('2026-01-02');
   });
 
   it("a fetched view overwrites the same burst's join rows — the fetch is the fresher truth", () => {

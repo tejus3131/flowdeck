@@ -496,16 +496,25 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
     );
   }
   channel
-    // Comment stats ride the snapshot: agents and API writes (which skip
-    // the relay) still bump the unseen badges live — re-fetch the card.
-    // (A comment DELETE carries only its own PK in `old` — no card to
-    // touch; the periodic re-sync converges that rare case.)
+    // Comment stats are counters now (ADR-7, migration 0074): the
+    // maintenance trigger's UPDATE IS the event — the badge folds in O(1)
+    // with no card fetch, for every writer (agents and API included, they
+    // all bump the trigger). Comment DELETEs converge the same way — the
+    // old card-touch gap ("a DELETE carries no card to touch") is gone.
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'card_comments' },
-      (payload: { new: { card_id?: string }; old: { card_id?: string } }) => {
-        const cardId = (payload.new ?? payload.old)?.card_id;
-        if (cardId) push({ kind: 'card-touch', id: String(cardId) });
+      { event: '*', schema: 'public', table: 'card_counters' },
+      (payload: {
+        new: { card_id?: string; comment_count?: number; last_comment_at?: string | null } | null;
+      }) => {
+        const row = payload.new;
+        if (!row?.card_id || row.comment_count === undefined) return;
+        push({
+          kind: 'card-counter',
+          cardId: String(row.card_id),
+          commentCount: Number(row.comment_count),
+          lastCommentAt: row.last_comment_at ?? null,
+        });
       },
     )
     // The exact per-board revision (migration 0032) rides every change.
@@ -623,16 +632,19 @@ async function snapshot(
   boardId: string,
 ): Promise<BoardSnapshot> {
   const startedAt = Date.now();
-  const [boards, lists, cards, revisionRow, access, stats] = await Promise.all([
+  const [boards, lists, cards, revisionRow, access] = await Promise.all([
     supabase.from('boards').select('*').eq('id', boardId).maybeSingle(),
     supabase
       .from('lists')
       .select('*')
       .eq('board_id', boardId)
       .order('position', { ascending: true }),
+    // Comment stats ride the counters join (ADR-7, migration 0074) — the
+    // old board_card_comment_stats aggregate leg is gone: five queries,
+    // not six, and the stats are transactional rows now.
     supabase
       .from('cards')
-      .select('*, card_tags(tag_id, tags(id, name))')
+      .select('*, card_tags(tag_id, tags(id, name)), card_counters(comment_count, last_comment_at)')
       .eq('board_id', boardId)
       .order('position', { ascending: true }),
     // The trustworthy per-board cursor (migration 0032): bumped by a
@@ -640,7 +652,6 @@ async function snapshot(
     // deletions included, unlike the old activity head.
     supabase.from('board_revisions').select('revision').eq('board_id', boardId).maybeSingle(),
     supabase.rpc('user_board_access', { p_board_id: boardId }),
-    supabase.rpc('board_card_comment_stats', { p_board_id: boardId }),
   ]);
   // Deploy-order safety: code can ship before migration 0032 lands — in
   // that window fall back to the old, less trustworthy cursor (the
@@ -683,11 +694,6 @@ async function snapshot(
       denied: true,
     };
   }
-  const statMap = new Map(
-    (
-      (stats.data ?? []) as { card_id: string; comment_count: number; last_comment_at: string }[]
-    ).map((row) => [row.card_id, row]),
-  );
   const assigneeMap = new Map<string, string[]>();
   for (const row of (assignees.data ?? []) as { card_id: string; user_id: string }[]) {
     const list = assigneeMap.get(row.card_id) ?? [];
@@ -700,14 +706,23 @@ async function snapshot(
     cards: (
       cards.data as unknown as (CardRow & {
         card_tags?: { tag_id: string; tags: { id: string; name: string } | null }[];
+        card_counters?:
+          | { comment_count: number; last_comment_at: string | null }
+          | { comment_count: number; last_comment_at: string | null }[]
+          | null;
       })[]
     ).map((card) => {
-      const stat = statMap.get(card.id);
-      const { card_tags: _links, ...row } = card;
+      // The one-to-one counters join: an object when the row exists,
+      // null before a card's first comment (count 0, no last). PostgREST
+      // shapes it as an object for unique FKs; the array arm is tolerance.
+      const counter = Array.isArray(card.card_counters)
+        ? card.card_counters[0]
+        : card.card_counters;
+      const { card_tags: _links, card_counters: _counter, ...row } = card;
       return {
         ...row,
-        comment_count: Number(stat?.comment_count ?? 0),
-        last_comment_at: stat?.last_comment_at ?? null,
+        comment_count: Number(counter?.comment_count ?? 0),
+        last_comment_at: counter?.last_comment_at ?? null,
         assignees: assigneeMap.get(card.id) ?? [],
         tags: (_links ?? [])
           .map((link) => link.tags)
@@ -734,46 +749,43 @@ async function fetchCardViews(
 ): Promise<CardView[]> {
   if (cardIds.size === 0) return [];
   const ids = [...cardIds];
-  const [cardsRes, assigneesRes, commentsRes] = await Promise.all([
+  // Comment stats ride the counters join (ADR-7, migration 0074) — the
+  // card_comments aggregation leg is gone.
+  const [cardsRes, assigneesRes] = await Promise.all([
     supabase
       .from('cards')
-      .select('*, card_tags(tag_id, tags(id, name))')
+      .select('*, card_tags(tag_id, tags(id, name)), card_counters(comment_count, last_comment_at)')
       .eq('board_id', boardId)
       .in('id', ids),
     supabase.from('card_assignees').select('card_id, user_id').in('card_id', ids),
-    supabase.from('card_comments').select('card_id, created_at').in('card_id', ids),
   ]);
   if (cardsRes.error) throw new Error(cardsRes.error.message);
   // Throw-on-error like snapshot(): a transient failure of the assignee
-  // or comment queries must not fold silently-wrong stats — the throw
-  // ends the generator, live() reconnects, and the reconnect's fresh
-  // full snapshot restores truth in ~1s instead of waiting for a resync.
+  // query must not fold silently-wrong stats — the throw ends the
+  // generator, live() reconnects, and the reconnect's fresh full
+  // snapshot restores truth in ~1s instead of waiting for a resync.
   if (assigneesRes.error) throw new Error(assigneesRes.error.message);
-  if (commentsRes.error) throw new Error(commentsRes.error.message);
   const assigneeMap = new Map<string, string[]>();
   for (const row of (assigneesRes.data ?? []) as { card_id: string; user_id: string }[]) {
     const list = assigneeMap.get(row.card_id) ?? [];
     list.push(row.user_id);
     assigneeMap.set(row.card_id, list);
   }
-  const statMap = new Map<string, { count: number; last: string | null }>();
-  for (const row of (commentsRes.data ?? []) as { card_id: string; created_at: string }[]) {
-    const stat = statMap.get(row.card_id) ?? { count: 0, last: null };
-    stat.count += 1;
-    if (!stat.last || row.created_at > stat.last) stat.last = row.created_at;
-    statMap.set(row.card_id, stat);
-  }
   return (
     (cardsRes.data ?? []) as unknown as (CardRow & {
       card_tags?: { tag_id: string; tags: { id: string; name: string } | null }[];
+      card_counters?:
+        | { comment_count: number; last_comment_at: string | null }
+        | { comment_count: number; last_comment_at: string | null }[]
+        | null;
     })[]
   ).map((card) => {
-    const { card_tags: links, ...row } = card;
-    const stat = statMap.get(card.id);
+    const counter = Array.isArray(card.card_counters) ? card.card_counters[0] : card.card_counters;
+    const { card_tags: links, card_counters: _counter, ...row } = card;
     return {
       ...row,
-      comment_count: stat?.count ?? 0,
-      last_comment_at: stat?.last ?? null,
+      comment_count: Number(counter?.comment_count ?? 0),
+      last_comment_at: counter?.last_comment_at ?? null,
       assignees: assigneeMap.get(card.id) ?? [],
       tags: (links ?? [])
         .map((link) => link.tags)

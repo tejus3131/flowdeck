@@ -579,6 +579,32 @@ export type Database = {
           },
         ]
       }
+      card_counters: {
+        Row: {
+          card_id: string
+          comment_count: number
+          last_comment_at: string | null
+        }
+        Insert: {
+          card_id: string
+          comment_count?: number
+          last_comment_at?: string | null
+        }
+        Update: {
+          card_id?: string
+          comment_count?: number
+          last_comment_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "card_counters_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: true
+            referencedRelation: "cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       card_tags: {
         Row: {
           card_id: string
@@ -1259,14 +1285,6 @@ export type Database = {
       allocate_chat_seq: { Args: { p_kind: string; p_scope: string }; Returns: number }
       allocate_list_position: { Args: { p_board_id: string }; Returns: number }
       auth_check_email: { Args: { p_email: string }; Returns: Json }
-      board_card_comment_stats: {
-        Args: { p_board_id: string }
-        Returns: {
-          card_id: string
-          comment_count: number
-          last_comment_at: string
-        }[]
-      }
       delete_board_message: { Args: { p_id: string }; Returns: Json }
       delete_comment: { Args: { p_id: string }; Returns: Json }
       log_board_mentions: {
