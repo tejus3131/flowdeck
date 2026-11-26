@@ -40,8 +40,11 @@ jobs:
 
       - name: Migration guard (append-only)
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          # Files changed in this PR.
+          # Merge base, not base.sha: if the base branch moved (another
+          # migration PR merged), diffing the branch tip would report
+          # that migration as deleted on this clean PR. The merge base
+          # is the robust diff point in every interpretation.
+          base="$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD)"
           mapfile -t changed < <(git diff --name-status "$base" HEAD -- supabase/migrations/ || true)
           bad=0
           for line in "${changed[@]}"; do
@@ -66,7 +69,9 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const pr = context.issue;
-            // Path-based classification.
+            // Path-based classification. NOTE: this filter set and
+            // quality.yml's classify job encode overlapping knowledge —
+            // keep them in sync (docs/ci-cd.md holds the canonical split).
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner, repo, pull_number: pr.number, per_page: 100,
             });
@@ -75,19 +80,30 @@ jobs:
             const labels = [];
             if (has(/^supabase\/migrations\//)) labels.push('migration');
             if (has(/^supabase\/functions\//)) labels.push('mcp');
-            if (has(/^src\/(server|lib)\//) || has(/^supabase\//)) labels.push('server');
+            if (has(/^supabase\//) || has(/^src\/(server|lib|types)\//)) labels.push('server');
             if (has(/^src\/(components|routes|app\.css|logo)/) || has(/^public\//)) labels.push('client');
-            if (has(/^docs\//) && paths.every(p => p.startsWith('docs/') || p.endsWith('.md'))) labels.push('docs');
+            if (paths.every(p => p.startsWith('docs/') || p.endsWith('.md'))) labels.push('docs');
             if (has(/^\.github\//) || has(/^(vite\.config|wrangler|oxlint|tsconfig|package|pnpm-lock)/)) labels.push('infra');
             // Content probes: the load-bearing modules.
             const patch = files.map(f => f.patch || '').join('\n');
-            if (has(/^src\/lib\/sync\.ts$/) || /outbox|guards|echo|provisional/.test(patch) && has(/^src\/lib\//)) labels.push('sync-engine');
+            if (has(/^src\/lib\/sync\.ts$/) || (has(/^src\/lib\//) && /outbox|guards|echo|provisional/.test(patch))) labels.push('sync-engine');
             if (has(/^src\/lib\/(cache|prefetch|perf)\.ts$/)) labels.push('cache');
             if (has(/^src\/lib\/board-fold\.ts$/)) labels.push('fold');
             if (labels.length === 0) labels.push('misc');
-            // Replace the PR's labels wholesale with the computed set —
-            // deterministic: the labels always reflect the current diff.
-            await github.rest.issues.setLabels({ owner, repo, issue_number: pr.number, labels });
+            // The bot owns its labels, humans own theirs: add the
+            // computed set, prune only previously-computed labels that
+            // no longer apply. Human labels (bug, priority, …) are
+            // never touched.
+            const BOT_LABELS = ['migration', 'mcp', 'server', 'client', 'docs', 'infra', 'sync-engine', 'cache', 'fold', 'misc'];
+            const current = (await github.rest.issues.get({ owner, repo, issue_number: pr.number }))
+              .data.labels.map(l => l.name);
+            const human = current.filter(l => !BOT_LABELS.includes(l));
+            const next = [...new Set([...human, ...labels])];
+            const stale = current.filter(l => BOT_LABELS.includes(l) && !labels.includes(l));
+            await github.rest.issues.setLabels({ owner, repo, issue_number: pr.number, labels: next });
+            if (stale.length) {
+              for (const l of stale) await github.rest.issues.removeLabel({ owner, repo, issue_number: pr.number, name: l });
+            }
 
       - name: MCP tool report (one comment, updated per push)
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
@@ -101,10 +117,13 @@ jobs:
             if (!files.some(f => f.filename.startsWith('supabase/functions/'))) return;
             const { execSync } = require('node:child_process');
             const base = '${{ github.event.pull_request.base.sha }}';
+            // Tool names only: `name: 'tool_name',` on its own line at
+            // tool-def indentation (4 spaces). SERVER_INFO's inline
+            // `name: 'flowdeck'` doesn't match the line shape.
             const extract = (rev) => execSync(
               `git show ${rev}:supabase/functions/mcp/index.ts`,
               { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
-            ).match(/name:\s*'([a-z_]+)'/g)?.map(m => m.match(/'([^']+)'/)[1]) ?? [];
+            ).match(/^ {4}name:\s*'([a-z_]+)',\s*$/gm)?.map(m => m.match(/'([^']+)'/)[1]) ?? [];
             let baseTools = [], headTools = [];
             try { baseTools = extract(base); } catch { /* new file or base lacks it */ }
             try { headTools = extract('HEAD'); } catch { /* deleted? report that */ }
@@ -112,12 +131,12 @@ jobs:
             const removed = baseTools.filter(t => !headTools.includes(t));
             const changed = files
               .filter(f => f.filename === 'supabase/functions/mcp/index.ts')
-              .map(f => (f.patch || '').split('\n').filter(l => /^[+-]\s/.test(l)).length)
+              .map(f => (f.patch || '').split('\n').filter(l => /^[+-]/.test(l) && !/^[+-]{3}/.test(l)).length)
               .reduce((a, b) => a + b, 0);
             const lines = ['## MCP tool changes', ''];
             if (added.length) lines.push(`**Added tools (${added.length}):** ${added.map(t => '`' + t + '`').join(', ')}`);
             if (removed.length) lines.push(`**Removed tools (${removed.length}):** ${removed.map(t => '`' + t + '`').join(', ')}`);
-            if (!added.length && !removed.length) lines.push(`No tool additions/removals — ${changed} changed lines in the MCP function (behavior/schema changes only; review the diff).`);
+            if (!added.length && !removed.length) lines.push(`No tool additions/removals — ~${changed} changed lines in the MCP function (behavior/schema changes only; review the diff).`);
             lines.push('', `<sub>pr-intel: deterministic report — updates on every push.</sub>`);
             const body = lines.join('\n');
             // Upsert: find this bot's previous report and edit it, so the

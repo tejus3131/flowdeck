@@ -34,18 +34,41 @@ flowchart LR
 
 ### W1 — `quality` (pull_request → preview, main)
 
-1. `pnpm install --frozen-lockfile`
-2. `oxlint src`
-3. `tsc --noEmit` (`pnpm typecheck`)
-4. `vite build` (build gate; client env from repo-level public
-   `PREVIEW_*` variables — PR runs have no environment context)
-5. `vitest` — client project (jsdom)
-6. `vitest` — server project: `supabase db reset` on the runner first
-   (docker available on ubuntu-latest; `db-guards` self-seeds its
-   fixture). **Zero provider credentials in this workflow** (ADR-15).
+Path-classified (the Docker stack is ~60% of a run and only matters when
+server/DB code moved):
+
+| Job | Runs when | What |
+| --- | --- | --- |
+| `classify` | always | paths-filter → ui / server / functions outputs |
+| `lint` | always | oxlint + tsc (drafts included) |
+| `client` | UI paths, non-draft | build (repo-level public `PREVIEW_*` vars — PR runs have no environment context) + jsdom tests |
+| `server` | server/DB paths, non-draft | local `supabase start && db reset` + node tests (db-guards self-seeds) |
+| `functions` | `supabase/functions/**`, non-draft | explicit no-op check — the test projects don't exercise edge functions; review coverage is pr-intel's tool report |
+
+**Zero provider credentials in this workflow** (ADR-15). Docs-only PRs
+run lint+typecheck only (~15s).
 
 Promised follow-up (not in Phase 0): `supabase db push --dry-run` →
 PR comment with the migration diff.
+
+### W1b — `pr-intel` (pull_request → preview, main)
+
+Deterministic review aids; read-only except labels + one report comment:
+
+- **Labels** (bot-owned; human labels never touched): `migration`,
+  `mcp`, `server`, `client`, `docs`, `infra`, `sync-engine`, `cache`,
+  `fold`, `misc` — computed from the diff, pruned when stale.
+- **Migration guard** (blocking): modifying, deleting, or renaming an
+  existing migration fails the PR (L0 rule 1 — migrations are
+  append-only; editing one desyncs every database that already applied
+  it). Diffs the **merge base**, not the branch tip, so a base branch
+  that moved mid-PR can't false-positive.
+- **MCP tool report**: when `supabase/functions/mcp` changes, diffs the
+  TOOLS array against the base and posts ONE comment (upserted per
+  push) listing added/removed tools or noting behavior-only changes.
+
+Path-classification knowledge lives in quality.yml's filter and
+pr-intel.yml's label regexes — keep them in sync when paths move.
 
 ### W2 — `deploy-preview` (push → preview)
 

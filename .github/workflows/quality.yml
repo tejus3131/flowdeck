@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read # paths-filter lists changed files via the API
 
 concurrency:
   group: quality-${{ github.event.pull_request.head.ref }}
@@ -28,10 +29,10 @@ jobs:
     outputs:
       ui: ${{ steps.filter.outputs.ui }}
       server: ${{ steps.filter.outputs.server }}
+      functions: ${{ steps.filter.outputs.functions }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
+      # No checkout: paths-filter lists changed files via the API on
+      # pull_request events — the clone would be wasted on every PR.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
@@ -39,8 +40,16 @@ jobs:
             ui:
               - 'src/**'
               - 'public/**'
+              # env/config-only PRs must hit the build gate: the env
+              # schema fails the BUILD on validation, and only the
+              # client job builds.
+              - 'env.ts'
+              - 'vite.config.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
             server:
-              - 'supabase/**'
+              - 'supabase/migrations/**'
+              - 'supabase/config.toml'
               - 'src/server/**'
               - 'src/lib/**'
               - 'src/types/**'
@@ -48,6 +57,11 @@ jobs:
               - 'vite.config.ts'
               - 'package.json'
               - 'pnpm-lock.yaml'
+            # MCP edge functions: the server test project never touches
+            # them — a functions-only PR shouldn't pay for the Docker
+            # stack. The tool report (pr-intel) covers the review side.
+            functions:
+              - 'supabase/functions/**'
 
   lint:
     runs-on: ubuntu-latest
@@ -67,7 +81,7 @@ jobs:
 
   client:
     needs: classify
-    if: needs.classify.outputs.ui == 'true'
+    if: needs.classify.outputs.ui == 'true' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -94,7 +108,7 @@ jobs:
 
   server:
     needs: classify
-    if: needs.classify.outputs.server == 'true'
+    if: needs.classify.outputs.server == 'true' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -122,3 +136,16 @@ jobs:
           SUPABASE_URL: http://127.0.0.1:54321
           SUPABASE_PUBLISHABLE_KEY: test-publishable-key-placeholder-value
           SUPABASE_SECRET_KEY: test-secret-key-placeholder-value
+
+  # MCP edge functions: nothing in the test projects exercises them —
+  # this job exists so a functions-only PR shows an explicit (passing)
+  # check instead of silently skipping. Review coverage comes from
+  # pr-intel's tool report.
+  functions:
+    needs: classify
+    if: needs.classify.outputs.functions == 'true' && github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: MCP function changed — review via the pr-intel tool report
+        run: echo "Edge function changes are covered by pr-intel's tool report; deploy workflows redeploy the function on merge."
