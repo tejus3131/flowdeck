@@ -17,6 +17,28 @@ AI agents. Solo-maintained, free-tier resources, deliberate over clever.
 The architecture doc's five principles and the canonical test are the
 constitution; most review feedback traces back to them.
 
+## 1b. The one bug class to internalize before UI work
+
+**Symptom:** a change to one entity (a rename, a role change) shows up
+instantly on some surfaces and seconds later — or only after a reload — on
+others.
+
+**Cause:** two surfaces hold two copies of the same entity. The instant one
+reads the store; the slow one reads a snapshot slice (a detail payload
+threaded as a prop, a list captured in a signal). Only the store copy got
+the update.
+
+**Why it's a layering violation, not a UI bug:** the architecture's
+canonical test is "a one-row change updates every surface in one frame,
+with zero refetches". A surface that updates late or never fails it by
+definition — the fix is never a timer, a poll, or a rebuild hack; it is
+rewiring the surface to read the store by id.
+
+**The rule and the fix live in `docs/ui-data.md`.** If you see the symptom
+in review or in the app, that doc is the checklist. This failure class is
+the most common way new UI goes wrong in this repo, and the reason the
+read-order below puts `ui-data.md` before any view work.
+
 ## 2. Read, in this order (don't skip ahead)
 
 1. `AGENTS.md` (root) — stack, commands, hard rules, gotchas, and the
@@ -26,12 +48,15 @@ constitution; most review feedback traces back to them.
 3. `docs/layers/l0-database.md` … `l5-views.md` — skim each layer's
    Owns / May-not / Rules. You don't need to memorize; you need to know
    they exist and where to look when a change crosses a boundary.
-4. `docs/adr.md` — the decision records. Scan the numbers and titles;
+4. `docs/ui-data.md` — the UI data-wiring how-to (store selectors, not
+   snapshot slices). Required before any view work — see "The one bug
+   class to internalize" below.
+5. `docs/adr.md` — the decision records. Scan the numbers and titles;
    read fully any that touch your upcoming work. **Never re-propose
    something an ADR already decided against.**
-5. `docs/ci-cd.md` — branch model (`feat/*` → PR → `preview` → release PR
+6. `docs/ci-cd.md` — branch model (`feat/*` → PR → `preview` → release PR
    → `main`), the deploy legs, the release records, the secrets/vars split.
-6. `docs/performance-rules.md` and `docs/observability.md` — the budgets
+7. `docs/performance-rules.md` and `docs/observability.md` — the budgets
    and the event taxonomy.
 
 ## 3. Verify the environment actually works

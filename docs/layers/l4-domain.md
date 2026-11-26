@@ -15,13 +15,12 @@ domain functions.
 ## May not
 
 - Know views: no assembling page-shaped payloads, no embedding display
-  names where an id + store lookup suffices (the `CardView.tags`
-  denormalization is the anti-example being retired).
+  names where an id + store lookup suffices (embedded name copies are the
+  anti-pattern this architecture retires everywhere).
 - Contain mutation logic: validation + orchestration only; the write and
   its event logging live in L0's per-op functions (ADR-5).
-- Grow unbounded files: `boards.ts` splits by domain (board-reads,
-  board-stream, board-chat, card-comments, mutations). A 2,000-line module
-  is a review blocker.
+- Grow unbounded files: domain reads and mutations split by concern as
+  they grow. A 2,000-line module is a review blocker.
 
 ## Rules
 
