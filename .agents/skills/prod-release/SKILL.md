@@ -1,15 +1,14 @@
 ---
 name: prod-release
-description: The production release routine for Flowdeck — freeze the release from preview's tip, enumerate every merged PR and what it ships, verify deploy legs and migrations, raise the release PR (base main), watch checks, and complete the production deployment approval. Run it when asked to cut a prod release.
+description: The production release routine for Flowdeck — open the release PR (base main, head preview), enumerate every merged PR and what it ships, verify deploy legs and migrations, watch checks, and complete the production deployment approval. Run it when asked to cut a prod release.
 ---
 
 # Prod release — the routine
 
 Flowdeck deploys continuously from `preview` (auto) and from `main`
-(release click). A prod release = one PR carrying everything preview
-has that `main` doesn't, merged into `main`, then the `production`
-environment approval. This skill is the whole run; `docs/ci-cd.md` is
-the source of truth it distills.
+(release click). A prod release = one PR from `preview` into `main`,
+merged, then the `production` environment approval. This skill is the
+whole run; `docs/ci-cd.md` is the source of truth it distills.
 
 ## 0. Preconditions
 
@@ -31,22 +30,19 @@ The newest PR merged into `main` is the previous release (e.g. #52).
 Everything merged into `preview` **after its merge date** is this
 release's cargo.
 
-## 2. Freeze the release tip
-
-Cut a branch from `origin/preview` so the release is a fixed snapshot —
-nothing merged to preview mid-release can ride along or re-trigger
-checks:
+## 2. Open the release PR — base `main`, head `preview`
 
 ```bash
-git fetch origin preview main
-git checkout -b release/prod-$(date +%F) origin/preview
-git push -u origin release/prod-$(date +%F)
+gh pr create --base main --head preview \
+  --title "release: ship preview to production (YYYY-MM-DD)"
 ```
 
-(A direct `preview` → `main` PR also works — that was the pattern
-before release branches — but it is a moving target: new preview
-merges extend the PR and dismiss approvals. The frozen branch is the
-default.)
+The PR points **directly at `preview`** — not a snapshot branch. That
+is deliberate: anything merged into `preview` while the release PR is
+open shows up in it automatically, so the release can never drift from
+what preview has. The flip side: the PR is a moving target while open,
+so write the description as a point-in-time list (step 3) and
+**re-check the cargo list immediately before merging** (step 6).
 
 ## 3. Enumerate the cargo — every PR in this release
 
@@ -85,36 +81,34 @@ git diff --stat origin/main...origin/preview -- supabase/migrations supabase/fun
 
 ## 5. Write the release PR description
 
-Open the PR with **base `main`, head the release branch**:
-
-```bash
-gh pr create --base main --head release/prod-$(date +%F) \
-  --title "release: ship preview to production (YYYY-MM-DD)"
-```
-
 Body structure (use `.github/pull_request_template.md`):
 
 1. **What & why** — one paragraph: this is the batched release click;
    everything passed preview's gate and deployed there first.
-2. **Cargo list** — the section-3 table/list: every PR with number,
-   title, what it brings, area. This is the release's changelog; the
+2. **Cargo list** — the section-3 list: every PR with number, title,
+   what it brings, area. This is the release's changelog; the
    auto-generated `release-rN` notes will mirror it.
 3. **Deploy impact** — which legs run (worker / migrations / MCP), and
    explicitly "**no new migrations**" or the guard-note list.
 4. **Evidence per area** — preview deploy run link (green), server +
    migration-guard green, docs updated.
 
-## 6. Pre-merge sanity
+## 6. Pre-merge sanity (re-run right before merging)
+
+Because the PR tracks `preview` live, re-do these at merge time:
 
 ```bash
-git grep -n '^<<<<<<<\|^>>>>>>>' HEAD   # must return nothing
-gh pr checks <num>                       # wait until every required check passes
+gh pr list --base preview --state merged \
+  --search "merged:>YYYY-MM-DDTHH:MM:SSZ"   # any new PRs since step 3?
+git grep -n '^<<<<<<<\|^>>>>>>>' HEAD       # must return nothing
+gh pr checks <num>                          # wait until every required check passes
 ```
 
 Required: `classify`, `lint`, `format`, `knip`, `client`, `server`,
 `functions` (when functions moved), `migration-guard`, plus CodeQL
 blockers — the ruleset blocks on high-or-higher alerts, so check there
-are no open ones.
+are no open ones. If new PRs landed on preview, add them to the cargo
+list in the description.
 
 ## 7. Merge and approve the deploy
 
@@ -127,8 +121,7 @@ creates a pending **`production` environment deployment** — the release
 click that only `tejus3131` can approve:
 
 - Approve in the Actions run UI, or
-- `gh api repos/tejus3131/flowdeck/actions/runs/<run_id>/pending_deployments -X POST -f ...`
-  (approve all pending deployment review ids)
+- approve the pending deployment via the API from the run id
 
 Never bypass; the approval IS the release decision.
 
