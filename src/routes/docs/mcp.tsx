@@ -5,8 +5,15 @@ import { Title } from '@solidjs/meta';
 
 import { MembershipWatch } from '../../components/MembershipWatch';
 import { For } from 'solid-js';
+import { env } from 'virtual:solid-env/client';
 
-const MCP_URL = 'https://flowdeck.tejusgupta.dev/api/mcp';
+// The advertised MCP endpoint derives from the deployment's own base URL
+// (baked at build from VITE_APP_URL) so a preview build shows the preview
+// endpoint and a prod build shows prod. Falls back to the prod URL only
+// for builds that don't advertise a base (local dev).
+const MCP_URL = env.VITE_APP_URL
+  ? `${env.VITE_APP_URL.replace(/\/+$/, '')}/api/mcp`
+  : 'https://flowdeck.tejusgupta.dev/api/mcp';
 
 const TOOLS: { name: string; args: string; returns: string; note?: string }[] = [
   { name: 'list_boards', args: 'cursor?, limit?', returns: '{ items, next_cursor } — boards you can see, newest activity first' },

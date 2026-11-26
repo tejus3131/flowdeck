@@ -133,6 +133,7 @@ jobs:
         run: pnpm build
         env:
           CLOUDFLARE_ENV: preview
+          VITE_APP_URL: ${{ vars.VITE_APP_URL }}
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
