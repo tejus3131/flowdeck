@@ -85,7 +85,7 @@ Path matrix (dorny/paths-filter), **in order**, environment `preview`:
 | --- | --- |
 | `supabase/migrations/**`, `supabase/config.toml` | `supabase db push --db-url` (preview) |
 | `supabase/functions/**` | `supabase functions deploy mcp --no-verify-jwt` (preview) |
-| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `vite build && wrangler deploy --env preview` |
+| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy` |
 
 `concurrency: deploy-preview` queues deploys (never cancels a mid-deploy).
 
@@ -118,11 +118,16 @@ so the free tier never pauses either project.
 
 `wrangler.jsonc`: top level IS production (worker `flowdeck`, prod
 Supabase URL in `vars`); `env.preview` deploys as `flowdeck-preview`
-with the preview project's URL. Custom domains are attached in the
-dashboard (they survive deploys; `routes` stays out of the config so
-deploys never fight the dashboard). **Disable each worker's
-`*.workers.dev` route** — the preview custom domain is Access-protected,
-the workers.dev route would bypass it.
+with the preview project's URL. **The environment is selected at BUILD
+time** (`CLOUDFLARE_ENV=preview vite build`): the Vite plugin flattens
+the generated `dist/server/wrangler.json` for that environment, and
+`--env` at `wrangler deploy` time has no effect on a flattened config —
+the first preview deploy shipped to prod because of exactly that
+(caught in the run log: `Uploaded flowdeck`, prod URL in bindings).
+Custom domains are attached in the dashboard (they survive deploys;
+`routes` stays out of the config so deploys never fight the dashboard).
+**Disable each worker's `*.workers.dev` route** — the preview custom
+domain is Access-protected, the workers.dev route would bypass it.
 
 Secrets per env: `wrangler secret put SUPABASE_SECRET_KEY --env preview`
 vs no flag for prod. Same for `RESEND_*`, `VAPID_*`.
