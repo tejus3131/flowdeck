@@ -28,7 +28,6 @@ import type { Database } from '../types/database.generated';
 export type BoardSummary = Database['public']['Tables']['boards']['Row'];
 export type ListRow = Database['public']['Tables']['lists']['Row'];
 export type CardRow = Database['public']['Tables']['cards']['Row'];
-export type ActivityRow = Database['public']['Tables']['activity']['Row'];
 
 /** A card row plus the derived stats the UI shows (unseen badges). */
 /** A tag chip: a stable, workspace-scoped row (cards reference it by id). */
@@ -654,24 +653,13 @@ async function snapshot(
       .order('position', { ascending: true }),
     // The trustworthy per-board cursor (migration 0032): bumped by a
     // trigger in the same transaction as every board-scoped change —
-    // deletions included, unlike the old activity head.
+    // deletions included, unlike the old activity head. (The 0032
+    // deploy-window fallback to the activity head is gone: the window
+    // closed with that release, and ADR-4 retires activity.)
     supabase.from('board_revisions').select('revision').eq('board_id', boardId).maybeSingle(),
     supabase.rpc('user_board_access', { p_board_id: boardId }),
   ]);
-  // Deploy-order safety: code can ship before migration 0032 lands — in
-  // that window fall back to the old, less trustworthy cursor (the
-  // activity head) so the snapshot keeps working.
-  let revision = revisionRow.data?.revision ?? 0;
-  if (revisionRow.error) {
-    const { data: head } = await supabase
-      .from('activity')
-      .select('id')
-      .eq('board_id', boardId)
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    revision = head?.id ?? 0;
-  }
+  const revision = revisionRow.data?.revision ?? 0;
   // Assignees live in a join table — fetched per board card (RLS-scoped).
   const assignees = await supabase
     .from('card_assignees')
@@ -911,7 +899,7 @@ export async function createBoard(
       position: index + 1,
     })),
   );
-  await logActivity(supabase, user.id, board!.id, 'board.created', { name: boardName });
+  await logBoardEvent(supabase, user.id, board!.id, 'board.created', { name: boardName });
   // Team-scoped creation: the team gets access immediately (and each
   // member hears about it — the setBoardTeamAccess grant path notifies).
   if (targetTeam) {
@@ -961,7 +949,7 @@ export async function updateBoard(
   const { error } = await supabase.from('boards').update(update).eq('id', id);
   if (error) throw new Error(error.message);
   if (update.name) {
-    await logActivity(supabase, user.id, id, 'board.renamed', { name: update.name });
+    await logBoardEvent(supabase, user.id, id, 'board.renamed', { name: update.name });
   }
 }
 
@@ -1013,14 +1001,20 @@ export async function createList(boardId: string, name: string, clientOp?: strin
   });
   if (allocError || position == null)
     throw new Error(allocError?.message ?? 'position allocation failed');
-  const { error } = await supabase.from('lists').insert({
-    board_id: id,
-    name: listName,
-    position,
-    ...(clientOp ? { client_op: clientOp } : {}),
-  });
+  const { data: list, error } = await supabase
+    .from('lists')
+    .insert({
+      board_id: id,
+      name: listName,
+      position,
+      ...(clientOp ? { client_op: clientOp } : {}),
+    })
+    .select('id')
+    .single();
   if (error) throw new Error(error.message);
-  await logActivity(supabase, user.id, id, 'list.created', { name: listName });
+  await logEntityEvent(supabase, user.id, 'list.created', 'list', list!.id, id, {
+    name: listName,
+  });
 }
 
 /** List settings: rename and/or set the description (editors only). */
@@ -1098,7 +1092,7 @@ export async function createCard(
     .select('id')
     .single();
   if (error) throw new Error(error.message);
-  await logActivity(supabase, user.id, list.board_id, 'card.created', { title: cardTitle });
+  // (the 'created' card event below IS the log row — activity's duplicate is gone)
   await logCardEvent(supabase, {
     cardId: card.id,
     boardId: list.board_id,
@@ -1400,7 +1394,7 @@ export async function findOrCreateTag(
  *  the trail must read correctly long after the rows it describes are
  *  gone. */
 export type CardEventRow = {
-  id: string;
+  id: number;
   kind: string;
   detail: Record<string, unknown>;
   actor_id: string | null;
@@ -1421,11 +1415,14 @@ export async function getCardEvents(cardId: string): Promise<CardEventRow[]> {
 async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
   const startedAt = Date.now();
   const supabase = createSupabaseRequestClient();
+  // The events log (ADR-4): id-ordered — the bigint identity is
+  // monotonic, so a same-second burst keeps its order (created_at alone
+  // cannot).
   const { data, error } = await supabase
-    .from('card_events')
+    .from('events')
     .select('id, kind, detail, actor_id, created_at, agent')
     .eq('card_id', assertId(cardId, 'card id'))
-    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
     .limit(100);
   if (error) throw new Error(error.message);
   warnSlow(startedAt, `card events (${cardId})`);
@@ -1439,7 +1436,9 @@ async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
   }));
 }
 
-/** Best-effort event write — an audit row never blocks the mutation. */
+/** Best-effort event write — an audit row never blocks the mutation.
+ *  One write path (ADR-4): the same log_event the MCP ops call, so the
+ *  web and agent trails cannot drift. */
 async function logCardEvent(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
   input: {
@@ -1451,12 +1450,14 @@ async function logCardEvent(
   },
 ): Promise<void> {
   try {
-    const { error } = await supabase.from('card_events').insert({
-      card_id: input.cardId,
-      board_id: input.boardId,
-      actor_id: input.actorId,
-      kind: input.kind,
-      detail: (input.detail ?? {}) as Record<string, unknown> as never,
+    const { error } = await supabase.rpc('log_event', {
+      p_actor_id: input.actorId,
+      p_kind: input.kind,
+      p_entity_type: 'card',
+      p_entity_id: input.cardId,
+      p_board_id: input.boardId,
+      p_card_id: input.cardId,
+      p_detail: (input.detail ?? {}) as never,
     });
     if (error) console.error('card event failed:', error.message);
   } catch (cause) {
@@ -1552,7 +1553,7 @@ export async function moveCard(cardId: string, toListId: string, position: numbe
       string | undefined) ?? null;
   const { error } = await supabase.from('cards').update({ list_id: listId, position }).eq('id', id);
   if (error) throw new Error(error.message);
-  await logActivity(supabase, user.id, target.board_id, 'card.moved', {});
+  // (the 'moved' card event below IS the log row)
   // Only real list changes enter the timeline — same-list reorders are
   // noise (they'd drown the trail during a sort).
   if (fromName !== null && fromName !== target.name) {
@@ -1784,7 +1785,9 @@ export async function addComment(
     )
     .single();
   if (error || !comment) throw new Error(error?.message ?? 'Could not post the comment');
-  await logActivity(supabase, user.id, card.board_id, 'comment.created', {});
+  await logEntityEvent(supabase, user.id, 'comment.created', 'comment', comment.id, card.board_id, {
+    card_id: resolved,
+  });
   // Notifications by each person's CARD level (the same Slack-style
   // settings as board chat): mentions stay loud; the card's followers
   // (creator + assignees) default to 'all' — quiet chat rows.
@@ -2106,7 +2109,7 @@ export async function postBoardMessage(
     )
     .single();
   if (error || !message) throw new Error(error?.message ?? 'Could not post the message');
-  await logActivity(supabase, user.id, id, 'chat.message', {});
+  await logEntityEvent(supabase, user.id, 'chat.message', 'message', message.id, id, {});
   // Notifications by each person's board-chat level (Slack-style):
   // mentions stay loud, 'all' subscribers get quiet chat rows.
   try {
@@ -2279,20 +2282,42 @@ async function currentWorkspaceId(
   return data?.workspace_id ?? null;
 }
 
-async function logActivity(
+/** Board-level events (ADR-4): the log's entity for a board IS the board. */
+async function logBoardEvent(
   supabase: ReturnType<typeof createSupabaseRequestClient>,
   userId: string,
   boardId: string,
-  type: string,
-  payload: Record<string, string | number | boolean | null>,
-) {
-  // RLS: only members insert activity; the caller just performed a member
-  // action, so their own identity satisfies the policy. Failures are
-  // logged, not thrown — an activity row must never fail a mutation.
-  const { error } = await supabase
-    .from('activity')
-    .insert({ board_id: boardId, user_id: userId, type, payload });
-  if (error) console.error('activity log failed:', error.message);
+  kind: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await logEntityEvent(supabase, userId, kind, 'board', boardId, boardId, detail);
+}
+
+/** Best-effort like logCardEvent: an audit row never blocks the mutation.
+ *  The entity may already be gone (a deleted list) — entity_id carries no
+ *  FK on purpose, so history survives its entity. */
+async function logEntityEvent(
+  supabase: ReturnType<typeof createSupabaseRequestClient>,
+  userId: string,
+  kind: string,
+  entityType: string,
+  entityId: string,
+  boardId: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('log_event', {
+      p_actor_id: userId,
+      p_kind: kind,
+      p_entity_type: entityType,
+      p_entity_id: entityId,
+      p_board_id: boardId,
+      p_detail: detail as never,
+    });
+    if (error) console.error('event log failed:', error.message);
+  } catch (cause) {
+    console.error('event log failed:', cause);
+  }
 }
 
 // ── cross-board references + workspace search ─────────────────────────────

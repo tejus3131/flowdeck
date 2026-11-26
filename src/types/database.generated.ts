@@ -579,6 +579,73 @@ export type Database = {
           },
         ]
       }
+      events: {
+        Row: {
+          id: number
+          actor_id: string | null
+          kind: string
+          entity_type: string
+          entity_id: string
+          workspace_id: string | null
+          board_id: string
+          card_id: string | null
+          tag_ids: string[]
+          detail: Json
+          agent: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: never
+          actor_id?: string | null
+          kind: string
+          entity_type: string
+          entity_id: string
+          workspace_id?: string | null
+          board_id: string
+          card_id?: string | null
+          tag_ids?: string[]
+          detail?: Json
+          agent?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: never
+          actor_id?: string | null
+          kind?: string
+          entity_type?: string
+          entity_id?: string
+          workspace_id?: string | null
+          board_id?: string
+          card_id?: string | null
+          tag_ids?: string[]
+          detail?: Json
+          agent?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       card_counters: {
         Row: {
           card_id: string
@@ -1286,6 +1353,18 @@ export type Database = {
       allocate_list_position: { Args: { p_board_id: string }; Returns: number }
       auth_check_email: { Args: { p_email: string }; Returns: Json }
       delete_board_message: { Args: { p_id: string }; Returns: Json }
+      log_event: {
+        Args: {
+          p_actor_id: string | null
+          p_kind: string
+          p_entity_type: string
+          p_entity_id: string
+          p_board_id: string
+          p_card_id?: string | null
+          p_detail?: Json
+        }
+        Returns: number
+      }
       delete_comment: { Args: { p_id: string }; Returns: Json }
       log_board_mentions: {
         Args: {

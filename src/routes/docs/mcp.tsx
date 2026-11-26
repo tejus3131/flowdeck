@@ -131,7 +131,7 @@ const TOOLS: { name: string; args: string; returns: string; note?: string }[] = 
     name: 'get_card_events',
     args: 'card_id, cursor?, limit?',
     returns:
-      "{ items, next_cursor } — the card's timeline (created, renamed, priority, description, moved, assignees) with actor display names",
+      "{ items, next_cursor } — the card's timeline (created, renamed, priority, description, moved, assignees, tags, resolved) with actor display names; item ids are the event log's bigint identity and cursors are opaque",
   },
   {
     name: 'search',
