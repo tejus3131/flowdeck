@@ -21,8 +21,8 @@ on:
       - '.github/workflows/deploy-preview.yml'
 
 permissions:
-  contents: read
-  deployments: write # the release step records a Deployment per deploy
+  contents: write # the release step tags + creates the GitHub Release (contents API)
+  deployments: write # ...and records a Deployment per deploy
 
 concurrency:
   group: deploy-preview
