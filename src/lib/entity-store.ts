@@ -93,8 +93,11 @@ export function createEntityStore(): EntityStore {
   const writeTags: EntityStore['writeTags'] = (workspaceId, rows, options) => {
     // Merge first (reads before writes): decide the entities that land,
     // keeping unchanged rows' identity stable — a re-ingested snapshot
-    // must not churn references for every selector watching it.
+    // must not churn references for every selector watching it. `changed`
+    // carries only the rows that differ: the cache write-through skips
+    // unchanged rows, so a poll's re-ingest rewrites nothing.
     const merged: TagEntity[] = [];
+    const changed: TagEntity[] = [];
     for (const row of rows) {
       const existing = state.tags[row.id];
       const description = row.description ?? null;
@@ -110,19 +113,23 @@ export function createEntityStore(): EntityStore {
           merged.push(existing);
           continue;
         }
-        merged.push({
+        const next: TagEntity = {
           id: row.id,
           workspace_id: nextWorkspace,
           name: nextName,
           description: nextDescription,
-        });
+        };
+        merged.push(next);
+        changed.push(next);
       } else {
-        merged.push({
+        const next: TagEntity = {
           id: row.id,
           workspace_id: workspaceId,
           name: row.name,
           description: description ?? '',
-        });
+        };
+        merged.push(next);
+        changed.push(next);
       }
     }
     setState((draft) => {
@@ -136,8 +143,11 @@ export function createEntityStore(): EntityStore {
       for (const entity of merged) ids[entity.id] = true;
       draft.workspaceTagIds[workspaceId] = ids;
     });
-    // Cache write-through, fire-and-forget (never blocks the write).
-    for (const entity of merged) cachePut(tagKey(entity.id), entity);
+    // Cache write-through, fire-and-forget (never blocks the write) —
+    // and only for rows that actually changed: the poll re-ingests the
+    // whole vocabulary every cycle, and rewriting identical rows would
+    // churn IndexedDB (and refresh LRU clocks) for nothing.
+    for (const entity of changed) cachePut(tagKey(entity.id), entity);
   };
 
   const writeCardTagLinks: EntityStore['writeCardTagLinks'] = (cardId, tagIds) => {

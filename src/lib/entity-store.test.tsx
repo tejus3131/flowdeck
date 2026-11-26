@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createEffect, createRoot, flush } from 'solid-js';
 
 import { createEntityStore, type EntityStore, type TagEntity } from './entity-store';
-import { cacheClear, cacheGet, cacheSetUser } from './cache';
+import { __testAge, cacheClear, cacheGet, cacheSetUser } from './cache';
 import type { BoardSnapshot, CardView, ListRow } from './boards';
 import type { WorkspaceDetail } from './workspaces';
 
@@ -271,6 +271,25 @@ describe('entity store', () => {
       name: 'urgent',
       description: 'asap',
     });
+    dispose();
+  });
+
+  it('unchanged re-ingests skip the cache write — changed rows still land', async () => {
+    const { store, dispose } = makeStore();
+    store.writeTags('ws1', [{ id: 't1', name: 'urgent' }]);
+    await settle();
+    // Age the cached entry past the TTL. If the unchanged re-ingest below
+    // rewrote it, the read would be fresh again — that's the
+    // discriminator: a skipped write leaves the aged entry to expire.
+    await __testAge('tag:t1', 8 * 24 * 60 * 60 * 1000);
+    store.writeTags('ws1', [{ id: 't1', name: 'urgent' }]);
+    await settle();
+    expect(await cacheGet<TagEntity>('tag:t1')).toBeNull();
+
+    // A CHANGED row still write-throughs.
+    store.writeTags('ws1', [{ id: 't1', name: 'renamed' }]);
+    await settle();
+    expect((await cacheGet<TagEntity>('tag:t1'))?.name).toBe('renamed');
     dispose();
   });
 });
