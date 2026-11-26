@@ -37,9 +37,14 @@ jobs:
       functions: ${{ steps.filter.outputs.functions }}
       worker: ${{ steps.filter.outputs.worker }}
     steps:
+      # fetch-depth: 0 (full history) — see deploy-preview.yml: push-event
+      # diffs need the base commit locally; persist-credentials: false
+      # blocks fetching it from origin. Full clone covers every diff
+      # range (multi-commit pushes, zero-before branch births).
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
