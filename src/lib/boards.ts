@@ -659,19 +659,23 @@ export const boardStream = live(async function* (
     const cards = [...commentCards].filter((cardId) => mine.has(cardId));
     commentCards.clear();
     const commentPages: Record<string, CommentRow[]> = {};
-    if (cards.length > 0) {
+    // PER CARD, one query each — seq is allocated per card (0035/0036), so
+    // a single cross-card query would order incomparables and a global
+    // limit could hand one card all 30·N rows and another none (its
+    // drawer page would blank until the next burst). Bursts touch one,
+    // rarely two cards; N small queries is the exact shape the old
+    // per-card producer ran.
+    for (const cardId of cards) {
       const { data, error } = await supabase
         .from('card_comments')
         .select(
-          'card_id, id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)',
+          'id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)',
         )
-        .in('card_id', cards)
+        .eq('card_id', cardId)
         .order('seq', { ascending: false })
-        .limit(30 * cards.length);
+        .limit(30);
       if (error) throw new Error(error.message);
-      for (const cardId of cards) commentPages[cardId] = [];
       type Raw = {
-        card_id: string;
         id: string;
         body: string;
         created_at: string;
@@ -686,12 +690,10 @@ export const boardStream = live(async function* (
         agent: boolean | null;
         profiles: { display_name: string | null; avatar_url: string | null } | null;
       };
-      // The same row mapping the drawer's page always used (the old
-      // comments producer's mapping, verbatim).
-      for (const row of (data ?? []) as unknown as Raw[]) {
-        const page = commentPages[row.card_id];
-        if (!page) continue;
-        page.push({
+      commentPages[cardId] = ((data ?? []) as unknown as Raw[])
+        .slice()
+        .reverse()
+        .map((row) => ({
           id: row.id,
           body: row.deleted_at ? '' : row.body,
           created_at: row.created_at,
@@ -706,9 +708,7 @@ export const boardStream = live(async function* (
           author_id: row.user_id ?? null,
           avatar_url: row.profiles?.avatar_url ?? null,
           author: row.profiles?.display_name ?? 'Someone',
-        });
-      }
-      for (const cardId of cards) commentPages[cardId].reverse();
+        }));
     }
     return { commentPages, newEvents };
   };
@@ -763,8 +763,13 @@ export const boardStream = live(async function* (
           console.log(
             `[boardStream ${id.slice(0, 8)}] ${plan.resync ? 'visibility change' : 'periodic re-sync'} — re-snapshotting`,
           );
-          // A full re-snapshot flushes the digest with it: anything the
-          // burst batched is superseded by the fresh truth.
+          // A full re-snapshot flushes the digest with it. The fresh truth
+          // is the BOARD slice — the drawer's per-card pages are NOT part
+          // of it, so any rows the batched digests would have carried
+          // converge on the client engines' durable poll (~20s) instead.
+          // Bounded, rare (visibility changes + the periodic bound), and
+          // accepted: re-snapshotting every open drawer's card is a far
+          // worse trade.
           eventBatch.splice(0, eventBatch.length);
           commentCards.clear();
           current = {
