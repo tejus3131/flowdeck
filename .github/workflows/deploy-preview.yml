@@ -80,6 +80,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The supabase CLI is NOT preinstalled on ubuntu-latest — without
+      # this step the migrations deploy dies with "command not found".
+      # Pinned (not latest): a floating CLI means floating local-stack
+      # container digests — the server tests' environment would change
+      # with zero code changes. Keep in lockstep with local dev.
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
+        with:
+          version: 3.4.0
+
       # 1. Schema first (ADR-14): migrations land before code that reads them.
       #    IPv4 note: GitHub-hosted runners are IPv4-only, and
       #    db.<ref>.supabase.co resolves IPv6-only for direct connections —

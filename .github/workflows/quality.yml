@@ -128,10 +128,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # The local Supabase stack: migrations apply fresh, db-guards
       # self-seeds its fixture (see src/server/db-guards.test.ts).
+      # CLI pinned (not latest): a floating CLI means floating
+      # local-stack container digests — the server tests' environment
+      # would change with zero code changes. Keep in lockstep with
+      # local dev and the deploy workflows.
       - name: Start local Supabase stack
         uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
         with:
-          version: latest
+          version: 3.4.0
       - name: Start stack + run migrations
         run: supabase start && supabase db reset
       - name: Server tests (node)

@@ -79,6 +79,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The supabase CLI is NOT preinstalled on ubuntu-latest (see
+      # deploy-preview.yml). Pinned to match local dev.
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
+        with:
+          version: 3.4.0
+
       # 1. Schema first (ADR-14). IPv4 note: see deploy-preview.yml —
       #    migrations go through the session pooler (GitHub runners are
       #    IPv4-only; db.<ref> is IPv6-only).
