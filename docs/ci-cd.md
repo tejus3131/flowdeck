@@ -79,22 +79,55 @@ Deterministic review aids; read-only except labels + one report comment:
 Path-classification knowledge lives in quality.yml's filter and
 pr-intel.yml's label regexes — keep them in sync when paths move.
 
-### W2 — `deploy-preview` (push → preview)
+### W2 — `deploy-preview` (push → preview, workflow_dispatch)
 
-Path matrix (dorny/paths-filter), **in order**, environment `preview`:
+A deploy means **bring the preview environment to the state of the
+branch**, not "ship this merge's delta". The `changes` job resolves the
+diff base as the last **successful** deploy of the environment — the
+latest `preview-r*` tag, which the release step writes only after every
+leg passed — and diffs against it. The push event's `before` sha is
+never consulted: diffing "what this merge changed" is state blindness
+(a failed deploy would strand its migration until some merge happened
+to touch the same paths). If the tag is missing (first run) or its
+commit is not an ancestor of HEAD (untrustworthy history), the base is
+treated as empty and **all legs deploy** — failing safe toward
+over-deploy, since every leg is idempotent (`db push` applies only
+missing migrations; functions/worker upload current code). Any merge to
+the branch starts a run; a docs-only merge diffs to zero and skips in
+~30s. The run number is sparse across skipped runs (`preview-r10` may
+not exist); `sort -V` handles it.
 
-| Changed                                                                                               | Action                                                    |
+Deploy matrix, **in order**, environment `preview` — the table
+classifies **paths**; the diff window is "since the last successful
+deploy":
+
+| Changed paths (since last successful deploy)                                                          | Action                                                    |
 | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --remote=<db url> --yes` (preview)      |
 | `supabase/functions/**`                                                                               | `supabase functions deploy mcp --no-verify-jwt` (preview) |
 | `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy`    |
 
-`concurrency: deploy-preview` queues deploys (never cancels a mid-deploy).
+`concurrency: deploy-preview` queues deploys (never cancels a
+mid-deploy). A queued run may compute its base before the in-flight run
+tags; it then deploys a superset of the strand — idempotent by design,
+not a bug.
 
-### W3 — `deploy-prod` (push → main)
+**Runbook:** a failed deploy ships nothing and tags nothing; fix, then
+the **next merge** (or a manual `workflow_dispatch` — `force: true`
+deploys every leg) heals it: the next run diffs from the last
+successful tag and picks up everything stranded. **Dispatch with the
+right ref**: `workflow_dispatch` defaults to the default branch — run
+deploy-preview with ref `preview`, never `main` (dispatching from
+`main` would bring preview to main's state; production is gated by its
+environment approval, preview is not). The deploy job's
+`if: migrations || functions || worker` gate is load-bearing — a no-op
+run must never tag, or it would poison the next run's base.
 
-Same matrix against prod refs, gated on the `production` environment
-approval. `wrangler deploy` (no `--env` — top level IS production).
+### W3 — `deploy-prod` (push → main, workflow_dispatch)
+
+Same tag-based diffing against **`release-r*`** (never `preview-r*`),
+against prod refs, gated on the `production` environment approval.
+`wrangler deploy` (no `--env` — top level IS production).
 
 ### Releases (both deploy workflows)
 
