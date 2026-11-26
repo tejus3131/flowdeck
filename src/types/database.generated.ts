@@ -39,48 +39,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      activity: {
-        Row: {
-          board_id: string
-          created_at: string
-          id: number
-          payload: Json
-          type: string
-          user_id: string | null
-        }
-        Insert: {
-          board_id: string
-          created_at?: string
-          id?: never
-          payload?: Json
-          type: string
-          user_id?: string | null
-        }
-        Update: {
-          board_id?: string
-          created_at?: string
-          id?: never
-          payload?: Json
-          type?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "activity_board_id_fkey"
-            columns: ["board_id"]
-            isOneToOne: false
-            referencedRelation: "boards"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activity_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       api_tokens: {
         Row: {
           created_at: string
@@ -525,53 +483,66 @@ export type Database = {
           },
         ]
       }
-      card_events: {
+      events: {
         Row: {
-          agent: boolean
+          id: number
           actor_id: string | null
-          board_id: string
-          card_id: string
-          created_at: string
-          detail: Json
-          id: string
           kind: string
+          entity_type: string
+          entity_id: string
+          workspace_id: string | null
+          board_id: string
+          card_id: string | null
+          tag_ids: string[]
+          detail: Json
+          agent: boolean
+          created_at: string
         }
         Insert: {
-          agent?: boolean
+          id?: never
           actor_id?: string | null
-          board_id: string
-          card_id: string
-          created_at?: string
-          detail?: Json
-          id?: string
           kind: string
+          entity_type: string
+          entity_id: string
+          workspace_id?: string | null
+          board_id: string
+          card_id?: string | null
+          tag_ids?: string[]
+          detail?: Json
+          agent?: boolean
+          created_at?: string
         }
         Update: {
+          id?: never
           actor_id?: string | null
-          board_id?: string
-          card_id?: string
-          created_at?: string
-          detail?: Json
-          id?: string
           kind?: string
+          entity_type?: string
+          entity_id?: string
+          workspace_id?: string | null
+          board_id?: string
+          card_id?: string | null
+          tag_ids?: string[]
+          detail?: Json
+          agent?: boolean
+          created_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "card_events_actor_id_fkey"
+            foreignKeyName: "events_actor_id_fkey"
             columns: ["actor_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "card_events_board_id_fkey"
+            foreignKeyName: "events_board_id_fkey"
             columns: ["board_id"]
             isOneToOne: false
             referencedRelation: "boards"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "card_events_card_id_fkey"
+            foreignKeyName: "events_card_id_fkey"
             columns: ["card_id"]
             isOneToOne: false
             referencedRelation: "cards"
@@ -1286,6 +1257,18 @@ export type Database = {
       allocate_list_position: { Args: { p_board_id: string }; Returns: number }
       auth_check_email: { Args: { p_email: string }; Returns: Json }
       delete_board_message: { Args: { p_id: string }; Returns: Json }
+      log_event: {
+        Args: {
+          p_actor_id: string | null
+          p_kind: string
+          p_entity_type: string
+          p_entity_id: string
+          p_board_id: string
+          p_card_id?: string | null
+          p_detail?: Json
+        }
+        Returns: number
+      }
       delete_comment: { Args: { p_id: string }; Returns: Json }
       log_board_mentions: {
         Args: {
