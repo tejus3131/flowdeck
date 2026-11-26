@@ -43,7 +43,7 @@ server/DB code moved):
 | `lint` | always | oxlint + tsc (drafts included) |
 | `client` | UI paths, non-draft | build (repo-level public `PREVIEW_*` vars — PR runs have no environment context) + jsdom tests |
 | `server` | server/DB paths, non-draft | local `supabase start && db reset` + node tests (db-guards self-seeds) |
-| `functions` | `supabase/functions/**`, non-draft | explicit no-op check — the test projects don't exercise edge functions; review coverage is pr-intel's tool report |
+| `functions` | `supabase/functions/**`, non-draft | `deno check` on the MCP function — the only place it's compiled; nothing in the test projects exercises edge functions. Review coverage is pr-intel's tool report |
 
 **Zero provider credentials in this workflow** (ADR-15). Docs-only PRs
 run lint+typecheck only (~15s).
@@ -155,6 +155,9 @@ not GitHub.
 - No `pull_request_target` with PR-head checkout — ever.
 - Deploy jobs reference environment secrets only (`environment: preview`
   / `production`), so PR runs cannot read them.
+- **Workflow changes update this file in the same commit** — the docs
+  are the contract; behavior that outlives its documentation is a bug.
+  (This rule exists because the drift bit three reviews in a row.)
 
 ## Preview access setup (one-time)
 

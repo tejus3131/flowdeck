@@ -45,14 +45,22 @@ jobs:
           # migration PR merged), diffing the branch tip would report
           # that migration as deleted on this clean PR. The merge base
           # is the robust diff point in every interpretation.
-          # Guards fail CLOSED: a failed diff (bad ref, git hiccup)
-          # must fail the step, not read as "clean".
+          # Guards fail CLOSED: a failed diff must fail the step. NOTE
+          # the diff runs to a FILE, not a process substitution — a
+          # process substitution's exit code goes into the void
+          # (mapfile's status is mapfile's own), so a failed diff would
+          # read as an empty list = "clean". Only a successful diff can
+          # read as clean.
           base="$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD)"
-          if [ -z "$base" ] || [ "$base" = "${{ github.event.pull_request.base.sha }}" ] && ! git cat-file -e "$base" 2>/dev/null; then
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "::error::merge-base did not resolve to a usable commit — refusing to run the guard blind"
             exit 1
           fi
-          mapfile -t changed < <(git diff --name-status "$base" HEAD -- supabase/migrations/)
+          if ! git diff --name-status "$base" HEAD -- supabase/migrations/ > /tmp/mig.diff; then
+            echo "::error::migration diff failed — refusing to pass the guard blind"
+            exit 1
+          fi
+          mapfile -t changed < /tmp/mig.diff
           bad=0
           for line in "${changed[@]}"; do
             status="${line:0:1}"
