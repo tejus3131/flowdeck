@@ -52,7 +52,10 @@ projection of it.
    service_role only — PUBLIC and anon are revoked, and `mcp_exec`
    itself stays service_role-only because it trusts `p_user_id`. A new
    op is one small migration (the function) plus one dispatch line in
-   `mcp_exec`.
+   `mcp_exec`. Note the corollary: a service-role script calling a
+   per-op function DIRECTLY is rejected by the caller guard (service
+   role carries no JWT claims) — admin scripts go through `mcp_exec`,
+   or set `request.jwt.claims` themselves.
 
 ## Worked example — adding a mutation
 
