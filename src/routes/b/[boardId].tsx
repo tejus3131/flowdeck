@@ -55,10 +55,7 @@ import {
 } from '../../lib/access';
 import {
   addComment,
-  boardChatStream,
   boardStream,
-  cardCommentsStream,
-  cardEventsStream,
   chatSeq,
   createCard,
   createList,
@@ -91,6 +88,11 @@ import {
   updateCard as updateCardServer,
   updateList as updateListServer,
 } from '../../lib/boards';
+import {
+  commentsSlice as commentsSliceOver,
+  timelineSlice as timelineSliceOver,
+} from '../../lib/board-slices';
+
 import {
   getMyWorkspaces,
   getWorkspaceSnapshot,
@@ -879,7 +881,6 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // every device forever (the stamp is monotonic server-side).
   const chatStamp = () => boardChatStamp(props.params.boardId);
   const stampChatSeen = (latest: number) => stampBoardChatSeen(props.params.boardId, latest);
-  const chatLive = liveQuery(boardChatStream, 'board-chat');
   const [chatUnread, setChatUnread] = createSignal(0);
   /** The latest message instant the channel has delivered (server clock). */
   const [latestChatInstant, setLatestChatInstant] = createSignal(0);
@@ -912,9 +913,12 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       .catch(() => {});
     void (async () => {
       try {
-        for await (const list of await chatLive(props.params.boardId)) {
-          lastChatList = list;
-          applyChatList(list);
+        // Phase 4 (ADR-3): the chat dot rides the board TOPIC's composite —
+        // one connection per viewer per board, shared with the board
+        // engine and the chat panel (liveQuery dedupes by name+args).
+        for await (const composite of await boardLive(props.params.boardId)) {
+          lastChatList = composite.chat;
+          applyChatList(composite.chat);
         }
       } catch {
         // the chat panel still works without the dot
@@ -1506,6 +1510,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       <Show when={openCardId()}>
         {(cardId) => (
           <CardDrawer
+            boardId={view().board.id}
             cardId={cardId()}
             clientOp={openCardOp()}
             cards={view().cards}
@@ -3353,6 +3358,11 @@ function DescriptionDiffEvent(props: { from: string; to: string }) {
 
 function CardDrawer(props: {
   cardId: string;
+  /** The board's id — the TOPIC's key. The drawer's slices subscribe to
+   *  the board stream by THIS id and filter per-card digests client-side;
+   *  keying the topic by the card id would spin a phantom, denied board
+   *  topic whose digests never arrive (the poll would mask it at 20s). */
+  boardId: string;
   /** The card's client_op — lets the drawer survive the provisional→
    *  durable id swap (a relayed card's temp id differs from its echo). */
   clientOp: string | null;
@@ -3565,7 +3575,21 @@ function CardDrawer(props: {
   // The open mark keeps its old contract (ends at the first paint —
   // the cached page on a warm open, the live page cold).
   type TimelineSnapshot = { list: CardEventRow[] };
-  const eventsLive = liveQuery(cardEventsStream, 'card-events');
+  // Phase 4 (ADR-3): the timeline rides the board TOPIC's event digest —
+  // liveQuery dedupes by (name + args), so the drawer adds zero sockets.
+  // The slice accumulates: the cold page from one fetch, then the topic's
+  // new event rows append through foldTimelineBurst.
+  // The slice (lib/board-slices, test-pinned): the topic by the BOARD
+  // id, the page by the CARD id — the wrong key would spin a phantom
+  // topic whose digests never arrive, masked only by the 20s poll.
+  const topicLive = liveQuery(boardStream, 'board');
+  const timelineSlice = (cardId: string) =>
+    timelineSliceOver({
+      boardId: props.boardId,
+      cardId,
+      topic: (boardId) => topicLive(boardId),
+      fetchPage: (id) => getCardEvents(id),
+    });
   const timelineEngine = createEngine<TimelineSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<TimelineSnapshot> {
@@ -3574,7 +3598,11 @@ function CardDrawer(props: {
           return;
         }
         for await (const list of await perfFirstValue(
-          cachedStream(`card-timeline:${key}`, () => eventsLive(key), 'card-timeline-revalidate'),
+          cachedStream(
+            `card-timeline:${key}`,
+            () => timelineSlice(key),
+            'card-timeline-revalidate',
+          ),
           'card-timeline-open',
         )) {
           yield { list };
@@ -3594,7 +3622,7 @@ function CardDrawer(props: {
         draft.list = snapshot.list;
       }
     },
-    status: () => eventsLive.status(tab() === 'settings' ? cardIdNow() : ''),
+    status: () => topicLive.status(props.boardId),
     refresh: async () => ({ list: await getCardEvents(cardIdNow()) }),
   });
   const events = () => timelineEngine.view().list;
@@ -3790,7 +3818,21 @@ function CardDrawer(props: {
 
   // ── live comments: a small engine over the card's comment stream ────
   type CommentsSnapshot = { list: CommentRow[] };
-  const commentsLive = liveQuery(cardCommentsStream, 'comments');
+  // Phase 4 (ADR-3): the comments ride the board TOPIC's digest — the
+  // drawer adds zero sockets (liveQuery dedupes by name+args). The slice
+  // accumulates: the cold page from one fetch (the same query the old
+  // producer's first value ran), then the digest's pages replace it as
+  // the card's comments change.
+  // The slice (lib/board-slices, test-pinned): topic by the BOARD id,
+  // digest pages replaced for this card only.
+  const commentsTopic = liveQuery(boardStream, 'board');
+  const commentsSlice = (cardId: string) =>
+    commentsSliceOver({
+      boardId: props.boardId,
+      cardId,
+      topic: (boardId) => commentsTopic(boardId),
+      fetchPage: (id) => getCardComments(id, props.clientOp ?? null),
+    });
   const commentsEngine = createEngine<CommentsSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<CommentsSnapshot> {
@@ -3802,7 +3844,7 @@ function CardDrawer(props: {
         for await (const list of await perfFirstValue(
           cachedStream(
             `card-comments:${key}`,
-            () => commentsLive(key, props.clientOp ?? null),
+            () => commentsSlice(key),
             'card-comments-revalidate',
           ),
           'card-comments-open',
@@ -3832,7 +3874,7 @@ function CardDrawer(props: {
         draft.list = merged;
       }
     },
-    status: () => commentsLive.status(cardIdNow()),
+    status: () => commentsTopic.status(props.boardId),
     refresh: async () => ({ list: await getCardComments(cardIdNow(), props.clientOp ?? null) }),
   });
 
@@ -5397,14 +5439,24 @@ function BoardChat(props: {
   anchorMessageId: () => string | null;
 }) {
   type ChatSnapshot = { list: BoardMessageRow[] };
-  const chatLive = liveQuery(boardChatStream, 'board-chat');
+  // Phase 4 (ADR-3): the chat panel consumes the board TOPIC's chat slice —
+  // liveQuery dedupes by (name + args), so this shares the board engine's
+  // one connection instead of opening its own producer and socket.
+  const topicLive = liveQuery(boardStream, 'board');
   const engine = createEngine<ChatSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<ChatSnapshot> {
         // Perf mark: chat panel open → first value. Warm opens paint the
         // cached page instantly (cachedStream), the live value revalidates.
         for await (const list of await perfFirstValue(
-          cachedStream(`board-chat:${key}`, () => chatLive(key), 'board-chat-revalidate'),
+          cachedStream(
+            `board-chat:${key}`,
+            () =>
+              (async function* (): AsyncGenerator<BoardMessageRow[]> {
+                for await (const composite of await topicLive(key)) yield composite.chat;
+              })(),
+            'board-chat-revalidate',
+          ),
           'board-chat-open',
         )) {
           yield { list };
@@ -5432,7 +5484,7 @@ function BoardChat(props: {
         draft.list = merged;
       }
     },
-    status: () => chatLive.status(props.boardId),
+    status: () => topicLive.status(props.boardId),
     refresh: async () => ({ list: await getBoardChatSnapshot(props.boardId) }),
   });
 

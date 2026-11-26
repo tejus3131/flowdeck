@@ -12,7 +12,7 @@ import { query } from '@solidjs/router';
 import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
 
-import { applyFold, foldTimelineBurst, planFold, type FoldEvent, type TagRow } from './board-fold';
+import { applyFold, planFold, type FoldEvent, type TagRow } from './board-fold';
 import { createSupabaseRequestClient } from '../server/supabase';
 import { friendlyError } from '../server/friendly';
 import {
@@ -40,6 +40,32 @@ export type CardView = CardRow & {
   assignees: string[];
   /** Tags linked to this card (stable rows — same name, same id). */
   tags: TagView[];
+};
+
+/**
+ * The board TOPIC's composite (phase 4, ADR-3): one channel, one
+ * producer, every board-scoped surface. The liveQuery layer dedupes the
+ * connection per key — the board engine and the chat engine (and later
+ * the drawer surfaces) all consume THIS stream as their slice source,
+ * one socket per viewer per board.
+ */
+export type BoardTopicSnapshot = BoardSnapshot & {
+  /** The board chat's latest page (the old boardChatStream slice). */
+  chat: BoardMessageRow[];
+  /**
+   * The burst's comment pages: every card whose comments changed, its
+   * latest 30 (the drawer page shape). Burst-scoped, not cumulative —
+   * the client projections keep their own accumulated page. Cards from
+   * other boards (the card-side channel hears them) never enter.
+   */
+  commentPages: Record<string, CommentRow[]>;
+  /**
+   * The burst's new event rows, decoded from the payload — rows ship
+   * (ADR-3), no re-query. Append-only log: INSERT is the whole story.
+   * card_id rides along (the channel is board-scoped, the client slice
+   * is per-card).
+   */
+  newEvents: Array<CardEventRow & { card_id: string | null }>;
 };
 
 /** One consistent view of a board — the unit the live stream yields. */
@@ -336,7 +362,9 @@ export async function getBoardRevision(boardId: string): Promise<number | null> 
  * connection drops, `live()` reconnects and this generator starts over —
  * first value current, never behind.
  */
-export const boardStream = live(async function* (boardId: string): AsyncGenerator<BoardSnapshot> {
+export const boardStream = live(async function* (
+  boardId: string,
+): AsyncGenerator<BoardTopicSnapshot> {
   'use server';
   const supabase = createSupabaseRequestClient();
   const id = assertId(boardId, 'board id');
@@ -494,7 +522,66 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
       push({ kind: 'resync' }),
     );
   }
+  /** The burst's touched comment cards (its pages re-fetch). */
+  const commentCards = new Set<string>();
+  /** The burst's new event rows, decoded from the payloads. */
+  const eventBatch: Array<CardEventRow & { card_id: string | null }> = [];
+
   channel
+    // The comments ride the TOPIC (phase 4): the card-side binding is
+    // unfiltered (the card_assignees pattern — no board column to scope
+    // by), the snapshot's card set filters other boards out.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'card_comments' },
+      (payload: { new: { card_id?: string } | null; old: { card_id?: string } | null }) => {
+        const cardId = (payload.new ?? payload.old)?.card_id;
+        if (cardId) {
+          commentCards.add(String(cardId));
+          control.onChanged();
+        }
+      },
+    )
+    // The events log rides the topic too (board-scoped — the log carries
+    // board_id): every mutation's event is the timeline's live row.
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'events', filter: `board_id=eq.${id}` },
+      (payload: { new: unknown }) => {
+        const row = payload.new as {
+          id: number;
+          kind: string;
+          detail: Record<string, unknown> | null;
+          actor_id: string | null;
+          card_id: string | null;
+          created_at: string;
+          agent: boolean | null;
+        } | null;
+        if (row) {
+          eventBatch.push({
+            id: Number(row.id),
+            kind: row.kind,
+            detail: (row.detail ?? {}) as Record<string, unknown>,
+            actor_id: row.actor_id,
+            card_id: row.card_id ?? null,
+            created_at: row.created_at,
+            agent: row.agent ?? false,
+          });
+          control.onChanged();
+        }
+      },
+    )
+    // The board chat rides the TOPIC (phase 4): its messages bind here
+    // and the composite carries the chat page — the chat panel consumes
+    // a slice of this stream instead of its own producer+socket.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_messages', filter: `board_id=eq.${id}` },
+      () => {
+        chatDirty = true;
+        control.onChanged();
+      },
+    )
     // Comment stats are counters now (ADR-7, migration 0074): the
     // maintenance trigger's UPDATE IS the event — the badge folds in O(1)
     // with no card fetch, for every writer (agents and API included, they
@@ -555,9 +642,85 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
     for (const card of value.cards) for (const tag of card.tags) tagNames.set(tag.id, tag.name);
   };
 
+  /** The chat slice's dirty flag: refetched only when its table
+   *  changed, so board bursts don't re-read chat pages. */
+  let chatDirty = true;
+
+  /**
+   * The burst's digest: the touched cards' latest comment pages (this
+   * board's cards only — the unfiltered channel hears other boards) and
+   * the batched new event rows. Empty digests cost no query.
+   */
+  const buildDigest = async (
+    board: BoardSnapshot,
+  ): Promise<Pick<BoardTopicSnapshot, 'commentPages' | 'newEvents'>> => {
+    const newEvents = eventBatch.splice(0, eventBatch.length);
+    const mine = new Set(board.cards.map((card) => card.id));
+    const cards = [...commentCards].filter((cardId) => mine.has(cardId));
+    commentCards.clear();
+    const commentPages: Record<string, CommentRow[]> = {};
+    // PER CARD, one query each — seq is allocated per card (0035/0036), so
+    // a single cross-card query would order incomparables and a global
+    // limit could hand one card all 30·N rows and another none (its
+    // drawer page would blank until the next burst). Bursts touch one,
+    // rarely two cards; N small queries is the exact shape the old
+    // per-card producer ran.
+    for (const cardId of cards) {
+      const { data, error } = await supabase
+        .from('card_comments')
+        .select(
+          'id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)',
+        )
+        .eq('card_id', cardId)
+        .order('seq', { ascending: false })
+        .limit(30);
+      if (error) throw new Error(error.message);
+      type Raw = {
+        id: string;
+        body: string;
+        created_at: string;
+        edited_at: string | null;
+        deleted_at: string | null;
+        deleted_by: string | null;
+        deleted_as: string | null;
+        deleted_as_team_id: string | null;
+        seq: number;
+        client_op: string | null;
+        user_id: string;
+        agent: boolean | null;
+        profiles: { display_name: string | null; avatar_url: string | null } | null;
+      };
+      commentPages[cardId] = ((data ?? []) as unknown as Raw[])
+        .slice()
+        .reverse()
+        .map((row) => ({
+          id: row.id,
+          body: row.deleted_at ? '' : row.body,
+          created_at: row.created_at,
+          edited_at: row.edited_at,
+          deleted_at: row.deleted_at,
+          deleted_by: row.deleted_by,
+          deleted_as: (row.deleted_as as CommentRow['deleted_as']) ?? null,
+          deleted_as_team_id: row.deleted_as_team_id,
+          seq: row.seq,
+          client_op: row.client_op,
+          agent: row.agent ?? false,
+          author_id: row.user_id ?? null,
+          avatar_url: row.profiles?.avatar_url ?? null,
+          author: row.profiles?.display_name ?? 'Someone',
+        }));
+    }
+    return { commentPages, newEvents };
+  };
+
   try {
     // Current value first — the reconnect contract.
-    let current = await snapshot(supabase, id);
+    let current: BoardTopicSnapshot = {
+      ...(await snapshot(supabase, id)),
+      chat: await boardChatSnapshot(supabase, id),
+      commentPages: {},
+      newEvents: [],
+    };
     seedVocabulary(current);
     yield current;
     while (true) {
@@ -600,19 +763,48 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
           console.log(
             `[boardStream ${id.slice(0, 8)}] ${plan.resync ? 'visibility change' : 'periodic re-sync'} — re-snapshotting`,
           );
-          current = await snapshot(supabase, id);
+          // A full re-snapshot flushes the digest with it. The fresh truth
+          // is the BOARD slice — the drawer's per-card pages are NOT part
+          // of it, so any rows the batched digests would have carried
+          // converge on the client engines' durable poll (~20s) instead.
+          // Bounded, rare (visibility changes + the periodic bound), and
+          // accepted: re-snapshotting every open drawer's card is a far
+          // worse trade.
+          eventBatch.splice(0, eventBatch.length);
+          commentCards.clear();
+          current = {
+            ...(await snapshot(supabase, id)),
+            chat: await boardChatSnapshot(supabase, id),
+            commentPages: {},
+            newEvents: [],
+          };
           seedVocabulary(current);
         } else {
           const views = await fetchCardViews(supabase, id, plan.cardTouches);
-          const next: BoardSnapshot = {
+          const next: BoardTopicSnapshot = {
             ...current,
             lists: current.lists.slice(),
             cards: current.cards.slice(),
           };
           if (applyFold(next, plan, views)) {
-            current = await snapshot(supabase, id);
+            current = {
+              ...(await snapshot(supabase, id)),
+              chat: await boardChatSnapshot(supabase, id),
+              commentPages: {},
+              newEvents: [],
+            };
             seedVocabulary(current);
           } else {
+            // The fold changed the board slice; the chat slice re-reads
+            // only when its own table fired (chat messages don't ride
+            // the fold — edits/tombstones are page-shaped).
+            if (chatDirty) {
+              next.chat = await boardChatSnapshot(supabase, id);
+              chatDirty = false;
+            } else {
+              next.chat = current.chat;
+            }
+            Object.assign(next, await buildDigest(next));
             current = next;
           }
           console.log(
@@ -1472,101 +1664,6 @@ async function logCardEvent(
   }
 }
 
-// ── the card's timeline, LIVE (phase 3: the 10s poll dies) ──────────────
-//
-// The events log is append-only per card, so the stream is cheap: the
-// first value is the current page, then each burst of INSERT events
-// carries its own rows (ADR-3: rows ship — no re-query on the hot path).
-// The monotonic bigint id makes the append exact: anything out of order
-// (a missed event, a replay) falls back to one re-fetch instead of a
-// guess.
-export const cardEventsStream = live(async function* (
-  cardId: string,
-): AsyncGenerator<CardEventRow[]> {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const id = assertId(cardId, 'card id');
-
-  // Session-before-subscribe (the boardStream lesson).
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) throw new Error('Sign in to view this card');
-
-  /** The burst's raw rows, straight from the events payload. */
-  const batch: CardEventRow[] = [];
-  const control = producerControls();
-  const channel = supabase
-    .channel(`card-events:${id}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'events',
-        filter: `card_id=eq.${id}`,
-      },
-      (payload: { new: unknown }) => {
-        const row = payload.new as {
-          id: number;
-          kind: string;
-          detail: Record<string, unknown> | null;
-          actor_id: string | null;
-          created_at: string;
-          agent: boolean | null;
-        } | null;
-        if (row) {
-          batch.push({
-            id: Number(row.id),
-            kind: row.kind,
-            detail: (row.detail ?? {}) as Record<string, unknown>,
-            actor_id: row.actor_id,
-            created_at: row.created_at,
-            agent: row.agent ?? false,
-          });
-          control.onChanged();
-        }
-      },
-    )
-    .on('system', {}, (payload: { status?: string; message?: string }) => {
-      if (payload?.status === 'error') {
-        console.error('[cardEventsStream] realtime system error:', payload.message);
-      }
-    })
-    .subscribe((status, err) => {
-      if (err) console.error('cardEventsStream channel error:', err);
-      if (status === 'CHANNEL_ERROR') console.error('cardEventsStream channel error status');
-    });
-
-  try {
-    let rows = await fetchCardEvents(id);
-    yield rows;
-    while (true) {
-      if (!control.pending) {
-        await new Promise<void>((resolve) => {
-          control.wake = resolve;
-        });
-      }
-      if (control.dead) return; // viewer went away — drop the channel
-      control.pending = false;
-      await new Promise((resolve) => setTimeout(resolve, 80)); // debounce bursts
-      if (!control.pending) {
-        const arrived = batch.splice(0, batch.length);
-        const folded = foldTimelineBurst(rows, arrived);
-        if (folded) {
-          // Rows ship: the burst extends the page, no query at all.
-          rows = folded;
-        } else {
-          // Empty burst woken by transport chatter, or an out-of-order
-          // arrival: one re-fetch is the truth.
-          rows = await fetchCardEvents(id);
-        }
-        yield rows;
-      }
-    }
-  } finally {
-    void supabase.removeChannel(channel);
-  }
-});
-
 /** The card's durable id: the given id, or — when the caller opened the
  *  card while its provisional (relayed) row was still in view — the row
  *  carrying the same client_op. RLS gates the fallback to visible cards. */ async function resolveCardId(
@@ -1744,100 +1841,6 @@ export async function getCardComments(
       author: (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
     }));
 }
-
-/**
- * A card's comments as a live source: newest last, refreshed the moment a
- * comment lands. The drawer's engine drives this; the board relay makes
- * posting instant. Same producer pattern as boardStream.
- */
-export const cardCommentsStream = live(async function* (
-  cardId: string,
-  cardClientOp?: string | null,
-) {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  // The card may still be known by its provisional (temp) id — resolve the
-  // durable row BEFORE binding the channel filter, so the stream lives on
-  // the real card's comments regardless of when the client-side echo swaps.
-  const id = await resolveCardId(supabase, assertId(cardId, 'card id'), cardClientOp);
-
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) throw new Error('Sign in to view comments');
-
-  const control = producerControls();
-  const channel = supabase
-    .channel(`comments:${id}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'card_comments', filter: `card_id=eq.${id}` },
-      control.onChanged,
-    )
-    .on('system', {}, (payload: { status?: string; message?: string }) => {
-      if (payload?.status === 'error') {
-        console.error('[cardCommentsStream] realtime system error:', payload.message);
-      }
-    })
-    .subscribe((status, err) => {
-      if (err) console.error('cardCommentsStream channel error:', err);
-      if (status === 'CHANNEL_ERROR') console.error('cardCommentsStream channel error status');
-    });
-
-  async function comments(): Promise<CommentRow[]> {
-    // Latest page only — long discussions load older comments on demand
-    // (the drawer's "load earlier" feeds them through the engine).
-    const startedAt = Date.now();
-    const { data, error } = await supabase
-      .from('card_comments')
-      .select(
-        'id, body, created_at, edited_at, deleted_at, deleted_by, deleted_as, deleted_as_team_id, seq, client_op, user_id, agent, profiles!card_comments_user_id_fkey(display_name, avatar_url)',
-      )
-      .eq('card_id', id)
-      .order('seq', { ascending: false })
-      .limit(30);
-    if (error) throw new Error(error.message);
-    warnSlow(startedAt, `card comments page (${id})`);
-    return (data ?? [])
-      .slice()
-      .reverse()
-      .map((row) => ({
-        id: row.id,
-        body: row.deleted_at ? '' : row.body,
-        created_at: row.created_at,
-        edited_at: row.edited_at,
-        deleted_at: row.deleted_at,
-        deleted_by: row.deleted_by,
-        deleted_as: (row.deleted_as as CommentRow['deleted_as']) ?? null,
-        deleted_as_team_id: row.deleted_as_team_id,
-        seq: row.seq,
-        client_op: row.client_op,
-        agent: row.agent ?? false,
-        author_id: row.user_id ?? null,
-        avatar_url:
-          (row.profiles as { display_name: string | null; avatar_url: string | null } | null)
-            ?.avatar_url ?? null,
-        author: (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
-      }));
-  }
-
-  try {
-    yield await comments();
-    while (true) {
-      if (!control.pending) {
-        await new Promise<void>((resolve) => {
-          control.wake = resolve;
-        });
-      }
-      if (control.dead) return;
-      control.pending = false;
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      if (!control.pending) {
-        yield await comments();
-      }
-    }
-  } finally {
-    void supabase.removeChannel(channel);
-  }
-});
 
 /** Post a comment. Returns the minted row (for instant relays). */
 export async function addComment(
@@ -2117,54 +2120,6 @@ async function boardChatSnapshot(
       author: (row.profiles as { display_name: string | null } | null)?.display_name ?? 'Someone',
     }));
 }
-
-/** The board's chat as a live source (same producer pattern as comments). */
-export const boardChatStream = live(async function* (
-  boardId: string,
-): AsyncGenerator<BoardMessageRow[]> {
-  'use server';
-  const supabase = createSupabaseRequestClient();
-  const id = assertId(boardId, 'board id');
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) throw new Error('Sign in to view this board');
-
-  const control = producerControls();
-  const channel = supabase
-    .channel(`board-chat:${id}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'board_messages', filter: `board_id=eq.${id}` },
-      control.onChanged,
-    )
-    .on('system', {}, (payload: { status?: string; message?: string }) => {
-      if (payload?.status === 'error') {
-        console.error('[boardChatStream] realtime system error:', payload.message);
-      }
-    })
-    .subscribe((status, err) => {
-      if (err) console.error('boardChatStream channel error:', err);
-      if (status === 'CHANNEL_ERROR') console.error('boardChatStream channel error status');
-    });
-
-  try {
-    yield await boardChatSnapshot(supabase, id);
-    while (true) {
-      if (!control.pending) {
-        await new Promise<void>((resolve) => {
-          control.wake = resolve;
-        });
-      }
-      if (control.dead) return;
-      control.pending = false;
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      if (!control.pending) {
-        yield await boardChatSnapshot(supabase, id);
-      }
-    }
-  } finally {
-    void supabase.removeChannel(channel);
-  }
-});
 
 /** The board's chat as a one-shot snapshot (the sync engine's refresh). */
 export async function getBoardChatSnapshot(boardId: string): Promise<BoardMessageRow[]> {
