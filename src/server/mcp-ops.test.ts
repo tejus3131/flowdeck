@@ -100,14 +100,19 @@ d('mcp per-op functions (local stack)', () => {
 
   afterAll(() => {
     if (!WS) return;
-    // The scratch world goes via the sanctioned purge path.
+    // The scratch world goes via the sanctioned purge path — and the
+    // fixture users go with it: both probe rows, or a long-lived stack
+    // accumulates them.
     sql(
       'begin',
       "select set_config('flowdeck.purge', 'on', true)",
       `delete from public.workspaces where id = '${WS}'`,
       'commit',
     );
-    sql(`delete from auth.users where id = '${MEMBER}'`);
+    sql(
+      `delete from auth.users where id = '${MEMBER}'`,
+      `delete from auth.users where id = '${OWNER}'`,
+    );
   });
 
   it('the dispatcher runs the full write path and stamps agent provenance', () => {
