@@ -56,8 +56,6 @@ import {
 import {
   addComment,
   boardStream,
-  cardCommentsStream,
-  cardEventsStream,
   chatSeq,
   createCard,
   createList,
@@ -90,6 +88,7 @@ import {
   updateCard as updateCardServer,
   updateList as updateListServer,
 } from '../../lib/boards';
+import { foldTimelineBurst } from '../../lib/board-fold';
 import {
   getMyWorkspaces,
   getWorkspaceSnapshot,
@@ -3566,7 +3565,27 @@ function CardDrawer(props: {
   // The open mark keeps its old contract (ends at the first paint —
   // the cached page on a warm open, the live page cold).
   type TimelineSnapshot = { list: CardEventRow[] };
-  const eventsLive = liveQuery(cardEventsStream, 'card-events');
+  // Phase 4 (ADR-3): the timeline rides the board TOPIC's event digest —
+  // liveQuery dedupes by (name + args), so the drawer adds zero sockets.
+  // The slice accumulates: the cold page from one fetch, then the topic's
+  // new event rows append through foldTimelineBurst.
+  const topicLive = liveQuery(boardStream, 'board');
+  const timelineSlice = async function* (key: string): AsyncGenerator<CardEventRow[]> {
+    let page = await getCardEvents(key);
+    yield page;
+    for await (const composite of await topicLive(key)) {
+      if (composite.newEvents.length === 0) continue;
+      const mine = composite.newEvents.filter((row) => row.card_id === key);
+      if (mine.length === 0) continue;
+      const folded = foldTimelineBurst(page, mine);
+      if (folded) {
+        page = folded;
+        yield page;
+      }
+      // Out-of-order arrivals skip: the engine's durable poll converges
+      // them (the same bound the standalone producer kept).
+    }
+  };
   const timelineEngine = createEngine<TimelineSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<TimelineSnapshot> {
@@ -3575,7 +3594,11 @@ function CardDrawer(props: {
           return;
         }
         for await (const list of await perfFirstValue(
-          cachedStream(`card-timeline:${key}`, () => eventsLive(key), 'card-timeline-revalidate'),
+          cachedStream(
+            `card-timeline:${key}`,
+            () => timelineSlice(key),
+            'card-timeline-revalidate',
+          ),
           'card-timeline-open',
         )) {
           yield { list };
@@ -3595,7 +3618,7 @@ function CardDrawer(props: {
         draft.list = snapshot.list;
       }
     },
-    status: () => eventsLive.status(tab() === 'settings' ? cardIdNow() : ''),
+    status: () => topicLive.status(tab() === 'settings' ? cardIdNow() : ''),
     refresh: async () => ({ list: await getCardEvents(cardIdNow()) }),
   });
   const events = () => timelineEngine.view().list;
@@ -3791,7 +3814,26 @@ function CardDrawer(props: {
 
   // ── live comments: a small engine over the card's comment stream ────
   type CommentsSnapshot = { list: CommentRow[] };
-  const commentsLive = liveQuery(cardCommentsStream, 'comments');
+  // Phase 4 (ADR-3): the comments ride the board TOPIC's digest — the
+  // drawer adds zero sockets (liveQuery dedupes by name+args). The slice
+  // accumulates: the cold page from one fetch (the same query the old
+  // producer's first value ran), then the digest's pages replace it as
+  // the card's comments change.
+  const commentsTopic = liveQuery(boardStream, 'board');
+  const commentsSlice = async function* (
+    key: string,
+    clientOp?: string | null,
+  ): AsyncGenerator<CommentRow[]> {
+    let page = await getCardComments(key, clientOp ?? null);
+    yield page;
+    for await (const composite of await commentsTopic(key)) {
+      const digest = composite.commentPages[key];
+      if (digest) {
+        page = digest;
+        yield page;
+      }
+    }
+  };
   const commentsEngine = createEngine<CommentsSnapshot>({
     streamSource: (key) =>
       (async function* (): AsyncGenerator<CommentsSnapshot> {
@@ -3803,7 +3845,7 @@ function CardDrawer(props: {
         for await (const list of await perfFirstValue(
           cachedStream(
             `card-comments:${key}`,
-            () => commentsLive(key, props.clientOp ?? null),
+            () => commentsSlice(key, props.clientOp ?? null),
             'card-comments-revalidate',
           ),
           'card-comments-open',
@@ -3833,7 +3875,7 @@ function CardDrawer(props: {
         draft.list = merged;
       }
     },
-    status: () => commentsLive.status(cardIdNow()),
+    status: () => commentsTopic.status(cardIdNow()),
     refresh: async () => ({ list: await getCardComments(cardIdNow(), props.clientOp ?? null) }),
   });
 
