@@ -12,7 +12,7 @@ import { query } from '@solidjs/router';
 import { getRequestEvent } from '@solidjs/web';
 import { live } from '@solidjs/web/server-functions';
 
-import { applyFold, planFold, type FoldEvent } from './board-fold';
+import { applyFold, planFold, type FoldEvent, type TagRow } from './board-fold';
 import { createSupabaseRequestClient } from '../server/supabase';
 import { friendlyError } from '../server/friendly';
 import {
@@ -349,6 +349,17 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error('Sign in to view this board');
 
+  // The board's workspace scopes the `tags` subscription (ADR-3 — phase 2):
+  // Supabase bindings are fixed at subscribe time, so one tiny row read
+  // precedes the channel build. RLS makes this null for access-less
+  // callers (the snapshot below reports `denied` either way).
+  const { data: scopeRow } = await supabase
+    .from('boards')
+    .select('workspace_id')
+    .eq('id', id)
+    .maybeSingle();
+  const tagScopeId = scopeRow?.workspace_id ?? null;
+
   // Change notifications coalesced through a tiny promise handoff: the
   // loop sleeps until a postgres_changes event pings it.
   const control = producerControls();
@@ -356,9 +367,11 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
   // The fold (Phase 2b): events land as FoldEvents, the loop debounces a
   // burst and folds it into the in-memory snapshot instead of re-querying
   // the board — no database work on the hot path, echoes land in the
-  // debounce window.
-  const batch: FoldEvent[] = [];
-  const push = (event: FoldEvent) => {
+  // debounce window. A card-tag ATTACH lands raw — its tag name resolves
+  // at plan time against the vocabulary below, so the fold stays pure.
+  type RawFoldEvent = FoldEvent | { kind: 'card-tag-attach-raw'; cardId: string; tagId: string };
+  const batch: RawFoldEvent[] = [];
+  const push = (event: RawFoldEvent) => {
     batch.push(event);
     control.onChanged();
   };
@@ -368,7 +381,7 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
   const RESYNC_EVERY_BATCHES = 20;
   let batches = 0;
 
-  const channel = supabase
+  let channel = supabase
     .channel(`board:${id}`)
     .on(
       'postgres_changes',
@@ -420,35 +433,88 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
         push({ kind: 'board-row', row: payload.new as BoardSummary });
       },
     )
-    // Assignments reshape the board too (avatars on cards): the card's
-    // view is re-fetched for the touched card only.
+    // Assignments ship their join rows (ADR-3 — phase 2): user ids fold
+    // directly — nothing to resolve, no card fetch.
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'card_assignees' },
-      (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
-        push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
+      (payload: {
+        eventType: string;
+        new: { card_id?: string; user_id?: string } | null;
+        old: { card_id?: string; user_id?: string } | null;
+      }) => {
+        const row = payload.new ?? payload.old;
+        const cardId = String(row?.card_id ?? '');
+        const userId = String(row?.user_id ?? '');
+        if (!cardId || !userId) return; // a malformed payload — nothing to fold
+        push({
+          kind: 'card-assignee-set',
+          cardId,
+          userId,
+          assigned: payload.eventType !== 'DELETE',
+        });
+      },
     )
-    // Same for the tag links; the workspace's tag VOCABULARY (a rename)
-    // reshapes chips on cards we cannot name — full resync.
+    // Tag links ship their join rows too (ADR-3 — phase 2). The attach's
+    // tag NAME is not in the payload: it lands raw and resolves at plan
+    // time against the stream's vocabulary (seeded by the first
+    // snapshot, kept current by tag-upserts) — an unresolvable attach
+    // degrades to one card fetch, never a guess.
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'card_tags' },
-      (payload: { new: { card_id?: string }; old: { card_id?: string } }) =>
-        push({ kind: 'card-touch', id: String((payload.new ?? payload.old)?.card_id) }),
-    )
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () =>
+      (payload: {
+        eventType: string;
+        new: { card_id?: string; tag_id?: string } | null;
+        old: { card_id?: string; tag_id?: string } | null;
+      }) => {
+        const row = payload.new ?? payload.old;
+        const cardId = String(row?.card_id ?? '');
+        const tagId = String(row?.tag_id ?? '');
+        if (!cardId || !tagId) return; // a malformed payload — nothing to fold
+        if (payload.eventType === 'DELETE') push({ kind: 'card-tag-detach', cardId, tagId });
+        else push({ kind: 'card-tag-attach-raw', cardId, tagId });
+      },
+    );
+
+  // The workspace's tag VOCABULARY rides scoped row events (ADR-3,
+  // phase 2): a rename folds into the chips' embedded names in memory —
+  // zero queries, no re-snapshot. Boards without a workspace (no scope
+  // to filter on) keep the old resync.
+  if (tagScopeId) {
+    channel = channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tags', filter: `workspace_id=eq.${tagScopeId}` },
+      (payload: { new: unknown }) => {
+        // Tags are never deleted — the 0067 trigger blocks it; upserts only.
+        if (payload.new) push({ kind: 'tag-upsert', row: payload.new as TagRow });
+      },
+    );
+  } else {
+    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () =>
       push({ kind: 'resync' }),
-    )
-    // Comment stats ride the snapshot: agents and API writes (which skip
-    // the relay) still bump the unseen badges live — re-fetch the card.
-    // (A comment DELETE carries only its own PK in `old` — no card to
-    // touch; the periodic re-sync converges that rare case.)
+    );
+  }
+  channel
+    // Comment stats are counters now (ADR-7, migration 0074): the
+    // maintenance trigger's UPDATE IS the event — the badge folds in O(1)
+    // with no card fetch, for every writer (agents and API included, they
+    // all bump the trigger). Comment DELETEs converge the same way — the
+    // old card-touch gap ("a DELETE carries no card to touch") is gone.
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'card_comments' },
-      (payload: { new: { card_id?: string }; old: { card_id?: string } }) => {
-        const cardId = (payload.new ?? payload.old)?.card_id;
-        if (cardId) push({ kind: 'card-touch', id: String(cardId) });
+      { event: '*', schema: 'public', table: 'card_counters' },
+      (payload: {
+        new: { card_id?: string; comment_count?: number; last_comment_at?: string | null } | null;
+      }) => {
+        const row = payload.new;
+        if (!row?.card_id || row.comment_count === undefined) return;
+        push({
+          kind: 'card-counter',
+          cardId: String(row.card_id),
+          commentCount: Number(row.comment_count),
+          lastCommentAt: row.last_comment_at ?? null,
+        });
       },
     )
     // The exact per-board revision (migration 0032) rides every change.
@@ -480,9 +546,20 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
       if (status === 'TIMED_OUT') console.error('boardStream channel timed out');
     });
 
+  /** The tag vocabulary this stream keeps for join-row resolution
+   *  (ADR-3): seeded by every full snapshot's chips, kept current by
+   *  tag-upsert events as they fold. Attach events resolve against it
+   *  at plan time — by then the whole debounced burst has arrived, so a
+   *  tag created and linked in the same window resolves together. */
+  const tagNames = new Map<string, string>();
+  const seedVocabulary = (value: BoardSnapshot) => {
+    for (const card of value.cards) for (const tag of card.tags) tagNames.set(tag.id, tag.name);
+  };
+
   try {
     // Current value first — the reconnect contract.
     let current = await snapshot(supabase, id);
+    seedVocabulary(current);
     yield current;
     while (true) {
       if (!control.pending) {
@@ -495,7 +572,28 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
       // Debounce bursts: one fold for a flurry of changes.
       await new Promise((resolve) => setTimeout(resolve, 80));
       if (!control.pending) {
-        const events = batch.splice(0, batch.length);
+        const raw = batch.splice(0, batch.length);
+        // The burst's tag-upserts feed the vocabulary BEFORE attaches
+        // resolve: the whole debounced burst has arrived by now, so a tag
+        // created and linked in the same window resolves together — no
+        // needless card fetch for it.
+        for (const event of raw) {
+          if (event.kind === 'tag-upsert') tagNames.set(event.row.id, event.row.name);
+        }
+        // An attach whose name is STILL unknown after that (a race this
+        // stream never saw) degrades to a card-touch — one card fetch,
+        // never a guessed chip name.
+        const events: FoldEvent[] = raw.map((event) => {
+          if (event.kind !== 'card-tag-attach-raw') return event;
+          const name = tagNames.get(event.tagId);
+          return name
+            ? {
+                kind: 'card-tag-attach',
+                cardId: event.cardId,
+                tag: { id: event.tagId, name },
+              }
+            : { kind: 'card-touch', id: event.cardId };
+        });
         const plan = planFold(events);
         // Visibility-shaping changes (and the periodic drift bound) fold
         // to a full re-snapshot; everything else applies in memory.
@@ -504,6 +602,7 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
             `[boardStream ${id.slice(0, 8)}] ${plan.resync ? 'visibility change' : 'periodic re-sync'} — re-snapshotting`,
           );
           current = await snapshot(supabase, id);
+          seedVocabulary(current);
         } else {
           const views = await fetchCardViews(supabase, id, plan.cardTouches);
           const next: BoardSnapshot = {
@@ -513,6 +612,7 @@ export const boardStream = live(async function* (boardId: string): AsyncGenerato
           };
           if (applyFold(next, plan, views)) {
             current = await snapshot(supabase, id);
+            seedVocabulary(current);
           } else {
             current = next;
           }
@@ -537,16 +637,19 @@ async function snapshot(
   boardId: string,
 ): Promise<BoardSnapshot> {
   const startedAt = Date.now();
-  const [boards, lists, cards, revisionRow, access, stats] = await Promise.all([
+  const [boards, lists, cards, revisionRow, access] = await Promise.all([
     supabase.from('boards').select('*').eq('id', boardId).maybeSingle(),
     supabase
       .from('lists')
       .select('*')
       .eq('board_id', boardId)
       .order('position', { ascending: true }),
+    // Comment stats ride the counters join (ADR-7, migration 0074) — the
+    // old board_card_comment_stats aggregate leg is gone: five queries,
+    // not six, and the stats are transactional rows now.
     supabase
       .from('cards')
-      .select('*, card_tags(tag_id, tags(id, name))')
+      .select('*, card_tags(tag_id, tags(id, name)), card_counters(comment_count, last_comment_at)')
       .eq('board_id', boardId)
       .order('position', { ascending: true }),
     // The trustworthy per-board cursor (migration 0032): bumped by a
@@ -554,7 +657,6 @@ async function snapshot(
     // deletions included, unlike the old activity head.
     supabase.from('board_revisions').select('revision').eq('board_id', boardId).maybeSingle(),
     supabase.rpc('user_board_access', { p_board_id: boardId }),
-    supabase.rpc('board_card_comment_stats', { p_board_id: boardId }),
   ]);
   // Deploy-order safety: code can ship before migration 0032 lands — in
   // that window fall back to the old, less trustworthy cursor (the
@@ -597,11 +699,6 @@ async function snapshot(
       denied: true,
     };
   }
-  const statMap = new Map(
-    (
-      (stats.data ?? []) as { card_id: string; comment_count: number; last_comment_at: string }[]
-    ).map((row) => [row.card_id, row]),
-  );
   const assigneeMap = new Map<string, string[]>();
   for (const row of (assignees.data ?? []) as { card_id: string; user_id: string }[]) {
     const list = assigneeMap.get(row.card_id) ?? [];
@@ -614,14 +711,23 @@ async function snapshot(
     cards: (
       cards.data as unknown as (CardRow & {
         card_tags?: { tag_id: string; tags: { id: string; name: string } | null }[];
+        card_counters?:
+          | { comment_count: number; last_comment_at: string | null }
+          | { comment_count: number; last_comment_at: string | null }[]
+          | null;
       })[]
     ).map((card) => {
-      const stat = statMap.get(card.id);
-      const { card_tags: _links, ...row } = card;
+      // The one-to-one counters join: an object when the row exists,
+      // null before a card's first comment (count 0, no last). PostgREST
+      // shapes it as an object for unique FKs; the array arm is tolerance.
+      const counter = Array.isArray(card.card_counters)
+        ? card.card_counters[0]
+        : card.card_counters;
+      const { card_tags: _links, card_counters: _counter, ...row } = card;
       return {
         ...row,
-        comment_count: Number(stat?.comment_count ?? 0),
-        last_comment_at: stat?.last_comment_at ?? null,
+        comment_count: Number(counter?.comment_count ?? 0),
+        last_comment_at: counter?.last_comment_at ?? null,
         assignees: assigneeMap.get(card.id) ?? [],
         tags: (_links ?? [])
           .map((link) => link.tags)
@@ -648,46 +754,43 @@ async function fetchCardViews(
 ): Promise<CardView[]> {
   if (cardIds.size === 0) return [];
   const ids = [...cardIds];
-  const [cardsRes, assigneesRes, commentsRes] = await Promise.all([
+  // Comment stats ride the counters join (ADR-7, migration 0074) — the
+  // card_comments aggregation leg is gone.
+  const [cardsRes, assigneesRes] = await Promise.all([
     supabase
       .from('cards')
-      .select('*, card_tags(tag_id, tags(id, name))')
+      .select('*, card_tags(tag_id, tags(id, name)), card_counters(comment_count, last_comment_at)')
       .eq('board_id', boardId)
       .in('id', ids),
     supabase.from('card_assignees').select('card_id, user_id').in('card_id', ids),
-    supabase.from('card_comments').select('card_id, created_at').in('card_id', ids),
   ]);
   if (cardsRes.error) throw new Error(cardsRes.error.message);
   // Throw-on-error like snapshot(): a transient failure of the assignee
-  // or comment queries must not fold silently-wrong stats — the throw
-  // ends the generator, live() reconnects, and the reconnect's fresh
-  // full snapshot restores truth in ~1s instead of waiting for a resync.
+  // query must not fold silently-wrong stats — the throw ends the
+  // generator, live() reconnects, and the reconnect's fresh full
+  // snapshot restores truth in ~1s instead of waiting for a resync.
   if (assigneesRes.error) throw new Error(assigneesRes.error.message);
-  if (commentsRes.error) throw new Error(commentsRes.error.message);
   const assigneeMap = new Map<string, string[]>();
   for (const row of (assigneesRes.data ?? []) as { card_id: string; user_id: string }[]) {
     const list = assigneeMap.get(row.card_id) ?? [];
     list.push(row.user_id);
     assigneeMap.set(row.card_id, list);
   }
-  const statMap = new Map<string, { count: number; last: string | null }>();
-  for (const row of (commentsRes.data ?? []) as { card_id: string; created_at: string }[]) {
-    const stat = statMap.get(row.card_id) ?? { count: 0, last: null };
-    stat.count += 1;
-    if (!stat.last || row.created_at > stat.last) stat.last = row.created_at;
-    statMap.set(row.card_id, stat);
-  }
   return (
     (cardsRes.data ?? []) as unknown as (CardRow & {
       card_tags?: { tag_id: string; tags: { id: string; name: string } | null }[];
+      card_counters?:
+        | { comment_count: number; last_comment_at: string | null }
+        | { comment_count: number; last_comment_at: string | null }[]
+        | null;
     })[]
   ).map((card) => {
-    const { card_tags: links, ...row } = card;
-    const stat = statMap.get(card.id);
+    const counter = Array.isArray(card.card_counters) ? card.card_counters[0] : card.card_counters;
+    const { card_tags: links, card_counters: _counter, ...row } = card;
     return {
       ...row,
-      comment_count: stat?.count ?? 0,
-      last_comment_at: stat?.last ?? null,
+      comment_count: Number(counter?.comment_count ?? 0),
+      last_comment_at: counter?.last_comment_at ?? null,
       assignees: assigneeMap.get(card.id) ?? [],
       tags: (links ?? [])
         .map((link) => link.tags)
