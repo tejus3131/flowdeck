@@ -1417,23 +1417,30 @@ async function fetchCardEvents(cardId: string): Promise<CardEventRow[]> {
   const supabase = createSupabaseRequestClient();
   // The events log (ADR-4): id-ordered — the bigint identity is
   // monotonic, so a same-second burst keeps its order (created_at alone
-  // cannot).
+  // cannot). NEWEST 100, then reversed to the trail's ascending order —
+  // foldTimelineBurst trims to the newest page too, so a card with more
+  // history than the window opens showing the same window the fold
+  // keeps (the oldest-100 read pre-dated the live path and would have
+  // self-healed only on the next event).
   const { data, error } = await supabase
     .from('events')
     .select('id, kind, detail, actor_id, created_at, agent')
     .eq('card_id', assertId(cardId, 'card id'))
-    .order('id', { ascending: true })
+    .order('id', { ascending: false })
     .limit(100);
   if (error) throw new Error(error.message);
   warnSlow(startedAt, `card events (${cardId})`);
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    kind: row.kind,
-    detail: (row.detail ?? {}) as Record<string, unknown>,
-    actor_id: row.actor_id,
-    created_at: row.created_at,
-    agent: row.agent ?? false,
-  }));
+  return (data ?? [])
+    .slice()
+    .reverse()
+    .map((row) => ({
+      id: Number(row.id),
+      kind: row.kind,
+      detail: (row.detail ?? {}) as Record<string, unknown>,
+      actor_id: row.actor_id,
+      created_at: row.created_at,
+      agent: row.agent ?? false,
+    }));
 }
 
 /** Best-effort event write — an audit row never blocks the mutation.
