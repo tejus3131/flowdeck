@@ -1531,7 +1531,6 @@ export const cardEventsStream = live(async function* (
 
   try {
     let rows = await fetchCardEvents(id);
-    let lastId = rows.at(-1)?.id ?? 0;
     yield rows;
     while (true) {
       if (!control.pending) {
@@ -1548,12 +1547,10 @@ export const cardEventsStream = live(async function* (
         if (folded) {
           // Rows ship: the burst extends the page, no query at all.
           rows = folded;
-          lastId = rows.at(-1)!.id;
         } else {
           // Empty burst woken by transport chatter, or an out-of-order
           // arrival: one re-fetch is the truth.
           rows = await fetchCardEvents(id);
-          lastId = rows.at(-1)?.id ?? 0;
         }
         yield rows;
       }
