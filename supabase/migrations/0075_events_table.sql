@@ -65,9 +65,7 @@ create or replace function public.log_event(
   p_entity_id uuid,
   p_board_id uuid,
   p_card_id uuid default null,
-  p_detail jsonb default '{}'::jsonb,
-  p_tag_ids uuid[] default '{}',
-  p_agent boolean default false
+  p_detail jsonb default '{}'::jsonb
 )
 returns bigint
 language plpgsql
@@ -77,6 +75,7 @@ as $$
 declare
   v_id bigint;
   v_ws uuid;
+  v_tag_ids uuid[];
 begin
   if p_card_id is not null and not exists (
     select 1 from public.cards c
@@ -87,20 +86,45 @@ begin
 
   select workspace_id into v_ws from public.boards where id = p_board_id;
 
+  -- tag_ids is DERIVED from the detail's {id, name} chip arrays, never a
+  -- caller-supplied second source of truth — no write site can forget
+  -- it, and the detail (what history renders) stays the one truth. The
+  -- 'tags' kind carries 'added'/'removed'; anything else tags nothing.
+  v_tag_ids := coalesce((
+    select array (
+      select distinct (chip->>'id')::uuid
+      from (
+        select case when jsonb_typeof(p_detail->'added') = 'array'
+               then p_detail->'added' else '[]'::jsonb end as arr
+        union all
+        select case when jsonb_typeof(p_detail->'removed') = 'array'
+               then p_detail->'removed' else '[]'::jsonb end as arr
+      ) batches,
+      lateral jsonb_array_elements(batches.arr) as chip
+    )
+  ), '{}'::uuid[]);
+
   insert into public.events (
     actor_id, kind, entity_type, entity_id, workspace_id,
     board_id, card_id, tag_ids, detail, agent
   )
   values (
     p_actor_id, p_kind, p_entity_type, p_entity_id, v_ws,
-    p_board_id, p_card_id, p_tag_ids, p_detail, p_agent
+    p_board_id, p_card_id, v_tag_ids, p_detail, false
   )
   returning id into v_id;
   return v_id;
 end;
 $$;
 
-revoke execute on function public.log_event(uuid, text, text, uuid, uuid, uuid, jsonb, uuid[], boolean) from anon;
+revoke execute on function public.log_event(uuid, text, text, uuid, uuid, uuid, jsonb) from anon;
+
+-- Agent provenance rides the log (the 0049 pattern, verbatim): rows
+-- written under flowdeck.agent='true' — every MCP connection — stamp
+-- themselves, so the timeline shows who acted.
+create trigger events_agent
+  before insert on public.events
+  for each row execute function public.flowdeck_mark_agent_origin();
 
 -- Backfill: the card timeline's history folds in, created_at order so the
 -- copied ids stay monotonic. tag_ids extracts the 'tags' kind's chip ids
