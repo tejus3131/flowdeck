@@ -86,9 +86,7 @@ export async function getTagEvents(
 /** Card counts per tag — the hub's "N cards" badges. RLS: only cards on
  *  boards the reader can see are counted. One head-count per tag: the
  *  rows never travel, the database does the counting. */
-export async function getTagCardCounts(
-  tagIds: string[],
-): Promise<Record<string, number>> {
+export async function getTagCardCounts(tagIds: string[]): Promise<Record<string, number>> {
   'use server';
   const ids = [...new Set(tagIds)].filter((id) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id ?? ''),
@@ -123,7 +121,8 @@ export async function updateTag(
   }
   if (patch.description !== undefined) {
     const description = String(patch.description ?? '');
-    if (description.length > 500) throw friendlyError('Tag description is too long (max 500 characters)');
+    if (description.length > 500)
+      throw friendlyError('Tag description is too long (max 500 characters)');
     // Empty clears the description — unlike the name, which must exist.
     update.description = description.trim();
   }
@@ -141,4 +140,3 @@ export async function updateTag(
   }
   return { name: data.name, description: data.description ?? '' };
 }
-

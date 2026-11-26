@@ -1,0 +1,51 @@
+name: Bug report
+description: Something is broken or behaves differently than it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug — what you expected and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, starting from a fresh state if possible.
+      placeholder: |
+        1. Open board '…'
+        2. Move card '…' to list '…'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Screenshots or a screen recording help a lot for UI issues.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where does the bug live?
+      options:
+        - UI (boards, cards, drawer)
+        - Server / data (Supabase, RLS, realtime)
+        - MCP server
+        - Docs
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output or errors
+      description: Paste any relevant console output, network errors, or logs.
+      render: shell
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser + OS, or whether you saw it on the preview/prod deploy.

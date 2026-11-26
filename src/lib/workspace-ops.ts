@@ -293,7 +293,9 @@ export function echoDetailOp(
       return true;
     }
     case 'access-changed':
-      return (durable.access[accessKey(payload.boardId, payload.userId)] ?? null) === payload.access;
+      return (
+        (durable.access[accessKey(payload.boardId, payload.userId)] ?? null) === payload.access
+      );
     case 'team-created':
       return durable.teams.some((team) => team.id === payload.teamId);
     case 'team-deleted':
@@ -315,7 +317,8 @@ export function echoDetailOp(
         (payload.boardCreation === undefined ||
           durable.workspace.board_creation === payload.boardCreation) &&
         (payload.inviteDomains === undefined ||
-          JSON.stringify(durable.workspace.invite_domains) === JSON.stringify(payload.inviteDomains))
+          JSON.stringify(durable.workspace.invite_domains) ===
+            JSON.stringify(payload.inviteDomains))
       );
     default:
       return false;
@@ -382,7 +385,10 @@ export function mergeWorkspaceDetail(
     if (draft.workspace.name !== snapshot.workspace.name) {
       draft.workspace = { ...draft.workspace, name: snapshot.workspace.name };
     }
-    if (JSON.stringify(draft.workspace.invite_domains) !== JSON.stringify(snapshot.workspace.invite_domains)) {
+    if (
+      JSON.stringify(draft.workspace.invite_domains) !==
+      JSON.stringify(snapshot.workspace.invite_domains)
+    ) {
       draft.workspace = { ...draft.workspace, invite_domains: snapshot.workspace.invite_domains };
     }
     if (draft.workspace.board_creation !== snapshot.workspace.board_creation) {

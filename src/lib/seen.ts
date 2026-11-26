@@ -42,8 +42,7 @@ function writeMap(map: SeenMap): void {
 }
 
 /** The stable-identity key for a card (null when the row has no stamp). */
-const opKey = (clientOp: string | null | undefined) =>
-  clientOp ? `op:${clientOp}` : null;
+const opKey = (clientOp: string | null | undefined) => (clientOp ? `op:${clientOp}` : null);
 
 /** The highest seen-count recorded for the card under any of its keys.
  *  Returns -1 when nothing numeric is recorded (legacy timestamps or a

@@ -27,14 +27,24 @@ const memberCap = { role: 'member' as const, canCreateBoards: false };
 const adminCap = { role: 'admin' as const, canCreateBoards: true };
 const ownerCap = { role: 'owner' as const, canCreateBoards: true };
 
-const sel = (workspaces: Record<string, Record<string, string[]>> = {}, account: Record<string, string[]> = {}): PermissionSelection => ({
+const sel = (
+  workspaces: Record<string, Record<string, string[]>> = {},
+  account: Record<string, string[]> = {},
+): PermissionSelection => ({
   workspaces,
   account,
 });
 
 describe('dependency resolution — writes imply reads', () => {
   it('enabling a write switches its read on', () => {
-    const next = toggleActionInSelection(sel({ [WS]: {} }), 'workspaces', WS, 'cards', 'create', true);
+    const next = toggleActionInSelection(
+      sel({ [WS]: {} }),
+      'workspaces',
+      WS,
+      'cards',
+      'create',
+      true,
+    );
     expect(next.workspaces[WS].cards).toContain('read');
   });
 
@@ -48,7 +58,14 @@ describe('dependency resolution — writes imply reads', () => {
   });
 
   it('cross-entity requirements pull in (cards.create requires boards.read)', () => {
-    const next = toggleActionInSelection(sel({ [WS]: {} }), 'workspaces', WS, 'cards', 'create', true);
+    const next = toggleActionInSelection(
+      sel({ [WS]: {} }),
+      'workspaces',
+      WS,
+      'cards',
+      'create',
+      true,
+    );
     expect(next.workspaces[WS].boards).toContain('read');
   });
 
@@ -102,7 +119,10 @@ describe('tri-state entity toggle', () => {
     // member without board-create rights: entity toggle never grants create
     s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', memberCap);
     expect(s.workspaces[WS].boards).not.toContain('create');
-    s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', { ...memberCap, canCreateBoards: true });
+    s = toggleEntityInSelection(s, 'workspaces', WS, 'boards', {
+      ...memberCap,
+      canCreateBoards: true,
+    });
     expect(s.workspaces[WS].boards).toContain('create');
   });
 });
@@ -168,7 +188,9 @@ describe('caps — a grant can never exceed the user\u2019s own reach', () => {
   });
 
   it('keeps everything for an owner', () => {
-    const crafted = normalizeSelection(sel({ [WS]: { boards: ['read', 'create', 'edit', 'delete'] } }));
+    const crafted = normalizeSelection(
+      sel({ [WS]: { boards: ['read', 'create', 'edit', 'delete'] } }),
+    );
     const capped = capSelection(crafted, { [WS]: ownerCap });
     expect(capped.workspaces[WS].boards?.sort()).toEqual(['create', 'delete', 'edit', 'read']);
   });
@@ -221,18 +243,16 @@ describe('taxonomy sanity', () => {
 
 describe('access entity: grant vs request', () => {
   it('members keep request but lose grant', () => {
-    const capped = capSelection(
-      sel({ [WS]: { access: ['check', 'request', 'grant'] } }),
-      { [WS]: memberCap },
-    );
+    const capped = capSelection(sel({ [WS]: { access: ['check', 'request', 'grant'] } }), {
+      [WS]: memberCap,
+    });
     expect(capped.workspaces[WS].access).toEqual(['check', 'request']);
   });
 
   it('admins keep both', () => {
-    const capped = capSelection(
-      sel({ [WS]: { access: ['check', 'request', 'grant'] } }),
-      { [WS]: adminCap },
-    );
+    const capped = capSelection(sel({ [WS]: { access: ['check', 'request', 'grant'] } }), {
+      [WS]: adminCap,
+    });
     expect(capped.workspaces[WS].access).toEqual(['check', 'request', 'grant']);
   });
 
@@ -245,8 +265,9 @@ describe('access entity: grant vs request', () => {
   });
 
   it('grant_board_access is still grantable for admins (ALL_OPS intact)', () => {
-    expect(WORKSPACE_ENTITIES.flatMap((e) => e.actions).flatMap((a) => a.ops))
-      .toContain('grant_board_access');
+    expect(WORKSPACE_ENTITIES.flatMap((e) => e.actions).flatMap((a) => a.ops)).toContain(
+      'grant_board_access',
+    );
   });
 });
 
@@ -265,10 +286,9 @@ describe('workspaceOpsToSelection null tolerance', () => {
     // A demoted member's leftover admin grant, capped away server-side:
     // the workspace key disappears; only the account baseline (the
     // identity pair every connection carries) remains.
-    const stored = selectionToWorkspaceOps(capSelection(
-      sel({ [WS]: { boards: ['delete'] } }),
-      { [WS]: memberCap },
-    ));
+    const stored = selectionToWorkspaceOps(
+      capSelection(sel({ [WS]: { boards: ['delete'] } }), { [WS]: memberCap }),
+    );
     expect(stored).not.toBeNull();
     // Only the baseline identity pair remains (it rides along per bucket
     // by design); every workspace grant is gone.
@@ -276,7 +296,9 @@ describe('workspaceOpsToSelection null tolerance', () => {
     const round = workspaceOpsToSelection(stored);
     // No workspace entity actions survive the strip; the account bucket
     // is exactly the baseline reads (profile + workspace list).
-    expect(Object.values(round.workspaces).every((entities) => Object.keys(entities).length === 0)).toBe(true);
+    expect(
+      Object.values(round.workspaces).every((entities) => Object.keys(entities).length === 0),
+    ).toBe(true);
     expect(round.account).toEqual({ profile: ['read'], workspaces: ['read'] });
   });
 });
@@ -286,13 +308,25 @@ describe('workspaceOpsToSelection null tolerance', () => {
 
 describe('capWorkspaceOps', () => {
   const full = [
-    'get_me', 'list_workspaces', // baseline — always survive
-    'list_boards', 'get_board', 'get_cards', // member reads
-    'create_card', 'update_card', 'move_card', 'resolve_card', 'unresolve_card',
-    'rename_list', 'update_list', // member writes
-    'delete_board', 'delete_list', // admin writes
-    'create_tag', 'rename_tag', 'merge_tags', // tag powers (create is member-level; tags never delete)
-    'invite_member', 'resolve_access_request', // admin people powers
+    'get_me',
+    'list_workspaces', // baseline — always survive
+    'list_boards',
+    'get_board',
+    'get_cards', // member reads
+    'create_card',
+    'update_card',
+    'move_card',
+    'resolve_card',
+    'unresolve_card',
+    'rename_list',
+    'update_list', // member writes
+    'delete_board',
+    'delete_list', // admin writes
+    'create_tag',
+    'rename_tag',
+    'merge_tags', // tag powers (create is member-level; tags never delete)
+    'invite_member',
+    'resolve_access_request', // admin people powers
     'create_board', // the gated op
     'search',
   ];
@@ -302,7 +336,15 @@ describe('capWorkspaceOps', () => {
     for (const op of ['list_boards', 'create_card', 'update_card', 'search', 'get_me']) {
       expect(capped).toContain(op);
     }
-    for (const op of ['delete_board', 'delete_list', 'rename_tag', 'merge_tags', 'invite_member', 'resolve_access_request', 'create_board']) {
+    for (const op of [
+      'delete_board',
+      'delete_list',
+      'rename_tag',
+      'merge_tags',
+      'invite_member',
+      'resolve_access_request',
+      'create_board',
+    ]) {
       expect(capped).not.toContain(op);
     }
     // Tag CREATION is member-level in the app (tags_insert_member) —
@@ -323,7 +365,10 @@ describe('capWorkspaceOps', () => {
     const closedMember = { role: 'member' as const, canCreateBoards: false };
     expect(capWorkspaceOps(['create_board', 'get_me'], closedMember)).toEqual(['get_me']);
     const openMember = { role: 'member' as const, canCreateBoards: true };
-    expect(capWorkspaceOps(['create_board', 'get_me'], openMember)).toEqual(['create_board', 'get_me']);
+    expect(capWorkspaceOps(['create_board', 'get_me'], openMember)).toEqual([
+      'create_board',
+      'get_me',
+    ]);
   });
 
   it('baseline identity ops always survive, unknown ops fall away', () => {

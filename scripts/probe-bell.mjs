@@ -7,7 +7,9 @@ const browser = await chromium.launch({
   headless: true,
 });
 const page = await (await browser.newContext()).newPage();
-await page.goto(`${BASE}/auth/confirm?token_hash=${process.argv[2]}&type=${process.argv[3]}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`${BASE}/auth/confirm?token_hash=${process.argv[2]}&type=${process.argv[3]}`, {
+  waitUntil: 'domcontentloaded',
+});
 await page.waitForTimeout(1500);
 await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(2500);
@@ -18,7 +20,10 @@ if (await bell.count()) {
   await page.waitForTimeout(1200);
   await page.screenshot({ path: '/tmp/probe-bell.png' });
   const text = await page.locator('body').innerText();
-  const lines = text.split('\n').filter((l) => /invited you|Invite|Workspace|mark as read/i.test(l)).slice(0, 8);
+  const lines = text
+    .split('\n')
+    .filter((l) => /invited you|Invite|Workspace|mark as read/i.test(l))
+    .slice(0, 8);
   console.log('---- bell panel ----');
   console.log(lines.join('\n') || '(no invite lines found)');
 
@@ -29,7 +34,10 @@ if (await bell.count()) {
     await page.waitForTimeout(3500);
     await page.screenshot({ path: '/tmp/probe-bell-accepted.png' });
     const after = await page.locator('body').innerText();
-    const interesting = after.split('\n').filter((l) => /Accepted|Declined|error|invalid|Probe Test/i.test(l)).slice(0, 8);
+    const interesting = after
+      .split('\n')
+      .filter((l) => /Accepted|Declined|error|invalid|Probe Test/i.test(l))
+      .slice(0, 8);
     console.log('---- after Accept ----');
     console.log(interesting.join('\n') || '(nothing matched)');
   } else {

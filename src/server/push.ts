@@ -45,7 +45,8 @@ function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
 /** The VAPID signing keypair, imported once per request. */
 async function vapidKeys(): Promise<{ sign: CryptoKey; publicKey: string }> {
   const raw = fromBase64Url(env.VAPID_PUBLIC_KEY!);
-  if (raw.length !== 65 || raw[0] !== 4) throw new Error('VAPID_PUBLIC_KEY: expected a 65-byte uncompressed P-256 point');
+  if (raw.length !== 65 || raw[0] !== 4)
+    throw new Error('VAPID_PUBLIC_KEY: expected a 65-byte uncompressed P-256 point');
   const jwk = {
     kty: 'EC',
     crv: 'P-256',
@@ -87,7 +88,9 @@ export async function vapidJwt(endpoint: string): Promise<string> {
 
 /** RFC 8291 §2: one-block HKDF-Expand (our CEK/nonce are ≤ 32 bytes). */
 async function hkdfExpand(prk: ArrayBuffer, info: string, length: number): Promise<ArrayBuffer> {
-  const key = await crypto.subtle.importKey('raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await crypto.subtle.importKey('raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+  ]);
   const out = await crypto.subtle.sign('HMAC', key, new Uint8Array([...encoder.encode(info), 1]));
   return out.slice(0, length);
 }
@@ -110,8 +113,18 @@ export async function encryptPayload(
   const as = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, [
     'deriveBits',
   ]);
-  const ecdhSecret = await crypto.subtle.deriveBits({ name: 'ECDH', public: uaPublic }, as.privateKey, 256);
-  const authSecret = await crypto.subtle.importKey('raw', fromBase64Url(sub.auth), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const ecdhSecret = await crypto.subtle.deriveBits(
+    { name: 'ECDH', public: uaPublic },
+    as.privateKey,
+    256,
+  );
+  const authSecret = await crypto.subtle.importKey(
+    'raw',
+    fromBase64Url(sub.auth),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
   const prk = await crypto.subtle.sign('HMAC', authSecret, ecdhSecret);
   const cek = await hkdfExpand(prk, 'Content-Encoding: aes128gcm\0', 16);
   const nonce = await hkdfExpand(prk, 'Content-Encoding: nonce\0', 12);
@@ -193,7 +206,13 @@ export async function pushToUsers(userIds: string[], payload: PushPayload): Prom
       return result.status === 'fulfilled' && result.value === false;
     });
     if (dead.length > 0) {
-      await supabase.from('push_subscriptions').delete().in('endpoint', dead.map((sub) => sub.endpoint));
+      await supabase
+        .from('push_subscriptions')
+        .delete()
+        .in(
+          'endpoint',
+          dead.map((sub) => sub.endpoint),
+        );
     }
   } catch (error) {
     console.error('pushToUsers failed:', error);

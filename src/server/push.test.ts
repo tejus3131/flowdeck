@@ -131,8 +131,18 @@ describe('web push encryption (RFC 8291 roundtrip)', () => {
     const prk = await crypto.subtle.sign('HMAC', hmacKey, ecdhSecret);
     // HKDF-Expand one block (independent reimplementation).
     const expand = async (info: string, length: number) => {
-      const key = await crypto.subtle.importKey('raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-      const block = await crypto.subtle.sign('HMAC', key, new Uint8Array([...new TextEncoder().encode(info), 1]));
+      const key = await crypto.subtle.importKey(
+        'raw',
+        prk,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign'],
+      );
+      const block = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        new Uint8Array([...new TextEncoder().encode(info), 1]),
+      );
       return block.slice(0, length);
     };
     const cek = await expand('Content-Encoding: aes128gcm\0', 16);

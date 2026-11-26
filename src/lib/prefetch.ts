@@ -149,7 +149,9 @@ export function trackRecentBoard(boardId: string): void {
   try {
     localStorage.setItem(
       RECENT_KEY,
-      JSON.stringify([boardId, ...readRecent().filter((id) => id !== boardId)].slice(0, RECENT_MAX)),
+      JSON.stringify(
+        [boardId, ...readRecent().filter((id) => id !== boardId)].slice(0, RECENT_MAX),
+      ),
     );
   } catch {
     // blocked storage — the dashboard just warms less

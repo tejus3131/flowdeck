@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Class-based dark mode: the theme lives in the database (profiles.theme),
    applied to <html> server-side from a mirror cookie plus an inline head
@@ -196,7 +196,7 @@ textarea {
 }
 .fd-diff-text {
   @apply min-w-0 flex-1;
-}/* ── The smart composer's chips (SmartTextarea backdrop tokens) ──────────
+} /* ── The smart composer's chips (SmartTextarea backdrop tokens) ──────────
    The textarea's own text is transparent; this layer renders mentions
    and citations as colored tokens so the box reads like Slack. */
 .fd-tok-user {

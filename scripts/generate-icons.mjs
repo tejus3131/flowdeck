@@ -64,7 +64,10 @@ function drawIcon(size, { maskable = false } = {}) {
   const left = cx - glyph / 2;
   const top = cx - glyph / 2;
   const inRoundedSquare = (x, y) => {
-    const minX = pad, minY = pad, maxX = size - pad, maxY = size - pad;
+    const minX = pad,
+      minY = pad,
+      maxX = size - pad,
+      maxY = size - pad;
     if (x < minX || x > maxX || y < minY || y > maxY) return false;
     if (radius <= 0) return true;
     const rx = Math.min(radius, (maxX - minX) / 2);

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "posthog": {
+      "url": "https://mcp.posthog.com/mcp",
+      "type": "http"
+    },
+    "flowdeck-preview": {
+      "url": "https://preview.flowdeck.tejusgupta.dev/api/mcp",
+      "type": "http"
+    },
+    "flowdeck": {
+      "url": "https://flowdeck.tejusgupta.dev/api/mcp",
+      "type": "http"
+    }
+  }
+}

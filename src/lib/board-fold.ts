@@ -102,8 +102,7 @@ function sortCards(draft: BoardSnapshot): void {
   const listIndex = new Map(draft.lists.map((list, index) => [list.id, index]));
   draft.cards.sort(
     (a, b) =>
-      (listIndex.get(a.list_id) ?? 0) - (listIndex.get(b.list_id) ?? 0) ||
-      a.position - b.position,
+      (listIndex.get(a.list_id) ?? 0) - (listIndex.get(b.list_id) ?? 0) || a.position - b.position,
   );
 }
 
@@ -151,7 +150,12 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
     draft.cards = [...byId.values()];
   }
 
-  if (plan.listDeletes.size > 0 || plan.listUpserts.length > 0 || plan.cardDeletes.size > 0 || views.length > 0) {
+  if (
+    plan.listDeletes.size > 0 ||
+    plan.listUpserts.length > 0 ||
+    plan.cardDeletes.size > 0 ||
+    views.length > 0
+  ) {
     sortCards(draft);
   }
 

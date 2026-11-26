@@ -139,14 +139,20 @@ export async function saveStatusPreset(preset: StatusPreset): Promise<MyStatus> 
     ...current.presets.filter(
       (entry) => !(entry.emoji === preset.emoji && entry.label === preset.label),
     ),
-    { emoji: preset.emoji ?? null, label: preset.label?.slice(0, 60) ?? null, dnd: Boolean(preset.dnd) },
+    {
+      emoji: preset.emoji ?? null,
+      label: preset.label?.slice(0, 60) ?? null,
+      dnd: Boolean(preset.dnd),
+    },
   ].slice(0, 8);
-  const { error } = await supabase
-    .from('user_status')
-    .upsert(
-      { user_id: (await supabase.auth.getUser()).data.user!.id, presets, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id' },
-    );
+  const { error } = await supabase.from('user_status').upsert(
+    {
+      user_id: (await supabase.auth.getUser()).data.user!.id,
+      presets,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' },
+  );
   if (error) throw new Error(error.message);
   const next = await getMyStatus();
   setMyStatus(next);
@@ -158,12 +164,14 @@ export async function deleteStatusPreset(index: number): Promise<MyStatus> {
   const supabase = createSupabaseRequestClient();
   const current = await getMyStatus();
   const presets = current.presets.filter((_, i) => i !== index);
-  const { error } = await supabase
-    .from('user_status')
-    .upsert(
-      { user_id: (await supabase.auth.getUser()).data.user!.id, presets, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id' },
-    );
+  const { error } = await supabase.from('user_status').upsert(
+    {
+      user_id: (await supabase.auth.getUser()).data.user!.id,
+      presets,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' },
+  );
   if (error) throw new Error(error.message);
   const next = await getMyStatus();
   setMyStatus(next);
@@ -182,18 +190,16 @@ export async function setWorkHours(input: {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error('Sign in first');
-  const { error } = await supabase
-    .from('user_status')
-    .upsert(
-      {
-        user_id: user.id,
-        work_start: input.start ?? null,
-        work_end: input.end ?? null,
-        workdays: input.workdays ?? [1, 2, 3, 4, 5],
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' },
-    );
+  const { error } = await supabase.from('user_status').upsert(
+    {
+      user_id: user.id,
+      work_start: input.start ?? null,
+      work_end: input.end ?? null,
+      workdays: input.workdays ?? [1, 2, 3, 4, 5],
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' },
+  );
   if (error) throw new Error(error.message);
   const next = await getMyStatus();
   setMyStatus(next);

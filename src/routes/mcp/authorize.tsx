@@ -24,7 +24,13 @@ export default function McpAuthorizePage() {
   const [error, setError] = createSignal<string | null>(null);
   const [denied, setDenied] = createSignal(false);
   const [workspaces, setWorkspaces] = createSignal<
-    { id: string; name: string; role: 'member' | 'admin' | 'owner'; board_creation: string; is_team_admin: boolean }[]
+    {
+      id: string;
+      name: string;
+      role: 'member' | 'admin' | 'owner';
+      board_creation: string;
+      is_team_admin: boolean;
+    }[]
   >([]);
   const [loaded, setLoaded] = createSignal(false);
   const [signedIn, setSignedIn] = createSignal<boolean | null>(null);
@@ -118,9 +124,7 @@ export default function McpAuthorizePage() {
         // requirements (boards.read for card/chat reads) are visible in
         // the picker, not just pulled in silently at mint time.
         const defaults = normalizeSelection({
-          workspaces: Object.fromEntries(
-            list.map((ws) => [ws.id, defaultWorkspaceSelection()]),
-          ),
+          workspaces: Object.fromEntries(list.map((ws) => [ws.id, defaultWorkspaceSelection()])),
           account: Object.fromEntries(
             ACCOUNT_ENTITIES.map((entity) => [
               entity.id,
@@ -227,7 +231,10 @@ export default function McpAuthorizePage() {
       <Show
         when={valid() && signedIn() === true}
         fallback={
-          <p role="alert" class="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          <p
+            role="alert"
+            class="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+          >
             This authorization request is incomplete or invalid. Ask the client to restart the
             connection.
           </p>
@@ -238,7 +245,10 @@ export default function McpAuthorizePage() {
             This agent will be able to act <strong>as you</strong> in Flowdeck: read and edit your
             boards, cards, comments and chats, manage your teams and notifications — everything you
             can do, under the same permissions. You can revoke it any time on your{' '}
-            <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+            <a
+              href="/profile"
+              class="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
               Profile → MCP connections
             </a>{' '}
             page.
@@ -281,7 +291,10 @@ export default function McpAuthorizePage() {
         </div>
 
         <Show when={error()}>
-          <p role="alert" class="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          <p
+            role="alert"
+            class="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+          >
             {error()}{' '}
             <Show when={error()?.includes('sign in')}>
               <a href="/sign-in" class="font-semibold underline">

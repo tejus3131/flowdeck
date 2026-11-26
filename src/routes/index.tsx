@@ -19,7 +19,13 @@ import { createEngine } from '../lib/sync';
 import { warmRecentBoards } from '../lib/prefetch';
 import { cacheGet, cachePut } from '../lib/cache';
 import type { WorkspaceDetail } from '../lib/workspaces';
-import { getMyWorkspaces, createWorkspace, enterWorkspaceOrdered, getWorkspaceSnapshot, switchWorkspaceOrdered } from '../lib/workspaces';
+import {
+  getMyWorkspaces,
+  createWorkspace,
+  enterWorkspaceOrdered,
+  getWorkspaceSnapshot,
+  switchWorkspaceOrdered,
+} from '../lib/workspaces';
 import { createWorkspaceRelay } from '../lib/workspace-relay';
 import { MembershipWatch } from '../components/MembershipWatch';
 import {
@@ -39,7 +45,6 @@ const OP_LABELS: Record<string, string> = {
   'create-board': "Couldn't create that board",
   'delete-board': "Couldn't delete that board",
 };
-
 
 /**
  * The dashboard on the sync engine: board create/delete apply instantly
@@ -83,7 +88,10 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
           }),
         ...kept,
       ].sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at));
-      if (draft.boards.length !== merged.length || draft.boards.some((row, i) => row !== merged[i])) {
+      if (
+        draft.boards.length !== merged.length ||
+        draft.boards.some((row, i) => row !== merged[i])
+      ) {
         draft.boards = merged;
       }
       draft.access = snapshot.access;
@@ -95,7 +103,12 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
   const currentWorkspaceId = () => workspaces().find((w) => w.current)?.id;
   /** The current workspace's members — board cards resolve avatars. */
   const [wsMembers, setWsMembers] = createSignal<
-    { user_id: string; display_name: string | null; email: string | null; avatar_url: string | null }[]
+    {
+      user_id: string;
+      display_name: string | null;
+      email: string | null;
+      avatar_url: string | null;
+    }[]
   >([]);
   createEffect(
     () => currentWorkspaceId(),
@@ -120,39 +133,43 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
   );
 
   // ── the workspace relay: board create/delete reaches peers instantly ──
-  const relay = createWorkspaceRelay(currentWorkspaceId, () => me(), (op) => {
-    if ('payload' in op && op.payload && typeof op.payload === 'object') {
-      const raw = op.payload as WorkspaceOpPayload;
-      // A policy change (who can create boards / invite allowlist) flips
-      // the create button's visibility — the workspaces query is the
-      // source of that, so revalidate it live.
-      if (raw.kind === 'ws-policy-changed') {
-        revalidate('workspaces');
-        return;
+  const relay = createWorkspaceRelay(
+    currentWorkspaceId,
+    () => me(),
+    (op) => {
+      if ('payload' in op && op.payload && typeof op.payload === 'object') {
+        const raw = op.payload as WorkspaceOpPayload;
+        // A policy change (who can create boards / invite allowlist) flips
+        // the create button's visibility — the workspaces query is the
+        // source of that, so revalidate it live.
+        if (raw.kind === 'ws-policy-changed') {
+          revalidate('workspaces');
+          return;
+        }
+        if (raw.kind !== 'board-created' && raw.kind !== 'board-deleted') return;
+        // board-created is deliberately NOT applied from the relay: the
+        // receiver may have no access to the new board, and a provisional
+        // ghost they can never see in the database would shimmer on their
+        // list until the TTL. The durable stream (RLS-filtered) delivers it
+        // to exactly the people who can see it, in a few hundred ms.
+        if (raw.kind === 'board-deleted') {
+          const payload: BoardOpBoards = raw;
+          engine.applyRemote(
+            {
+              kind: payload.kind,
+              guards: guardsForBoardsOp(payload),
+              tempIds: tempIdsForBoardsOp(payload),
+              apply: (draft) => applyBoardsOp(draft, payload),
+              echo: (durable) => echoBoardsOp(durable, payload),
+            },
+            op.opId,
+          );
+        }
+      } else if ('opId' in op) {
+        engine.failRemote(op.opId);
       }
-      if (raw.kind !== 'board-created' && raw.kind !== 'board-deleted') return;
-      // board-created is deliberately NOT applied from the relay: the
-      // receiver may have no access to the new board, and a provisional
-      // ghost they can never see in the database would shimmer on their
-      // list until the TTL. The durable stream (RLS-filtered) delivers it
-      // to exactly the people who can see it, in a few hundred ms.
-      if (raw.kind === 'board-deleted') {
-        const payload: BoardOpBoards = raw;
-        engine.applyRemote(
-          {
-            kind: payload.kind,
-            guards: guardsForBoardsOp(payload),
-            tempIds: tempIdsForBoardsOp(payload),
-            apply: (draft) => applyBoardsOp(draft, payload),
-            echo: (durable) => echoBoardsOp(durable, payload),
-          },
-          op.opId,
-        );
-      }
-    } else if ('opId' in op) {
-      engine.failRemote(op.opId);
-    }
-  });
+    },
+  );
 
   const addBoard = (name: string, description: string, teamTarget?: string | null) => {
     const payload: BoardCreatedOp = {
@@ -176,10 +193,12 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
       tempIds: tempIdsForBoardsOp(payload),
       apply: (draft) => applyBoardsOp(draft, payload),
       send: () =>
-        createBoard(name, payload.board.client_op ?? null, description, teamTarget ?? null).catch((error) => {
-          relay.broadcastOpFail(opId);
-          throw error;
-        }),
+        createBoard(name, payload.board.client_op ?? null, description, teamTarget ?? null).catch(
+          (error) => {
+            relay.broadcastOpFail(opId);
+            throw error;
+          },
+        ),
       echo: (durable) => echoBoardsOp(durable, payload),
     });
     relay.broadcastOp({ opId, payload });
@@ -243,8 +262,7 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
     if (!q) return inWorkspace;
     return inWorkspace.filter(
       (board) =>
-        board.name.toLowerCase().includes(q) ||
-        (board.description ?? '').toLowerCase().includes(q),
+        board.name.toLowerCase().includes(q) || (board.description ?? '').toLowerCase().includes(q),
     );
   };
   // Dev-only introspection hook (e2e suites + browser debugging).
@@ -256,176 +274,187 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
       <PasskeyPrompt profile={props.profile} />
 
       <Show when={workspaces().length > 0} fallback={<CreateWorkspaceCard />}>
-      <Show when={currentWorkspaceId()} fallback={<WorkspacePickerCard />}>
-      <div class="flex gap-2">
-        <input
-          type="search"
-          placeholder="Search boards…"
-          class="flex-1"
-          value={query()}
-          onInput={(event) => setQuery(event.currentTarget.value)}
-        />
-        <a
-          href="/search"
-          class="shrink-0 rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-indigo-600"
-        >
-          🔍 Search cards
-        </a>
-        <Show when={canCreateBoard()}>
-          <button
-            type="button"
-            class="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-            onClick={() => setShowNewBoard(true)}
-          >
-            + New board
-          </button>
-        </Show>
-      </div>
-
-      <Show when={showNewBoard()}>
-        <div
-          class="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/40 p-4"
-          onClick={() => setShowNewBoard(false)}
-        >
-          <form
-            class="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              createFromModal();
-            }}
-          >
-            <h3 class="text-lg font-semibold">New board</h3>
-            <Show when={myTeams().length > 0 && currentWs()?.role !== 'owner' && currentWs()?.role !== 'admin'}>
-              <label class="mt-4 block text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                Team (its members get access)
-              </label>
-              <select
-                class="mt-1 w-full text-sm"
-                value={createTeamId()}
-                onChange={(event) => setCreateTeamId(event.currentTarget.value)}
-              >
-                <option value="">Just me — no team</option>
-                <For each={myTeams()}>
-                  {(team) => <option value={team.id}>@{team.name}</option>}
-                </For>
-              </select>
-            </Show>
-            <label class="mt-4 block text-xs font-semibold uppercase tracking-wider text-neutral-400">
-              Name
-            </label>
+        <Show when={currentWorkspaceId()} fallback={<WorkspacePickerCard />}>
+          <div class="flex gap-2">
             <input
-              class="mt-1 w-full"
-              maxlength="80"
-              placeholder="Q4 launch, Bug triage…"
-              value={newName()}
-              onInput={(event) => setNewName(event.currentTarget.value)}
-              autofocus
+              type="search"
+              placeholder="Search boards…"
+              class="flex-1"
+              value={query()}
+              onInput={(event) => setQuery(event.currentTarget.value)}
             />
-            <label class="mt-3 block text-xs font-semibold uppercase tracking-wider text-neutral-400">
-              Description <span class="font-normal normal-case">(optional — what this board is for)</span>
-            </label>
-            <textarea
-              class="mt-1 w-full"
-              rows={3}
-              maxlength="4000"
-              placeholder="Scope, goals, links…"
-              value={newDescription()}
-              onInput={(event) => setNewDescription(event.currentTarget.value)}
-            />
-            <div class="mt-4 flex justify-end gap-2">
+            <a
+              href="/search"
+              class="shrink-0 rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-indigo-600"
+            >
+              🔍 Search cards
+            </a>
+            <Show when={canCreateBoard()}>
               <button
                 type="button"
-                class="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                onClick={() => setShowNewBoard(false)}
+                class="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                onClick={() => setShowNewBoard(true)}
               >
-                Cancel
+                + New board
               </button>
-              <button
-                type="submit"
-                disabled={!newName().trim()}
-                class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+            </Show>
+          </div>
+
+          <Show when={showNewBoard()}>
+            <div
+              class="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/40 p-4"
+              onClick={() => setShowNewBoard(false)}
+            >
+              <form
+                class="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
+                onClick={(event) => event.stopPropagation()}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  createFromModal();
+                }}
               >
-                Create board
-              </button>
-            </div>
-          </form>
-        </div>
-      </Show>
-
-      <section>
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Boards · {workspaces().find((w) => w.current)?.name ?? 'Workspace'}
-          </h2>
-          <Show when={engine.failed().length > 0 || engine.ops().some((op) => op.status === 'inFlight')}>
-            <span class="flex items-center gap-1.5 text-xs text-neutral-400">
-              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />
-              Syncing
-            </span>
-          </Show>
-        </div>
-
-        <Show
-          when={boards().length > 0}
-          fallback={
-            <p class="text-sm text-neutral-400">
-              No boards in this workspace yet — create your first one above.
-            </p>
-          }
-        >
-          {/* Masonry: cards flow into columns, each as tall as its content. */}
-          <ul class="columns-1 gap-3 sm:columns-2 lg:columns-3">
-            <For each={boards()}>
-              {(board) => (
-                <BoardCard
-                  board={board}
-                  isTemp={engine.isTemp(board.id)}
-                  access={engine.view().access[board.id]}
-                  members={wsMembers()}
-                  canDelete={
-                    board.owner_id === (me()?.id ?? '') ||
-                    workspaces().find((w) => w.current)?.role === 'owner' ||
-                    workspaces().find((w) => w.current)?.role === 'admin'
+                <h3 class="text-lg font-semibold">New board</h3>
+                <Show
+                  when={
+                    myTeams().length > 0 &&
+                    currentWs()?.role !== 'owner' &&
+                    currentWs()?.role !== 'admin'
                   }
-                  confirming={confirmingDelete() === board.id}
-                  onAskDelete={() => setConfirmingDelete(board.id)}
-                  onDelete={() => removeBoard(board.id)}
+                >
+                  <label class="mt-4 block text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                    Team (its members get access)
+                  </label>
+                  <select
+                    class="mt-1 w-full text-sm"
+                    value={createTeamId()}
+                    onChange={(event) => setCreateTeamId(event.currentTarget.value)}
+                  >
+                    <option value="">Just me — no team</option>
+                    <For each={myTeams()}>
+                      {(team) => <option value={team.id}>@{team.name}</option>}
+                    </For>
+                  </select>
+                </Show>
+                <label class="mt-4 block text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                  Name
+                </label>
+                <input
+                  class="mt-1 w-full"
+                  maxlength="80"
+                  placeholder="Q4 launch, Bug triage…"
+                  value={newName()}
+                  onInput={(event) => setNewName(event.currentTarget.value)}
+                  autofocus
                 />
+                <label class="mt-3 block text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                  Description{' '}
+                  <span class="font-normal normal-case">(optional — what this board is for)</span>
+                </label>
+                <textarea
+                  class="mt-1 w-full"
+                  rows={3}
+                  maxlength="4000"
+                  placeholder="Scope, goals, links…"
+                  value={newDescription()}
+                  onInput={(event) => setNewDescription(event.currentTarget.value)}
+                />
+                <div class="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    class="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    onClick={() => setShowNewBoard(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!newName().trim()}
+                    class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    Create board
+                  </button>
+                </div>
+              </form>
+            </div>
+          </Show>
+
+          <section>
+            <div class="mb-3 flex items-center justify-between">
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                Boards · {workspaces().find((w) => w.current)?.name ?? 'Workspace'}
+              </h2>
+              <Show
+                when={
+                  engine.failed().length > 0 || engine.ops().some((op) => op.status === 'inFlight')
+                }
+              >
+                <span class="flex items-center gap-1.5 text-xs text-neutral-400">
+                  <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />
+                  Syncing
+                </span>
+              </Show>
+            </div>
+
+            <Show
+              when={boards().length > 0}
+              fallback={
+                <p class="text-sm text-neutral-400">
+                  No boards in this workspace yet — create your first one above.
+                </p>
+              }
+            >
+              {/* Masonry: cards flow into columns, each as tall as its content. */}
+              <ul class="columns-1 gap-3 sm:columns-2 lg:columns-3">
+                <For each={boards()}>
+                  {(board) => (
+                    <BoardCard
+                      board={board}
+                      isTemp={engine.isTemp(board.id)}
+                      access={engine.view().access[board.id]}
+                      members={wsMembers()}
+                      canDelete={
+                        board.owner_id === (me()?.id ?? '') ||
+                        workspaces().find((w) => w.current)?.role === 'owner' ||
+                        workspaces().find((w) => w.current)?.role === 'admin'
+                      }
+                      confirming={confirmingDelete() === board.id}
+                      onAskDelete={() => setConfirmingDelete(board.id)}
+                      onDelete={() => removeBoard(board.id)}
+                    />
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </section>
+
+          {/* Retryable failure toasts — the engine's revert already ran. */}
+          <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+            <For each={engine.failed()}>
+              {(op) => (
+                <div class="flex items-center gap-3 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm shadow-lg dark:border-red-900 dark:bg-neutral-900">
+                  <span class="text-red-600 dark:text-red-400">
+                    {OP_LABELS[op.kind] ?? "Couldn't do that"} — {op.error}
+                  </span>
+                  <button
+                    type="button"
+                    class="rounded-lg bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100 dark:bg-red-950 dark:text-red-400"
+                    onClick={() => engine.retry(op.id)}
+                  >
+                    Retry
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-lg px-1 text-neutral-400 hover:text-neutral-600"
+                    onClick={() => engine.dismiss(op.id)}
+                    aria-label="Dismiss"
+                  >
+                    ×
+                  </button>
+                </div>
               )}
             </For>
-          </ul>
+          </div>
         </Show>
-      </section>
-
-      {/* Retryable failure toasts — the engine's revert already ran. */}
-      <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-        <For each={engine.failed()}>
-          {(op) => (
-            <div class="flex items-center gap-3 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm shadow-lg dark:border-red-900 dark:bg-neutral-900">
-              <span class="text-red-600 dark:text-red-400">
-                {OP_LABELS[op.kind] ?? "Couldn't do that"} — {op.error}
-              </span>
-              <button
-                type="button"
-                class="rounded-lg bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100 dark:bg-red-950 dark:text-red-400"
-                onClick={() => engine.retry(op.id)}
-              >
-                Retry
-              </button>
-              <button
-                type="button"
-                class="rounded-lg px-1 text-neutral-400 hover:text-neutral-600"
-                onClick={() => engine.dismiss(op.id)}
-                aria-label="Dismiss"
-              >
-                ×
-              </button>
-            </div>
-          )}
-        </For>
-      </div>
-      </Show>
       </Show>
     </div>
   );
@@ -478,7 +507,9 @@ function WorkspacePickerCard() {
                 <p class="font-medium">{workspace.name}</p>
                 <p class="mt-1 text-xs capitalize text-neutral-400">
                   {workspace.role}
-                  {workspace.team_admin_of.length > 0 ? ` · admin of ${workspace.team_admin_of.length} team${workspace.team_admin_of.length === 1 ? '' : 's'}` : ''}
+                  {workspace.team_admin_of.length > 0
+                    ? ` · admin of ${workspace.team_admin_of.length} team${workspace.team_admin_of.length === 1 ? '' : 's'}`
+                    : ''}
                 </p>
                 <p class="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
                   {busy() === workspace.id ? 'Opening…' : 'Open →'}
@@ -528,8 +559,8 @@ function CreateWorkspaceCard() {
       <p class="text-3xl">🗂️</p>
       <h2 class="mt-3 text-lg font-semibold tracking-tight">Create your workspace</h2>
       <p class="mx-auto mt-1 max-w-md text-sm text-neutral-500 dark:text-neutral-400">
-        A workspace holds your boards, teammates, and teams. If you were invited to one, accept
-        the invite from your email instead — you'll join exactly that.
+        A workspace holds your boards, teammates, and teams. If you were invited to one, accept the
+        invite from your email instead — you'll join exactly that.
       </p>
       <form
         class="mx-auto mt-5 flex max-w-sm gap-2"
@@ -564,7 +595,12 @@ function BoardCard(props: {
   isTemp: boolean;
   /** The board's owner + explicit members + teams (what the viewer sees). */
   access: BoardAccessInfo | undefined;
-  members: { user_id: string; display_name: string | null; email: string | null; avatar_url: string | null }[];
+  members: {
+    user_id: string;
+    display_name: string | null;
+    email: string | null;
+    avatar_url: string | null;
+  }[];
   /** The × only exists for the board's owner and workspace admins. */
   canDelete: boolean;
   confirming: boolean;
@@ -585,7 +621,10 @@ function BoardCard(props: {
         },
       ]}
     >
-      <Show when={!props.isTemp} fallback={<p class="font-medium text-neutral-400">{props.board.name}</p>}>
+      <Show
+        when={!props.isTemp}
+        fallback={<p class="font-medium text-neutral-400">{props.board.name}</p>}
+      >
         <a href={`/b/${props.board.id}`} class="block">
           <p class="font-medium leading-snug">{props.board.name}</p>
           <Show when={props.board.description}>
@@ -603,13 +642,23 @@ function BoardCard(props: {
               )}
             </For>
             <Show when={(props.access?.teams.length ?? 0) > 3}>
-              <span class="text-[10px] text-neutral-400">+{(props.access?.teams.length ?? 0) - 3}</span>
+              <span class="text-[10px] text-neutral-400">
+                +{(props.access?.teams.length ?? 0) - 3}
+              </span>
             </Show>
             <span class="flex -space-x-1.5">
               <For each={people().slice(0, 5)}>
                 {(member) => (
-                  <span class="rounded-full ring-2 ring-white dark:ring-neutral-900" title={member.display_name ?? member.email ?? 'member'}>
-                    <Avatar src={member.avatar_url} name={member.display_name} email={member.email} size="sm" />
+                  <span
+                    class="rounded-full ring-2 ring-white dark:ring-neutral-900"
+                    title={member.display_name ?? member.email ?? 'member'}
+                  >
+                    <Avatar
+                      src={member.avatar_url}
+                      name={member.display_name}
+                      email={member.email}
+                      size="sm"
+                    />
                   </span>
                 )}
               </For>

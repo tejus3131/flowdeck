@@ -35,4 +35,3 @@ cj.txt
 
 # Committed env files are gone — builds read VITE_* from the environment (CI variables)
 .env.production
-.mcp.json

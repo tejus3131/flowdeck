@@ -133,7 +133,8 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
             kind: payload.kind,
             guards: guardsForDetailOp(payload, me()?.id ?? null),
             tempIds: tempIdsForDetailOp(payload),
-            apply: (draft) => applyDetailOp(draft, payload, me()?.id ?? null, new Date().toISOString()),
+            apply: (draft) =>
+              applyDetailOp(draft, payload, me()?.id ?? null, new Date().toISOString()),
             echo: (durable) => echoDetailOp(durable, payload, me()?.id ?? null),
           },
           op.opId,
@@ -515,11 +516,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
     }
   };
 
-  const teamAction = async (
-    action: () => Promise<unknown>,
-    ok: string,
-    relay?: () => void,
-  ) => {
+  const teamAction = async (action: () => Promise<unknown>, ok: string, relay?: () => void) => {
     setError(null);
     try {
       await action();
@@ -593,37 +590,37 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
               </div>
               <div class="flex items-center gap-2">
                 <Show when={data().myRole !== 'owner'}>
-                <Show
-                  when={confirmingLeave()}
-                  fallback={
-                    <button
-                      type="button"
-                      class="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-                      onClick={() => setConfirmingLeave(true)}
-                    >
-                      Leave workspace
-                    </button>
-                  }
-                >
-                  <span class="flex items-center gap-1 text-sm text-red-600 dark:text-red-400">
-                    Really leave?
-                    <button
-                      type="button"
-                      disabled={leaving()}
-                      class="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-60"
-                      onClick={() => void leave()}
-                    >
-                      {leaving() ? 'Leaving…' : 'Yes, leave'}
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-lg px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                      onClick={() => setConfirmingLeave(false)}
-                    >
-                      Cancel
-                    </button>
-                  </span>
-                </Show>
+                  <Show
+                    when={confirmingLeave()}
+                    fallback={
+                      <button
+                        type="button"
+                        class="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                        onClick={() => setConfirmingLeave(true)}
+                      >
+                        Leave workspace
+                      </button>
+                    }
+                  >
+                    <span class="flex items-center gap-1 text-sm text-red-600 dark:text-red-400">
+                      Really leave?
+                      <button
+                        type="button"
+                        disabled={leaving()}
+                        class="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+                        onClick={() => void leave()}
+                      >
+                        {leaving() ? 'Leaving…' : 'Yes, leave'}
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-lg px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        onClick={() => setConfirmingLeave(false)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  </Show>
                 </Show>
                 <a
                   href="/"
@@ -635,7 +632,10 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
             </div>
 
             <Show when={error()}>
-              <p role="alert" class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950 dark:text-red-400">
+              <p
+                role="alert"
+                class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950 dark:text-red-400"
+              >
                 {error()}
               </p>
             </Show>
@@ -715,9 +715,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                             type="button"
                             class="rounded-lg px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                             onClick={() =>
-                              void copyLink(
-                                `${location.origin}/invite/${invite.token}`,
-                              )
+                              void copyLink(`${location.origin}/invite/${invite.token}`)
                             }
                           >
                             Copy link
@@ -769,22 +767,35 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                           <span class="block truncate text-sm font-medium">
                             {member.display_name || member.email}
                             {member.user_id === me()?.id ? (
-                              <span class="ml-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">You</span>
+                              <span class="ml-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                                You
+                              </span>
                             ) : null}
                           </span>
-                          <span class="block truncate text-xs text-neutral-400">{member.email}</span>
+                          <span class="block truncate text-xs text-neutral-400">
+                            {member.email}
+                          </span>
                         </span>
 
                         <Show
                           when={canChangeRole(member)}
-                          fallback={<span class={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${ROLE_STYLE[member.role]}`}>{member.role}</span>}
+                          fallback={
+                            <span
+                              class={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${ROLE_STYLE[member.role]}`}
+                            >
+                              {member.role}
+                            </span>
+                          }
                         >
                           <select
                             value={member.role}
                             aria-label={`Role for ${member.display_name ?? member.email}`}
                             class="w-28 text-xs"
                             onChange={(e) =>
-                              void changeRole(member.user_id, e.currentTarget.value as WorkspaceRole)
+                              void changeRole(
+                                member.user_id,
+                                e.currentTarget.value as WorkspaceRole,
+                              )
                             }
                           >
                             <For each={isOwner() ? ROLES : ROLES.filter((r) => r !== 'owner')}>
@@ -911,7 +922,10 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                                 const person = () =>
                                   data().members.find((m) => m.user_id === member.user_id);
                                 return (
-                                  <span class="rounded-full ring-2 ring-white dark:ring-neutral-900" title={person()?.display_name ?? 'Former member'}>
+                                  <span
+                                    class="rounded-full ring-2 ring-white dark:ring-neutral-900"
+                                    title={person()?.display_name ?? 'Former member'}
+                                  >
                                     <Avatar
                                       src={person()?.avatar_url}
                                       name={person()?.display_name}
@@ -1218,8 +1232,8 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                   Danger zone
                 </h2>
                 <p class="mt-1 text-xs text-neutral-400">
-                  Deleting removes the workspace and every board, card, comment, team, and
-                  invite inside it — for everyone.
+                  Deleting removes the workspace and every board, card, comment, team, and invite
+                  inside it — for everyone.
                 </p>
                 <Show when={purgeNote()}>
                   <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{purgeNote()}</p>
@@ -1230,8 +1244,8 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                     <div class="mt-2 rounded-xl border border-red-200 bg-red-50/60 p-3 dark:border-red-900 dark:bg-red-950/30">
                       <p class="text-xs text-red-700 dark:text-red-300">
                         Type <span class="font-mono font-semibold">{data().workspace.name}</span> to
-                        permanently delete every board in this workspace and all their cards.
-                        The workspace itself stays.
+                        permanently delete every board in this workspace and all their cards. The
+                        workspace itself stays.
                       </p>
                       <input
                         class="mt-2 w-44 rounded-lg border border-red-200 bg-white px-2 py-1 text-xs outline-none dark:border-red-900 dark:bg-neutral-900"
@@ -1246,7 +1260,9 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                           class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                           onClick={() => void purgeWs()}
                         >
-                          {purging() ? 'Purging…' : `Purge all ${data().boards.length} board${data().boards.length === 1 ? '' : 's'}…`}
+                          {purging()
+                            ? 'Purging…'
+                            : `Purge all ${data().boards.length} board${data().boards.length === 1 ? '' : 's'}…`}
                         </button>
                         <button
                           type="button"
@@ -1318,12 +1334,10 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
                     onClick={(event) => event.stopPropagation()}
                   >
                     <p class="text-2xl">🛡️</p>
-                    <h3 class="mt-2 text-sm font-semibold">
-                      You can't remove an owner
-                    </h3>
+                    <h3 class="mt-2 text-sm font-semibold">You can't remove an owner</h3>
                     <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      {name()} is an owner of this workspace. Make them an admin or a member
-                      first (their role dropdown above), then remove them.
+                      {name()} is an owner of this workspace. Make them an admin or a member first
+                      (their role dropdown above), then remove them.
                     </p>
                     <button
                       type="button"

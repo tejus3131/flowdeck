@@ -31,10 +31,7 @@ export function notificationLine(
   return line;
 }
 
-function humanLine(
-  row: NotificationRow,
-  meId: string | null,
-): { text: string; detail: string } {
+function humanLine(row: NotificationRow, meId: string | null): { text: string; detail: string } {
   const actor = row.actor_name ?? 'Someone';
   const subject = row.subject_name ?? 'someone';
   const team = row.subject_team_name ?? row.subject_team_id ?? 'a team';
@@ -73,7 +70,7 @@ function humanLine(
             : row.subject_team_id
               ? `${actor} granted @${team} access to ${board}`
               : `${actor} granted ${subject} access to ${board}`,
-        detail: row.card_number !== null ? `They can now see ${where}` : row.card_title ?? '',
+        detail: row.card_number !== null ? `They can now see ${where}` : (row.card_title ?? ''),
       };
     case 'access_denied':
       return {
@@ -99,9 +96,10 @@ function humanLine(
       };
     case 'chat':
       return {
-        text: row.card_number !== null
-          ? `${actor} commented on ${where}`
-          : `${actor} messaged ${board}`,
+        text:
+          row.card_number !== null
+            ? `${actor} commented on ${where}`
+            : `${actor} messaged ${board}`,
         detail: row.body ?? row.card_title ?? '',
       };
     case 'team_added':
@@ -148,7 +146,8 @@ export function hrefToPath(href: string): string {
 }
 
 /** Where clicking the row (toast, panel) goes. */
-export function notificationHref(row: NotificationRow): string {  if (row.href) return row.href;
+export function notificationHref(row: NotificationRow): string {
+  if (row.href) return row.href;
   switch (row.kind) {
     case 'access_request':
       return row.board_id ? `/b/${row.board_id}` : '/';
