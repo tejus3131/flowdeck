@@ -10,7 +10,8 @@
     "start": "node --env-file-if-exists=.env dist/server/node.js",
     "serve": "vite preview",
     "test": "vitest",
-    "lint": "oxlint src"
+    "lint": "oxlint src",
+    "typecheck": "tsc --noEmit"
   },
   "license": "MIT",
   "devDependencies": {

@@ -36,71 +36,84 @@ flowchart LR
 
 1. `pnpm install --frozen-lockfile`
 2. `oxlint src`
-3. `tsc --noEmit` (add a `typecheck` script)
-4. `prettier --check` (changed files)
-5. `knip` (advisory until the cleanup PR lands, then blocking)
-6. `vite build` (build gate; watch bundle size)
-7. `vitest` — client project (jsdom)
-8. `vitest` — server project: `supabase start` on the runner first
-   (docker available on ubuntu-latest; `db-guards` self-seeds its fixture)
-9. `supabase db push --dry-run` → PR comment with the migration diff
+3. `tsc --noEmit` (`pnpm typecheck`)
+4. `vite build` (build gate; client env from the environment's public
+   `VITE_*` variables)
+5. `vitest` — client project (jsdom)
+6. `vitest` — server project: `supabase db reset` on the runner first
+   (docker available on ubuntu-latest; `db-guards` self-seeds its
+   fixture). **Zero provider credentials in this workflow** (ADR-15).
 
 ### W2 — `deploy-preview` (push → preview)
 
-Path matrix, **in order**:
+Path matrix (dorny/paths-filter), **in order**, environment `preview`:
 
 | Changed | Action |
 | --- | --- |
-| `supabase/migrations/**` | `supabase db push` (preview ref) |
+| `supabase/migrations/**`, `supabase/config.toml` | `supabase db push --db-url` (preview) |
 | `supabase/functions/**` | `supabase functions deploy mcp --no-verify-jwt` (preview) |
-| `src/**`, `public/**`, `vite.config.ts`, `wrangler.jsonc`, `env.ts`, `package.json` | `vite build && wrangler deploy --env preview` |
-| `docs/**`, `skills/**`, `scripts/**` | quality only |
+| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `vite build && wrangler deploy --env preview` |
 
-Then: probe smoke against the preview URL (parameterized `BASE`).
+`concurrency: deploy-preview` queues deploys (never cancels a mid-deploy).
 
 ### W3 — `deploy-prod` (push → main)
 
 Same matrix against prod refs, gated on the `production` environment
-approval.
+approval. `wrangler deploy` (no `--env` — top level IS production).
 
 ### W4 — `keep-alive` (cron, weekly)
 
-Ping the preview Supabase REST endpoint (anon key, one `select`) so the
-free tier never pauses the project.
+Ping both Supabase projects' REST endpoints (repo-level public variables)
+so the free tier never pauses either project.
 
 ## Wrangler environments
 
-Restructure `wrangler.jsonc`:
-
-```jsonc
-{
-  "name": "flowdeck",
-  "vars": { "SUPABASE_URL": "https://<prod>.supabase.co" },
-  "env": {
-    "preview": {
-      "name": "flowdeck-preview",
-      "vars": { "SUPABASE_URL": "https://<preview>.supabase.co" }
-    }
-  }
-}
-```
+`wrangler.jsonc`: top level IS production (worker `flowdeck`, prod
+Supabase URL in `vars`); `env.preview` deploys as `flowdeck-preview`
+with the preview project's URL. Custom domains are attached in the
+dashboard (they survive deploys; `routes` stays out of the config so
+deploys never fight the dashboard). **Disable each worker's
+`*.workers.dev` route** — the preview custom domain is Access-protected,
+the workers.dev route would bypass it.
 
 Secrets per env: `wrangler secret put SUPABASE_SECRET_KEY --env preview`
 vs no flag for prod. Same for `RESEND_*`, `VAPID_*`.
 
 ## Secrets (GitHub)
 
-| Secret | Env scope | Used by |
-| --- | --- | --- |
-| `SUPABASE_ACCESS_TOKEN` | `preview` + `production` envs | functions deploy |
-| `SUPABASE_DB_PASSWORD_PREVIEW` / `_PROD` | matching environments | db push (`--db-url`) |
-| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | `preview` + `production` envs | wrangler deploy |
-| `PREVIEW_ANON_KEY` | repo | probe smoke |
+Same name, different value per environment — the workflow declares
+`environment:` and GitHub injects the right set; no env-branching in
+workflow code.
+
+| Name | Type | `preview` env | `production` env |
+| --- | --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Secret | preview CF token | prod CF token |
+| `SUPABASE_ACCESS_TOKEN` | Secret | same (both-project token) | same |
+| `SUPABASE_DB_PASSWORD` | Secret | preview DB password | prod DB password |
+| `CF_ACCESS_CLIENT_ID` | Secret | Access service token ID | — |
+| `CF_ACCESS_CLIENT_SECRET` | Secret | Access service token secret | — |
+| `CLOUDFLARE_ACCOUNT_ID` | Variable | same | same |
+| `SUPABASE_PROJECT_REF` | Variable | preview ref | prod ref |
+| `VITE_SUPABASE_URL` | Variable | preview project URL | prod project URL |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Variable | preview publishable key | prod publishable key |
+
+Repo-level **variables** (scheduled workflows run outside environments):
+`PREVIEW_SUPABASE_URL`, `PREVIEW_SUPABASE_PUBLISHABLE_KEY`,
+`PROD_SUPABASE_URL`, `PROD_SUPABASE_PUBLISHABLE_KEY` — public-by-design
+values for the keep-alive pings.
+
+Supabase token scope (least privilege): Migrations + Edge Functions
+read-write on both projects; everything else None. Function secrets
+(`APP_ORIGIN`, `MCP_PUBLIC_URL`) are set **once per project in the
+provider** — CI deploys things that live in the repo; configuration that
+lives in the provider stays in the provider.
 
 Credentials policy: [ADR-15](./adr.md) — PR runs get zero provider
-credentials; deploy tokens are scoped, TTL'd, IP-restricted to GitHub
-runner ranges, and rotated. Wrangler runtime secrets (Supabase secret key,
-Resend, VAPID) live in Cloudflare, not GitHub.
+credentials; deploy tokens are scoped, TTL'd, and rotated. Cloudflare
+does **not** support per-Worker token scoping — the two-token split buys
+independent rotation and audit trail, not access isolation. Wrangler
+runtime secrets (Supabase secret key, Resend, VAPID) live in Cloudflare,
+not GitHub.
 
 ## CI hardening checklist (enforced in every workflow)
 
@@ -137,10 +150,18 @@ schema ever changes.
 ## Known gotchas
 
 - Probe scripts hardcode `localhost:3001` + a local Brave path —
-  parameterize (`BASE`, headless chromium) before CI can run them.
+  parameterize (`BASE`, headless chromium, Access service-token headers)
+  before CI can run them against preview.
 - `pnpm dev` (workerd) can't reach local Supabase realtime; `dev:node` is
   the local-dev default.
 - Public repo: fork PRs get no secrets (fine — same-repo branches do).
-- Add Prettier config + one normalization PR before enabling
-  `prettier --check` in CI.
+- Prettier/knip: not yet wired — add a normalization PR before enabling
+  `prettier --check`; knip after a cleanup pass.
 - Dependabot or Renovate on dependencies; knip after the cleanup PR.
+- `.env.production` is deleted from the repo — builds read `VITE_*` from
+  CI environment variables. Its old values (public URL + publishable key)
+  live in git history; they're public-by-design, so no rotation needed.
+- The MCP edge function still reads the deprecated
+  `SUPABASE_SERVICE_ROLE_KEY`; the migration to the injected
+  `SUPABASE_SECRET_KEYS` dictionary is the first order of business after
+  the pipeline is verified.
