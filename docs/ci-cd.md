@@ -29,6 +29,10 @@ flowchart LR
   click).
 - Cut feature branches from `preview`; rebase before PR when `preview`
   moved.
+- **Exception — the Phase 0 pipeline itself**: PRs #41/#42 merged straight
+  to `main` because the pipeline cannot gate its own birth (preview had no
+  CI to run). A one-time bootstrap, recorded here so it stays one — every
+  PR after this follows the flow.
 
 ## Workflows
 
@@ -81,7 +85,7 @@ Path matrix (dorny/paths-filter), **in order**, environment `preview`:
 | --- | --- |
 | `supabase/migrations/**`, `supabase/config.toml` | `supabase db push --db-url` (preview) |
 | `supabase/functions/**` | `supabase functions deploy mcp --no-verify-jwt` (preview) |
-| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `vite build && wrangler deploy --env preview` |
+| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy` |
 
 `concurrency: deploy-preview` queues deploys (never cancels a mid-deploy).
 
@@ -89,6 +93,21 @@ Path matrix (dorny/paths-filter), **in order**, environment `preview`:
 
 Same matrix against prod refs, gated on the `production` environment
 approval. `wrangler deploy` (no `--env` — top level IS production).
+
+### Releases (both deploy workflows)
+
+Every deploy is a visible release — no deploy happens without a record:
+
+- **Tag + GitHub Release**: `preview-rN` / `release-rN` (N = workflow run
+  number). Notes = a header (environment, legs deployed, commit link)
+  plus **auto-generated notes**: every PR merged since the previous
+  release *of the same environment*, with contributor credits — the
+  changelog is the release history, assembled by GitHub.
+- **Deployment record**: one success `Deployment` on the `preview` /
+  `production` environment per deploy — the Environments tab is the
+  browsable deploy history. A failed leg never produces a success
+  release: the release step runs after the deploy legs, not instead of
+  them.
 
 ### W4 — `keep-alive` (cron, weekly)
 
@@ -99,11 +118,16 @@ so the free tier never pauses either project.
 
 `wrangler.jsonc`: top level IS production (worker `flowdeck`, prod
 Supabase URL in `vars`); `env.preview` deploys as `flowdeck-preview`
-with the preview project's URL. Custom domains are attached in the
-dashboard (they survive deploys; `routes` stays out of the config so
-deploys never fight the dashboard). **Disable each worker's
-`*.workers.dev` route** — the preview custom domain is Access-protected,
-the workers.dev route would bypass it.
+with the preview project's URL. **The environment is selected at BUILD
+time** (`CLOUDFLARE_ENV=preview vite build`): the Vite plugin flattens
+the generated `dist/server/wrangler.json` for that environment, and
+`--env` at `wrangler deploy` time has no effect on a flattened config —
+the first preview deploy shipped to prod because of exactly that
+(caught in the run log: `Uploaded flowdeck`, prod URL in bindings).
+Custom domains are attached in the dashboard (they survive deploys;
+`routes` stays out of the config so deploys never fight the dashboard).
+**Disable each worker's `*.workers.dev` route** — the preview custom
+domain is Access-protected, the workers.dev route would bypass it.
 
 Secrets per env: `wrangler secret put SUPABASE_SECRET_KEY --env preview`
 vs no flag for prod. Same for `RESEND_*`, `VAPID_*`.

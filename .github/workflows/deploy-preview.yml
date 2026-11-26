@@ -21,7 +21,8 @@ on:
       - '.github/workflows/deploy-preview.yml'
 
 permissions:
-  contents: read
+  contents: write # the release step tags + creates the GitHub Release (contents API)
+  deployments: write # ...and records a Deployment per deploy
 
 concurrency:
   group: deploy-preview
@@ -38,9 +39,17 @@ jobs:
       functions: ${{ steps.filter.outputs.functions }}
       worker: ${{ steps.filter.outputs.worker }}
     steps:
+      # fetch-depth: 0 (full clone) so paths-filter's push-event diff can
+      # use ANY base: a shallow clone breaks when the base commit isn't
+      # local (the first preview merge failed exactly here), a 1-2 commit
+      # clone under-reports on multi-commit pushes, and a new branch's
+      # zero `before` sha needs the default branch in history. The repo
+      # is small — a full clone costs ~2s; a silently skipped deploy
+      # costs an incident.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
@@ -112,16 +121,71 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       # 3. Worker — build with the preview project's public client env.
+      #    CLOUDFLARE_ENV=preview at BUILD time is the whole mechanism:
+      #    the Vite plugin flattens the generated dist/server/wrangler.json
+      #    for the named environment (name flowdeck-preview, preview
+      #    SUPABASE_URL). The first deploy shipped to PROD because the
+      #    build flattened the top level and `--env preview` at deploy
+      #    time is a no-op on a flattened config (per Cloudflare's docs:
+      #    CLOUDFLARE_ENV at wrangler-deploy time has no effect).
       - name: Build
         if: needs.changes.outputs.worker == 'true'
         run: pnpm build
         env:
+          CLOUDFLARE_ENV: preview
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
+      # No --env: the generated config is already preview-flattened.
       - name: Deploy worker (preview)
         if: needs.changes.outputs.worker == 'true'
-        run: npx wrangler deploy --env preview
+        run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Every deploy is a release: a tag (preview-rN), auto-generated
+      # notes (the PRs merged since the previous PREVIEW release, with
+      # contributor credits), and a Deployment record so the preview
+      # environment's history is browsable in the GitHub UI. Runs after
+      # the legs: the deploy is the product, the release is its record —
+      # a failed leg never produces a success release.
+      - name: Release — tag, notes, deployment record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="preview-r${{ github.run_number }}"
+          legs=""
+          [ "${{ needs.changes.outputs.migrations }}" = "true" ] && legs="${legs}migrations "
+          [ "${{ needs.changes.outputs.functions }}" = "true" ] && legs="${legs}mcp-functions "
+          [ "${{ needs.changes.outputs.worker }}" = "true" ] && legs="${legs}worker "
+          body=$(printf 'Deployed to **preview** from `%s`.\n\nLegs deployed: %s\nCommit: %s' \
+            "${GITHUB_SHA:0:7}" "${legs:-none}" "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}")
+          PREV=$(gh release list --limit 50 --json tagName \
+            --jq '[.[].tagName | select(startswith("preview-"))][0] // ""')
+          # Re-run safe: a re-run of a partially-failed run re-executes
+          # this step with the same run_number — the tag may already
+          # exist (release view instead of create) and the sha may
+          # already carry a Deployment (reuse it, re-post the status).
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "release $TAG already exists (re-run) — updating notes"
+            gh release edit "$TAG" --notes "$body" > /dev/null
+          elif [ -n "$PREV" ]; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Preview — $TAG" \
+              --notes "$body" --generate-notes --notes-start-tag "$PREV"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Preview — $TAG" \
+              --notes "$body" --generate-notes
+          fi
+          DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments?ref=$GITHUB_SHA&environment=preview" \
+            --jq '.[0].id // ""')
+          if [ -z "$DEPLOY_ID" ]; then
+            # required_contexts=[] skips GitHub's commit-status validation:
+            # when omitted, the API verifies required contexts and fails with
+            # 409 'Commit status checks failed' on refs that carry none.
+            DEPLOY_ID=$(printf '{"ref":"%s","environment":"preview","auto_merge":false,"required_contexts":[]}' "$GITHUB_SHA" \
+              | gh api "repos/$GH_REPO/deployments" --input - --jq '.id')
+          fi
+          gh api -X POST "repos/$GH_REPO/deployments/$DEPLOY_ID/statuses" \
+            -f state="success" -f environment="preview"
