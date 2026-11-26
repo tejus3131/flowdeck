@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "posthog": {
+      "url": "https://mcp.posthog.com/mcp",
+      "type": "http"
+    },
+    "flowdeck preview": {
+      "url": "https://preview.flowdeck.tejusgupta.dev/api/mcp",
+      "type": "http",
+      "headers": {
+        "CF-Access-Client-Id": "${FLOWDECK_PREVIEW_CF_ACCESS_CLIENT_ID}",
+        "CF-Access-Client-Secret": "${FLOWDECK_PREVIEW_CF_ACCESS_CLIENT_SECRET}"
+      }
+    },
+    "flowdeck": {
+      "url": "https://flowdeck.tejusgupta.dev/api/mcp",
+      "type": "http"
+    }
+  }
+}
