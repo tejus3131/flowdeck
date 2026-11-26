@@ -148,6 +148,11 @@ export function createEngine<S extends object>(options: {
   merge: (draft: S, snapshot: S, keep: ReadonlySet<string>) => void;
   /** Fresh-identity copy of a snapshot (replay passes need one). */
   clone: (snapshot: S) => S;
+  /** Normalize a durable snapshot into the L2 entity store (ADR-1). Runs
+   *  inside the merge pass on EVERY durable emission — live values and
+   *  refresh feeds alike; local op applies never trigger it. Absent when
+   *  the engine's shape has no entity projection yet. */
+  ingest?: (snapshot: S) => void;
   /** Optional reactive wire state (a liveQuery's `status()`), mapped onto
    *  the engine's status words. Absent → the source's onstatus hook. */
   status?: () => string;
@@ -168,6 +173,7 @@ export function createEngine<S extends object>(options: {
     options.clone,
     options.status,
     options.refresh,
+    options.ingest,
   );
 }
 
@@ -215,6 +221,8 @@ export function createBoardEngine(
   empty: BoardSnapshot,
   status?: () => string,
   refresh?: () => Promise<BoardSnapshot>,
+  /** Normalize each durable snapshot into the L2 entity store. */
+  ingest?: (snapshot: BoardSnapshot) => void,
 ): Engine<BoardSnapshot> {
   return createEngine<BoardSnapshot>({
     streamSource,
@@ -228,6 +236,7 @@ export function createBoardEngine(
     merge: mergeBoardSnapshot,
     ...(status ? { status } : {}),
     ...(refresh ? { refresh } : {}),
+    ...(ingest ? { ingest } : {}),
   });
 }
 
@@ -271,6 +280,7 @@ function createEngineBody<S extends object>(
   clone: (snapshot: S) => S,
   wireStatus?: () => string,
   refresh?: () => Promise<S>,
+  ingest?: (snapshot: S) => void,
 ): Engine<S> {
   // ── durable source + transport status ─────────────────────────────────
   const [statusSignal, setStatus] = createSignal<SyncStatus>('connecting');
@@ -488,6 +498,11 @@ function createEngineBody<S extends object>(
     // guards let the durable state win again for those entities.
     const keep = keepSet();
     for (const id of retiring) keep.delete(id);
+    // The entity store lands BEFORE the view merge: selectors reading it
+    // see the rows in the same pass the view that carries them renders.
+    // The source's LOADING placeholder (the `empty` seed) is not a
+    // durable emission — it would wipe nothing but means nothing; skip it.
+    if (ingest && snapshot !== empty) ingest(snapshot);
     setView((draft) => {
       merge(draft, snapshot, keep);
     });

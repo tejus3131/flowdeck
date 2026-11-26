@@ -531,3 +531,96 @@ describe('sync engine', () => {
     h.dispose();
   });
 });
+
+// ── ingest: the L2 entity-store projection (phase 1) ──────────────────────
+
+/** A board stream the test drives by hand: yields `first`, then whatever
+ * `push` queues (the durable emissions the engine will ingest). */
+function makeIngestHarness(first: BoardSnapshot) {
+  const queue: BoardSnapshot[] = [];
+  let wake: (() => void) | undefined;
+  const sent: Deferred[] = [];
+  async function* fakeStream(): AsyncGenerator<BoardSnapshot> {
+    let current = first;
+    while (true) {
+      yield current;
+      if (queue.length === 0) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        wake = undefined;
+      }
+      current = queue.shift() ?? current;
+    }
+  }
+  /** The chip names the ingest hook observed, in arrival order. */
+  const names: Array<string | undefined> = [];
+  let engine!: ReturnType<typeof createBoardEngine>;
+  const dispose = createRoot((d) => {
+    engine = createBoardEngine(
+      fakeStream,
+      () => 'b1',
+      EMPTY,
+      undefined,
+      undefined,
+      // The entity-store projection under test: a miniature of
+      // ingestBoardSnapshot — the cards' chips carry the tag rows.
+      (snap) => names.push(snap.cards[0]?.tags[0]?.name),
+    );
+    return d;
+  });
+  const push = (next: BoardSnapshot) => {
+    queue.push(next);
+    wake?.();
+  };
+  return { engine, push, names, sent, dispose };
+}
+
+/** The `card` fixture, but with chips (the tag rows phase 1 ingests). */
+const cardWithTags = (id: string, tags: Array<{ id: string; name: string }>): CardView => ({
+  ...card(id, 'l1', 1),
+  tags,
+});
+
+describe('sync engine ingest', () => {
+  it('normalizes every durable emission — never a local apply', async () => {
+    const h = makeIngestHarness(snapshot([cardWithTags('c1', [{ id: 't1', name: 'alpha' }])]));
+    await settle();
+    // The first durable emission ingested (the snapshot's chip name).
+    expect(h.names).toEqual(['alpha']);
+
+    // A LOCAL apply (an outbox op in flight) never ingests — only durable
+    // emissions do; the op's change reaches the store with its echo.
+    h.engine.mutate({
+      kind: 'rename-tag',
+      guards: ['t1'],
+      apply: (draft) => {
+        draft.cards[0].tags = [{ id: 't1', name: 'local-only' }];
+      },
+      send: deferredSend(h.sent),
+      echo: (d) => d.cards[0]?.tags[0]?.name === 'new',
+    });
+    flush();
+    expect(h.engine.view().cards[0]?.tags[0]?.name).toBe('local-only'); // applied to the view…
+    expect(h.names).toEqual(['alpha']); // …but NOT ingested into the store.
+
+    // The durable echo lands — ingested with it, in that same pass.
+    h.sent[0].resolve();
+    h.push(snapshot([cardWithTags('c1', [{ id: 't1', name: 'new' }])]));
+    await settle();
+    expect(h.names).toEqual(['alpha', 'new']);
+    h.dispose();
+  });
+
+  it('a rename that rides a later snapshot moves the store in that pass', async () => {
+    const h = makeIngestHarness(snapshot([cardWithTags('c1', [{ id: 't1', name: 'old' }])]));
+    await settle();
+    expect(h.names).toEqual(['old']);
+
+    // The rename arrives the Phase 1 way: inside the next snapshot.
+    h.push(snapshot([cardWithTags('c1', [{ id: 't1', name: 'new' }])]));
+    await settle();
+    expect(h.names).toEqual(['old', 'new']);
+    h.dispose();
+  });
+});
