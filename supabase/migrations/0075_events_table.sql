@@ -163,7 +163,8 @@ select
   ce.created_at
 from public.card_events ce
 join public.boards b on b.id = ce.board_id
-order by ce.created_at;
+-- id tie-breaks: folded rows keep a deterministic order within a second
+order by ce.created_at, ce.id;
 
 -- The table is realtime-published: live timelines subscribe to it
 -- (phase 3's reader task); the 10s poll dies there.

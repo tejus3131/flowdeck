@@ -53,7 +53,7 @@ where not exists (
     and e.created_at = ce.created_at
     and e.detail = ce.detail
 )
-order by ce.created_at;
+order by ce.created_at, ce.id;
 
 -- The drops. Cascades carry the tables' own triggers with them
 -- (card_events_agent and the board_revisions bumps on card_events).
