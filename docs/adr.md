@@ -228,13 +228,12 @@ minted. Rejected.
 3. **TTL + rotation.** Cloudflare tokens get a TTL (90 days) — expiry
    forces rotation; the calendar reminder is the rotation runbook.
    Supabase access token rotated quarterly.
-4. **TTL + rotation.** Cloudflare tokens get a TTL (90 days) — expiry
-   forces rotation; the calendar reminder is the rotation runbook.
-   Supabase access token rotated quarterly. (Cloudflare IP-restriction
-   of deploy tokens was evaluated and dropped: GitHub-hosted runner
-   ranges are huge, rotate weekly, and maintaining the allowlist is a
-   chore with modest security return. TTL + scope + env-gating carry
-   the policy.)
+4. **IP restriction: evaluated, dropped.** GitHub-hosted runner ranges
+   are huge, rotate weekly, and maintaining the allowlist is a chore
+   with modest security return. TTL + scope + env-gating carry the
+   policy. Cloudflare tokens get a TTL (90 days) — expiry forces
+   rotation; the calendar reminder is the rotation runbook. Supabase
+   access token rotated quarterly.
 5. **GitHub hardening.** Default `GITHUB_TOKEN` read-only (set); fork PRs
    get no workflows (set); every workflow pins actions to full commit
    SHAs; per-workflow `permissions:` blocks; `persist-credentials:

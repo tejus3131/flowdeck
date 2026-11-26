@@ -56,8 +56,8 @@ jobs:
         with:
           version: latest
 
-      - name: Run migrations on local stack
-        run: supabase db reset
+      - name: Start stack + run migrations
+        run: supabase start && supabase db reset
 
       - name: Test (client + server projects)
         run: pnpm test -- --run

@@ -101,6 +101,7 @@ probes against the preview URL) — wired when probes land in CI; until
 then they sit unused by design, not orphaned.
 | `CLOUDFLARE_ACCOUNT_ID` | Variable | same | same |
 | `SUPABASE_PROJECT_REF` | Variable | preview ref | prod ref |
+| `SUPABASE_POOLER_HOST` | Variable | preview pooler host | prod pooler host |
 | `VITE_SUPABASE_URL` | Variable | preview project URL | prod project URL |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Variable | preview publishable key | prod publishable key |
 
