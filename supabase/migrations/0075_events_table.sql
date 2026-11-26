@@ -89,7 +89,8 @@ begin
   -- tag_ids is DERIVED from the detail's {id, name} chip arrays, never a
   -- caller-supplied second source of truth — no write site can forget
   -- it, and the detail (what history renders) stays the one truth. The
-  -- 'tags' kind carries 'added'/'removed'; anything else tags nothing.
+  -- 'tags' kind carries 'added'/'removed'; mention events carry 'tags'
+  -- (0077); anything else tags nothing.
   v_tag_ids := coalesce((
     select array (
       select distinct (chip->>'id')::uuid
@@ -99,6 +100,9 @@ begin
         union all
         select case when jsonb_typeof(p_detail->'removed') = 'array'
                then p_detail->'removed' else '[]'::jsonb end as arr
+        union all
+        select case when jsonb_typeof(p_detail->'tags') = 'array'
+               then p_detail->'tags' else '[]'::jsonb end as arr
       ) batches,
       lateral jsonb_array_elements(batches.arr) as chip
     )
