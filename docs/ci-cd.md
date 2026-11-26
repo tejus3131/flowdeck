@@ -94,6 +94,21 @@ Path matrix (dorny/paths-filter), **in order**, environment `preview`:
 Same matrix against prod refs, gated on the `production` environment
 approval. `wrangler deploy` (no `--env` — top level IS production).
 
+### Releases (both deploy workflows)
+
+Every deploy is a visible release — no deploy happens without a record:
+
+- **Tag + GitHub Release**: `preview-rN` / `release-rN` (N = workflow run
+  number). Notes = a header (environment, legs deployed, commit link)
+  plus **auto-generated notes**: every PR merged since the previous
+  release *of the same environment*, with contributor credits — the
+  changelog is the release history, assembled by GitHub.
+- **Deployment record**: one success `Deployment` on the `preview` /
+  `production` environment per deploy — the Environments tab is the
+  browsable deploy history. A failed leg never produces a success
+  release: the release step runs after the deploy legs, not instead of
+  them.
+
 ### W4 — `keep-alive` (cron, weekly)
 
 Ping both Supabase projects' REST endpoints (repo-level public variables)

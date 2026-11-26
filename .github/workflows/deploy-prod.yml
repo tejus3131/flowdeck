@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  deployments: write # the release step records a Deployment per deploy
 
 concurrency:
   group: deploy-prod
@@ -124,3 +125,33 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Every deploy is a release (release-rN): auto-generated notes list
+      # the PRs merged since the previous PRODUCTION release — the
+      # changelog IS the release history. The Deployment record lands on
+      # the `production` environment, after its required reviewer.
+      - name: Release — tag, notes, deployment record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="release-r${{ github.run_number }}"
+          legs=""
+          [ "${{ needs.changes.outputs.migrations }}" = "true" ] && legs="${legs}migrations "
+          [ "${{ needs.changes.outputs.functions }}" = "true" ] && legs="${legs}mcp-functions "
+          [ "${{ needs.changes.outputs.worker }}" = "true" ] && legs="${legs}worker "
+          body=$(printf 'Deployed to **production** from `%s`.\n\nLegs deployed: %s\nCommit: %s' \
+            "${GITHUB_SHA:0:7}" "${legs:-none}" "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}")
+          PREV=$(gh release list --limit 50 --json tagName \
+            --jq '[.[].tagName | select(startswith("release-"))][0] // ""')
+          if [ -n "$PREV" ]; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Release — $TAG" \
+              --notes "$body" --generate-notes --notes-start-tag "$PREV"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Release — $TAG" \
+              --notes "$body" --generate-notes
+          fi
+          DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments" \
+            -f ref="$GITHUB_SHA" -f environment="production" --jq '.id')
+          gh api -X POST "repos/$GH_REPO/deployments/$DEPLOY_ID/statuses" \
+            -f state="success" -f environment="production"

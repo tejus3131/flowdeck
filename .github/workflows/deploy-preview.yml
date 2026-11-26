@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  deployments: write # the release step records a Deployment per deploy
 
 concurrency:
   group: deploy-preview
@@ -133,3 +134,35 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Every deploy is a release: a tag (preview-rN), auto-generated
+      # notes (the PRs merged since the previous PREVIEW release, with
+      # contributor credits), and a Deployment record so the preview
+      # environment's history is browsable in the GitHub UI. Runs after
+      # the legs: the deploy is the product, the release is its record —
+      # a failed leg never produces a success release.
+      - name: Release — tag, notes, deployment record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="preview-r${{ github.run_number }}"
+          legs=""
+          [ "${{ needs.changes.outputs.migrations }}" = "true" ] && legs="${legs}migrations "
+          [ "${{ needs.changes.outputs.functions }}" = "true" ] && legs="${legs}mcp-functions "
+          [ "${{ needs.changes.outputs.worker }}" = "true" ] && legs="${legs}worker "
+          body=$(printf 'Deployed to **preview** from `%s`.\n\nLegs deployed: %s\nCommit: %s' \
+            "${GITHUB_SHA:0:7}" "${legs:-none}" "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}")
+          PREV=$(gh release list --limit 50 --json tagName \
+            --jq '[.[].tagName | select(startswith("preview-"))][0] // ""')
+          if [ -n "$PREV" ]; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Preview — $TAG" \
+              --notes "$body" --generate-notes --notes-start-tag "$PREV"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Preview — $TAG" \
+              --notes "$body" --generate-notes
+          fi
+          DEPLOY_ID=$(gh api "repos/$GH_REPO/deployments" \
+            -f ref="$GITHUB_SHA" -f environment="preview" --jq '.id')
+          gh api -X POST "repos/$GH_REPO/deployments/$DEPLOY_ID/statuses" \
+            -f state="success" -f environment="preview"
