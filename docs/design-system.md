@@ -96,10 +96,10 @@ Weights: 400 body, 500 emphasis/labels, 600 titles. No 700 — Inter at
 
 ## Spacing & radius
 
-Canva's 8px grid, Notion's semantic radius aliases. The values sit
-between the research suggestions (8/12/16) and Linear's dominant 8px —
-a deliberate middle: chips and inputs read tighter than Notion's 12,
-drawers softer than Linear's 8. The findings filter overrules the
+Canva's 8px grid, Notion's semantic radius aliases. `md`/`lg` (10/14)
+sit between the research suggestions (8/12/16) and Notion's 12; `sm`
+(6) reads tighter than both — chips and inputs get the smallest radius
+so they stay crisp at small sizes. The findings filter overrules the
 research here on feel; the playground's P-variants stress-test these
 before any component adopts them.
 
