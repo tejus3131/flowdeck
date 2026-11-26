@@ -5,9 +5,11 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled
 
 import { Avatar } from '../../components/Avatar';
 import { PriorityPill } from '../../components/PriorityPill';
+import { TagChip } from '../../components/TagChip';
 import { ACCESS_ENTITY, createBoardEngine, createEngine } from '../../lib/sync';
 import { perfFirstValue, perfTrack, perfStart, perfEnd, perfCancel } from '../../lib/perf';
 import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
+import { useEntities } from '../../lib/entity-store';
 import { planDrop } from '../../lib/card-drop';
 import { trackRecentBoard, warmBoardActive } from '../../lib/prefetch';
 import { createBoardPresence, presenceColor, type RemoteDrag } from '../../lib/presence';
@@ -167,6 +169,13 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // liveQuery: one shared channel per board, request-scoped on the server
   // (SSR renders the first value and closes), reconnecting on the client.
   const boardLive = liveQuery(boardStream, 'board');
+  // The L2 entity store (phase 1): both engines normalize their durable
+  // snapshots into it — every chip on this page resolves tag names from
+  // it, so a rename re-renders them all in the frame it lands (the
+  // canonical test). Declared BEFORE the engines: their ingest closures
+  // reference it, and while those only fire on async durable emissions
+  // today, the reference must not depend on that.
+  const entities = useEntities();
   const engine = createBoardEngine(
     // Perf mark: board open → first snapshot (docs/performance.md budget).
     // The cached stream seeds the view instantly on a warm open; the live
@@ -205,6 +214,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         cachePut(`board:${id}`, snapshot);
         return snapshot;
       }),
+    // Phase 1 (ADR-1): every durable board snapshot lands its tag
+    // rows and card_tags join rows in the entity store — the chips
+    // below resolve names from it, not from their embedded copies.
+    (snap) => entities.ingestBoardSnapshot(snap),
   );
   const view = engine.view;
   const me = createMemo(() => getMe());
@@ -345,6 +358,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
       ),
     }),
     merge: mergeWorkspaceDetail,
+    // The workspace's tag vocabulary joins the entity store too —
+    // richer rows than the board's chips carry (descriptions land).
+    ingest: (detail) => entities.ingestWorkspaceDetail(detail),
     status: () => workspaceLive.status(view().board.workspace_id ?? ''),
     refresh: async () => {
       const wsId = view().board.workspace_id;
@@ -1705,11 +1721,7 @@ function CardFace(props: { card: CardView; members: Member[]; onOpenDetails?: ()
           {(priority) => <PriorityPill priority={priority()} />}
         </Show>
         <For each={props.card.tags.slice(0, 3)}>
-          {(tag) => (
-            <span class="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-              #{tag.name}
-            </span>
-          )}
+          {(tag) => <TagChip tagId={tag.id} fallbackName={tag.name} />}
         </For>
         <span class="flex -space-x-1.5">
           <For each={props.card.assignees.slice(0, 4)}>
@@ -2557,7 +2569,7 @@ function SmartTextarea(props: {
         })
         .slice(0, 6)
         .map((member) => {
-          const label = (member.display_name ?? member.email ?? 'member').replace(/[\](\[]/g, '');
+          const label = (member.display_name ?? member.email ?? 'member').replace(/[\]([]/g, '');
           return {
             key: member.user_id,
             label,
@@ -2592,7 +2604,7 @@ function SmartTextarea(props: {
         .filter((team) => !q || team.name.toLowerCase().includes(q))
         .slice(0, 3)
         .map((team) => {
-          const label = team.name.replace(/[\](\[]/g, '');
+          const label = team.name.replace(/[\]([]/g, '');
           return {
             key: `team:${team.id}`,
             label: `${label} · team`,
@@ -3052,9 +3064,7 @@ function DetailHoverCard(props: {
                             <div class="mt-2 flex flex-wrap gap-1">
                               <For each={target().tags}>
                                 {(cardTag) => (
-                                  <span class="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-                                    #{cardTag.name}
-                                  </span>
+                                  <TagChip tagId={cardTag.id} fallbackName={cardTag.name} />
                                 )}
                               </For>
                             </div>
@@ -4730,8 +4740,7 @@ function CardDrawer(props: {
                 <span class="w-16 shrink-0 text-xs font-medium text-neutral-400">Tags</span>
                 <For each={card()?.tags ?? []}>
                   {(tag) => (
-                    <span class="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-                      #{tag.name}
+                    <TagChip tagId={tag.id} fallbackName={tag.name} variant="drawer">
                       <Show when={props.canEdit}>
                         <button
                           type="button"
@@ -4746,7 +4755,7 @@ function CardDrawer(props: {
                           ×
                         </button>
                       </Show>
-                    </span>
+                    </TagChip>
                   )}
                 </For>
                 <Show when={props.canEdit}>
