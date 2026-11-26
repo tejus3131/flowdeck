@@ -7,3 +7,4 @@ file-routes.d.ts
 src/types/database.generated.ts
 supabase/functions
 docs/layers
+.github/CODEOWNERS
