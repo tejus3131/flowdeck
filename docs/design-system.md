@@ -2,8 +2,10 @@
 
 The playground experiments _within_ these tokens; nothing ships that
 invents a new value. Every number traces to [`design-findings.md`](./design-findings.md)
-or [`research/`](./research/). Changes to this file are ADR-grade: they
-reopen decisions, so they get a line in `docs/adr.md` too.
+or [`research/`](./research/). The axes still open — gray, accent,
+elevation, spring, type density — resolve through the variants defined in
+[`design-playground.md`](./design-playground.md). Changes to this file are
+ADR-grade: they reopen decisions, so they get a line in `docs/adr.md` too.
 
 ## Color
 
@@ -42,7 +44,12 @@ by feel becomes the default and the other stays as a one-token swap.
   --fd-bg-2: oklch(0.2 0.005 260);
   --fd-line: oklch(0.24 0.005 260);
   --fd-text: oklch(0.95 0.004 260);
+  --fd-text-2: oklch(0.72 0.005 260); /* secondary */
+  --fd-text-3: oklch(0.56 0.005 260); /* placeholders, timestamps */
   --fd-accent: oklch(0.68 0.19 275); /* lighter for dark-bg contrast */
+  --fd-accent-tint: oklch(0.3 0.06 275); /* selected rows, focus wells */
+  --fd-danger: oklch(0.7 0.19 25);
+  --fd-success: oklch(0.72 0.15 150);
 }
 ```
 
@@ -137,7 +144,9 @@ frequency rule):
 - Enter 300ms / exit 200ms — never equal
 - Zero motion on: menu open, chip hover, tab switch, keystroke feedback
 - Spring easing appears only on completion moments (Done-drop, board cleared)
-- Drop animation duration lerps 330→550ms by distance (rbd)
+- Drop-settle is the one exception to the 300ms ceiling: it lerps
+  **330→550ms** by drag distance (rbd) — a settle shorter than the
+  displacement it follows reads as a snap.
 - `prefers-reduced-motion: reduce` → all animation/transition off, globally
 
 ## Elevation
@@ -158,3 +167,9 @@ component passes: color from `--fd-*` → spacing from the 8px scale →
 radius from the alias set → motion from the budget → text from the type
 scale. If a component needs a value that doesn't exist, the token gets
 added _here first_ — that's the freeze.
+
+Two sources of truth, no overlap: this file owns how a component
+**looks**; [`ui-data.md`](./ui-data.md) owns what it **reads**. A
+component that hardcodes a color violates the token freeze; a component
+that threads an entity name from a prop violates the store rule. Both
+are review blockers.
