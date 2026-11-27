@@ -2,8 +2,9 @@
 
 The implementation contract for the offline/PWA, SEO, and rebrand work,
 grounded in [`research/seo.md`](./research/seo.md),
-[`research/pwa-and-offline.md`](./research/pwa-and-offline.md), and
-[`research/brand-and-legal.md`](./research/brand-and-legal.md). These
+[`research/pwa-and-offline.md`](./research/pwa-and-offline.md),
+[`research/brand-and-legal.md`](./research/brand-and-legal.md), and
+[`research/legal-compliance.md`](./research/legal-compliance.md). These
 phases run **before the UI redesign sprint starts**, alongside the flag
 foundation (ADR-17) — the redesign consumes the brand config and the
 SEO'd document head that land here.
@@ -44,6 +45,10 @@ swap` + `size-adjust` fallback metrics.
    config.
 9. Legal pages (content work, seeded here): privacy, terms, contact;
    subprocessors, DPA, security + `/.well-known/security.txt` follow.
+   The compliance decisions land with them: PostHog cookieless mode
+   (`cookieless_mode: 'always'`), the in-app export/delete-account flows,
+   and the subprocessor table with each vendor's transfer mechanism
+   (Supabase = SCCs; Cloudflare/PostHog/Resend = DPF).
 10. Verify Search Console + Bing Webmaster **now**, before any domain
     change, to baseline.
 

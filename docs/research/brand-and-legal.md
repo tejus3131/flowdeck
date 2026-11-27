@@ -2,8 +2,10 @@
 
 Deep research grounding for the rebrand: the single-source-of-truth brand
 config, the rename practice, and the legal/compliance page set a small SaaS
-ships. Companion docs: [`seo.md`](./seo.md), [`pwa-and-offline.md`](./pwa-and-offline.md).
-Research + contract, not an implementation claim.
+ships. Companion docs: [`seo.md`](./seo.md), [`pwa-and-offline.md`](./pwa-and-offline.md),
+and [`legal-compliance.md`](./legal-compliance.md) (the full GDPR/CCPA
+grounding behind the page list here). Research + contract, not an
+implementation claim.
 
 **Repo baseline (verified):** `VITE_APP_NAME` exists in `env.ts` (default
 `Flowdeck`) but is consumed once (`App.tsx`); ~36 hardcoded "Flowdeck"
@@ -109,40 +111,43 @@ consensus, not law):
 
 ## GDPR/CCPA obligations that actually bind a tiny free SaaS
 
-GDPR (official guidance hub: [ICO UK GDPR](https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/);
-EU entry point: [commission.europa.eu data-protection](https://commission.europa.eu/law/law-topic/data-protection_en)):
+Full grounding with citations in [`legal-compliance.md`](./legal-compliance.md);
+the summary:
 
-- **Lawful basis** per processing purpose (contract for the service,
-  legitimate interest for security/abuse prevention).
-- **Data-subject rights:** access, erasure, portability — this needs an
-  account-delete/export flow (the only code-heavy legal item).
-- **Processor contracts:** Supabase/Cloudflare/PostHog/Resend each carry
-  their own DPA terms — link them from the subprocessor page.
-- **Breach notification:** 72h to the supervisory authority when risk to
-  individuals exists.
-- **EU-US transfers:** rely on each subprocessor's DPF/SCC coverage;
-  document on the subprocessor page.
-- **Records of processing:** a living doc, not a public page.
-
-CCPA/CPRA (official: [oag.ca.gov/privacy/ccpa](https://oag.ca.gov/privacy/ccpa),
-[cppa.ca.gov](https://cppa.ca.gov/)): notice at collection, right to
-know/delete/opt-out of sale-share, non-discrimination — applies above
-revenue/data-volume thresholds; a free product with no data sales mostly
-needs the notice + delete path.
+- **Lawful basis** per purpose (contract for the service, legitimate
+  interest for analytics — documented via an LIA and named in the policy).
+- **RoPA is legally required** — the <250-employee exemption only covers
+  _occasional_ processing; a running SaaS is "not occasional."
+- **Data-subject rights:** one-month deadline; needs an in-app export
+  (JSON/CSV) + delete-account flow with an honest backup-retention
+  statement; a privacy@ contact for the rest.
+- **Breach notification:** 72h; a written breach plan + log.
+- **EU-US transfers:** Cloudflare/PostHog/Resend are DPF-certified;
+  **Supabase relies on SCCs** — state each mechanism on the subprocessor
+  page.
+- **Cookies:** the decision is PostHog cookieless mode (`cookieless_mode:
+'always'`) → no banner needed, Plausible-style; the auth cookie is
+  strictly necessary; the theme cookie rides the UK appearance exception
+  (EU strict reading noted).
+- **CCPA likely does not apply** (fails all three thresholds); follow the
+  notice-at-collection pattern anyway.
 
 ## Page inventory (the deliverable list)
 
-| Page                     | Priority         | Route (proposed)                          |
-| ------------------------ | ---------------- | ----------------------------------------- |
-| Landing (new, SEO-ready) | P0               | `/`                                       |
-| Privacy policy           | P0               | `/legal/privacy`                          |
-| Terms of service         | P0               | `/legal/terms`                            |
-| Contact                  | P0               | `/contact` (or a section)                 |
-| Subprocessors            | P1               | `/legal/subprocessors`                    |
-| DPA                      | P1               | `/legal/dpa`                              |
-| Security + security.txt  | P1               | `/security` + `/.well-known/security.txt` |
-| Cookie notice            | P1 (conditional) | section in privacy                        |
-| Changelog                | P2               | `/changelog`                              |
+| Page                             | Priority         | Route (proposed)                          |
+| -------------------------------- | ---------------- | ----------------------------------------- |
+| Landing (new, SEO-ready)         | P0               | `/`                                       |
+| Privacy policy                   | P0               | `/legal/privacy`                          |
+| Terms of service (AUP folded in) | P0               | `/legal/terms`                            |
+| Contact                          | P0               | `/contact` (or a section)                 |
+| Export/delete account flows      | P0               | in-app (profile settings)                 |
+| PostHog cookieless decision      | P0               | implementation, not a page                |
+| Subprocessors                    | P1               | `/legal/subprocessors`                    |
+| DPA (when org workspaces exist)  | P1               | `/legal/dpa`                              |
+| Security + security.txt          | P1               | `/security` + `/.well-known/security.txt` |
+| Cookie notice                    | P1 (conditional) | section in privacy                        |
+| Changelog                        | P2               | `/changelog`                              |
+| Status page                      | P2               | hosted (Instatus/BetterStack free)        |
 
 All public pages get the SEO treatment from [`seo.md`](./seo.md) (title,
 description, canonical, OG, sitemap entry); legal routes are static,
