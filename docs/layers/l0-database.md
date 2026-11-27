@@ -42,6 +42,20 @@ projection of it.
    ships with the migration, never before it. Code tolerates the
    pre-migration state only inside an explicitly commented window (the
    0032 fallback pattern).
+8. **The MCP per-op contract** (ADR-5; migrations 0080–0084): every op
+   is `mcp_<op>(p_user_id, p_arg, p_scope, p_ws_ops) → jsonb` —
+   SECURITY INVOKER, running under the CALLER's RLS context (mcp_exec
+   impersonates the PAT user before dispatch; PostgREST gives the web
+   its own JWT), with `mcp_caller_ok` pinning the acting user to the JWT
+   subject and agent provenance inherited from the transaction (set by
+   mcp_exec, absent for web calls). Grants are explicit: authenticated +
+   service_role only — PUBLIC and anon are revoked, and `mcp_exec`
+   itself stays service_role-only because it trusts `p_user_id`. A new
+   op is one small migration (the function) plus one dispatch line in
+   `mcp_exec`. Note the corollary: a service-role script calling a
+   per-op function DIRECTLY is rejected by the caller guard (service
+   role carries no JWT claims) — admin scripts go through `mcp_exec`,
+   or set `request.jwt.claims` themselves.
 
 ## Worked example — adding a mutation
 

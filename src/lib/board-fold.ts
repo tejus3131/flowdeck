@@ -16,10 +16,12 @@
 // re-snapshot; the stream periodically re-syncs (see boardStream); the
 // client engine's durable poll re-fetches every 20s regardless; and every
 // reconnect starts from a fresh full snapshot.
-import type { BoardSummary, BoardSnapshot, CardView, ListRow } from './boards';
+import type { BoardSummary, BoardSnapshot, CardEventRow, CardView, ListRow } from './boards';
 
 /** One realtime event, narrowed to what the fold needs. The stream's
  *  channel handlers translate postgres_changes payloads into these. */
+export type TagRow = { id: string; name: string; description?: string | null };
+
 export type FoldEvent =
   /** boards UPDATE — the flat row is complete, apply directly. */
   | { kind: 'board-row'; row: BoardSummary }
@@ -32,6 +34,28 @@ export type FoldEvent =
   | { kind: 'card-touch'; id: string }
   /** cards DELETE — by old id. */
   | { kind: 'card-delete'; id: string }
+  /** tags INSERT/UPDATE (workspace-scoped; tags are never deleted — the
+   *  0067 trigger): the vocabulary row itself. A rename folds into the
+   *  cards' embedded chips in memory — no re-snapshot (ADR-3: the old
+   *  `resync` on any tags change is gone). */
+  | { kind: 'tag-upsert'; row: TagRow }
+  /** card_tags INSERT — the join row ships in the event (ADR-3), the tag
+   *  name resolved by the stream (the fold stays pure — it never
+   *  fetches; an unresolvable attach degrades to card-touch upstream). */
+  | { kind: 'card-tag-attach'; cardId: string; tag: { id: string; name: string } }
+  /** card_tags DELETE — the tag leaves the card. */
+  | { kind: 'card-tag-detach'; cardId: string; tagId: string }
+  /** card_assignees INSERT/DELETE — join rows folded directly (assignees
+   *  are user ids; nothing to resolve). */
+  | { kind: 'card-assignee-set'; cardId: string; userId: string; assigned: boolean }
+  /** card_counters INSERT/UPDATE (ADR-7): the trigger's row IS the event —
+   *  the unseen badge folds in O(1), no card fetch, no aggregation. */
+  | {
+      kind: 'card-counter';
+      cardId: string;
+      commentCount: number;
+      lastCommentAt: string | null;
+    }
   /** board_revisions UPDATE — the exact server cursor (migration 0032). */
   | { kind: 'revision'; value: number }
   /** A visibility-shaping change (board_access, board_team_access, team
@@ -46,6 +70,14 @@ export type FoldPlan = {
   /** Cards needing a fresh CardView (fetch, then fold). */
   cardTouches: Set<string>;
   cardDeletes: Set<string>;
+  /** The vocabulary rows the burst carried, id → last event wins. */
+  tagUpserts: Map<string, TagRow>;
+  /** Join rows, card → tag id → last op wins (name undefined on detach). */
+  cardTagOps: Map<string, Map<string, { name?: string; attached: boolean }>>;
+  /** Assignee join rows, card → user id → last op wins. */
+  assigneeOps: Map<string, Map<string, boolean>>;
+  /** Counter rows, card → the trigger's freshest values. */
+  cardCounters: Map<string, { commentCount: number; lastCommentAt: string | null }>;
   /** The exact server revision when ≥ 0; -1 = no revision event arrived. */
   revision: number;
   /** True when only a full re-snapshot answers the burst. */
@@ -62,6 +94,10 @@ export function planFold(events: FoldEvent[]): FoldPlan {
     listDeletes: new Set(),
     cardTouches: new Set(),
     cardDeletes: new Set(),
+    tagUpserts: new Map(),
+    cardTagOps: new Map(),
+    assigneeOps: new Map(),
+    cardCounters: new Map(),
     revision: -1,
     resync: false,
   };
@@ -81,6 +117,33 @@ export function planFold(events: FoldEvent[]): FoldPlan {
         break;
       case 'card-delete':
         plan.cardDeletes.add(event.id);
+        break;
+      case 'tag-upsert':
+        plan.tagUpserts.set(event.row.id, event.row);
+        break;
+      case 'card-tag-attach': {
+        const ops = plan.cardTagOps.get(event.cardId) ?? new Map();
+        plan.cardTagOps.set(event.cardId, ops);
+        ops.set(event.tag.id, { name: event.tag.name, attached: true });
+        break;
+      }
+      case 'card-tag-detach': {
+        const ops = plan.cardTagOps.get(event.cardId) ?? new Map();
+        plan.cardTagOps.set(event.cardId, ops);
+        ops.set(event.tagId, { attached: false });
+        break;
+      }
+      case 'card-assignee-set': {
+        const ops = plan.assigneeOps.get(event.cardId) ?? new Map();
+        plan.assigneeOps.set(event.cardId, ops);
+        ops.set(event.userId, event.assigned);
+        break;
+      }
+      case 'card-counter':
+        plan.cardCounters.set(event.cardId, {
+          commentCount: event.commentCount,
+          lastCommentAt: event.lastCommentAt,
+        });
         break;
       case 'revision':
         plan.revision = Math.max(plan.revision, event.value);
@@ -143,11 +206,63 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
     draft.cards = draft.cards.filter((card) => !plan.listDeletes.has(card.list_id));
   }
 
+  // Join rows fold in place — O(1) per op, no fetch (ADR-3). Applied
+  // BEFORE the card-views block: a fetched view is the fresher truth for
+  // its card and overwrites whatever the events predicted. Events for
+  // cards this board doesn't hold (the unfiltered card-side channels
+  // hear other boards too) skip — the periodic re-sync bounds drift.
+  if (plan.cardTagOps.size > 0 || plan.assigneeOps.size > 0 || plan.cardCounters.size > 0) {
+    const byId = new Map(draft.cards.map((card) => [card.id, card]));
+    for (const [cardId, tagOps] of plan.cardTagOps) {
+      const card = byId.get(cardId);
+      if (!card) continue;
+      for (const [tagId, op] of tagOps) {
+        const without = card.tags.filter((tag) => tag.id !== tagId);
+        card.tags = op.attached
+          ? [...without, { id: tagId, name: op.name ?? '' }].sort((a, b) =>
+              a.name.localeCompare(b.name),
+            )
+          : without;
+      }
+    }
+    for (const [cardId, userOps] of plan.assigneeOps) {
+      const card = byId.get(cardId);
+      if (!card) continue;
+      for (const [userId, assigned] of userOps) {
+        const without = card.assignees.filter((id) => id !== userId);
+        card.assignees = assigned ? [...without, userId] : without;
+      }
+    }
+    for (const [cardId, counter] of plan.cardCounters) {
+      const card = byId.get(cardId);
+      if (!card) continue;
+      card.comment_count = counter.commentCount;
+      card.last_comment_at = counter.lastCommentAt;
+    }
+  }
+
   if (plan.cardDeletes.size > 0 || views.length > 0) {
     const cards = draft.cards.filter((card) => !plan.cardDeletes.has(card.id));
     const byId = new Map(cards.map((card) => [card.id, card]));
     for (const view of views) byId.set(view.id, view);
     draft.cards = [...byId.values()];
+  }
+
+  // The vocabulary rows: rewrite the embedded chip names in place — a
+  // rename is memory work only, the burst costs zero queries (ADR-3).
+  // Chips stay name-sorted; a rename can reorder them.
+  if (plan.tagUpserts.size > 0) {
+    for (const card of draft.cards) {
+      let renamed = false;
+      for (const tag of card.tags) {
+        const upsert = plan.tagUpserts.get(tag.id);
+        if (upsert && tag.name !== upsert.name) {
+          tag.name = upsert.name;
+          renamed = true;
+        }
+      }
+      if (renamed) card.tags.sort((a, b) => a.name.localeCompare(b.name));
+    }
   }
 
   if (
@@ -163,4 +278,22 @@ export function applyFold(draft: BoardSnapshot, plan: FoldPlan, views: CardView[
     draft.revision = plan.revision;
   }
   return false;
+}
+
+/**
+ * Fold a burst of arrived event rows into a card's timeline page (pure;
+ * the card-events stream's hot path — ADR-3: rows ship, no re-query).
+ * The log is append-only with a monotonic bigint id, so an in-order
+ * burst extends the page; an empty burst or anything out of order (a
+ * missed event, a replayed delivery) means the caller re-fetches — null.
+ * The page stays bounded at 100 (the trail's window).
+ */
+export function foldTimelineBurst(
+  page: CardEventRow[],
+  arrived: CardEventRow[],
+): CardEventRow[] | null {
+  if (arrived.length === 0) return null;
+  const lastId = page.at(-1)?.id ?? 0;
+  if (!arrived.every((row) => row.id > lastId)) return null;
+  return [...page, ...arrived].slice(-100);
 }

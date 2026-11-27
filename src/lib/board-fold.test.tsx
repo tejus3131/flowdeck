@@ -74,6 +74,7 @@ describe('planFold', () => {
       { kind: 'list-delete', id: 'l1' },
       { kind: 'card-touch', id: 'c1' },
       { kind: 'card-delete', id: 'c2' },
+      { kind: 'tag-upsert', row: { id: 't1', name: 'urgent' } },
       { kind: 'revision', value: 42 },
       { kind: 'resync' },
     ]);
@@ -82,8 +83,63 @@ describe('planFold', () => {
     expect(plan.listDeletes).toEqual(new Set(['l1']));
     expect(plan.cardTouches).toEqual(new Set(['c1']));
     expect(plan.cardDeletes).toEqual(new Set(['c2']));
+    expect(plan.tagUpserts.get('t1')).toEqual({ id: 't1', name: 'urgent' });
     expect(plan.revision).toBe(42);
     expect(plan.resync).toBe(true);
+  });
+
+  it('keeps the LAST tag upsert per id in a burst', () => {
+    const plan = planFold([
+      { kind: 'tag-upsert', row: { id: 't1', name: 'old-name' } },
+      { kind: 'tag-upsert', row: { id: 't1', name: 'new-name' } },
+    ]);
+    expect(plan.tagUpserts.size).toBe(1);
+    expect(plan.tagUpserts.get('t1')?.name).toBe('new-name');
+  });
+
+  it('a tag upsert alone asks for NEITHER a resync NOR a card fetch (the phase-2 proof)', () => {
+    const plan = planFold([{ kind: 'tag-upsert', row: { id: 't1', name: 'renamed' } }]);
+    expect(plan.resync).toBe(false);
+    expect(plan.cardTouches.size).toBe(0);
+  });
+
+  it('routes join rows into per-card op maps, LAST op per pair wins', () => {
+    const plan = planFold([
+      { kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't1', name: 'alpha' } },
+      { kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't2', name: 'beta' } },
+      { kind: 'card-tag-detach', cardId: 'c1', tagId: 't2' }, // added then removed — removed
+      { kind: 'card-tag-detach', cardId: 'c2', tagId: 't1' },
+      { kind: 'card-tag-attach', cardId: 'c2', tag: { id: 't1', name: 'alpha' } }, // removed then re-added
+      { kind: 'card-assignee-set', cardId: 'c1', userId: 'u1', assigned: true },
+      { kind: 'card-assignee-set', cardId: 'c1', userId: 'u2', assigned: true },
+      { kind: 'card-assignee-set', cardId: 'c1', userId: 'u2', assigned: false }, // then unassigned
+    ]);
+    expect(plan.cardTagOps.get('c1')?.get('t1')).toEqual({ name: 'alpha', attached: true });
+    expect(plan.cardTagOps.get('c1')?.get('t2')).toEqual({ attached: false });
+    expect(plan.cardTagOps.get('c2')?.get('t1')).toEqual({ name: 'alpha', attached: true });
+    expect(plan.assigneeOps.get('c1')?.get('u1')).toBe(true);
+    expect(plan.assigneeOps.get('c1')?.get('u2')).toBe(false);
+  });
+
+  it('routes counter rows, LAST per card wins', () => {
+    const plan = planFold([
+      { kind: 'card-counter', cardId: 'c1', commentCount: 3, lastCommentAt: 't3' },
+      { kind: 'card-counter', cardId: 'c1', commentCount: 4, lastCommentAt: 't4' },
+      { kind: 'card-counter', cardId: 'c2', commentCount: 1, lastCommentAt: null },
+    ]);
+    expect(plan.cardCounters.get('c1')).toEqual({ commentCount: 4, lastCommentAt: 't4' });
+    expect(plan.cardCounters.get('c2')).toEqual({ commentCount: 1, lastCommentAt: null });
+    expect(plan.resync).toBe(false);
+    expect(plan.cardTouches.size).toBe(0);
+  });
+
+  it('join rows ask for NEITHER a resync NOR a card fetch', () => {
+    const plan = planFold([
+      { kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't1', name: 'alpha' } },
+      { kind: 'card-assignee-set', cardId: 'c1', userId: 'u1', assigned: true },
+    ]);
+    expect(plan.resync).toBe(false);
+    expect(plan.cardTouches.size).toBe(0);
   });
 
   it('keeps the MAX revision of a burst', () => {
@@ -186,5 +242,153 @@ describe('applyFold', () => {
     const draft = snapshot([list('l1', 1)], [card('c1', 'l1', 1)]);
     fold(draft, [{ kind: 'card-touch', id: 'unknown' }], []);
     expect(draft.cards.map((row) => row.id)).toEqual(['c1']);
+  });
+
+  it('a tag rename rewrites every chip carrying the tag, in memory, re-sorted', () => {
+    const draft = snapshot([list('l1', 1)], []);
+    draft.cards.push(
+      {
+        ...card('c1', 'l1', 1),
+        tags: [
+          { id: 't1', name: 'zzz-old' },
+          { id: 't2', name: 'beta' },
+        ],
+      },
+      { ...card('c2', 'l1', 2), tags: [{ id: 't1', name: 'zzz-old' }] },
+      { ...card('c3', 'l1', 3), tags: [{ id: 't2', name: 'beta' }] },
+    );
+    fold(draft, [{ kind: 'tag-upsert', row: { id: 't1', name: 'aaa-new' } }]);
+    // Every embedded copy moved — there is exactly one truth per tag.
+    expect(draft.cards[0]!.tags.map((tag) => tag.name)).toEqual(['aaa-new', 'beta']);
+    expect(draft.cards[1]!.tags.map((tag) => tag.name)).toEqual(['aaa-new']);
+    // Cards without the tag are untouched.
+    expect(draft.cards[2]!.tags.map((tag) => tag.name)).toEqual(['beta']);
+    // A rename can reorder chips: 'aaa-new' sorts before 'beta' now —
+    // the fold re-sorts so the client's merge sees a settled order.
+    expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t1', 't2']);
+  });
+
+  it('a rename of a tag no card carries is a no-op on the draft', () => {
+    const draft = snapshot(
+      [list('l1', 1)],
+      [{ ...card('c1', 'l1', 1), tags: [{ id: 't2', name: 'beta' }] }],
+    );
+    const frozen: BoardSnapshot = JSON.parse(JSON.stringify(draft));
+    fold(draft, [{ kind: 'tag-upsert', row: { id: 't-unlinked', name: 'lonely' } }]);
+    expect(draft).toEqual(frozen);
+  });
+
+  it('a tag attach adds the chip name-sorted; a detach removes it', () => {
+    const draft = snapshot(
+      [list('l1', 1)],
+      [{ ...card('c1', 'l1', 1), tags: [{ id: 't2', name: 'beta' }] }],
+    );
+    fold(draft, [{ kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't1', name: 'alpha' } }]);
+    expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t1', 't2']); // alpha < beta
+    fold(draft, [{ kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't3', name: 'zeta' } }]);
+    expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t1', 't2', 't3']); // zeta last
+    fold(draft, [{ kind: 'card-tag-detach', cardId: 'c1', tagId: 't2' }]);
+    expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t1', 't3']);
+    // Re-adding an already-linked tag is idempotent (one chip, not two).
+    fold(draft, [{ kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't1', name: 'alpha' } }]);
+    expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t1', 't3']);
+  });
+
+  it("an assignee join row sets and unsets the card's assignees", () => {
+    const draft = snapshot([list('l1', 1)], [{ ...card('c1', 'l1', 1), assignees: ['u1'] }]);
+    fold(draft, [{ kind: 'card-assignee-set', cardId: 'c1', userId: 'u2', assigned: true }]);
+    expect(draft.cards[0]!.assignees).toEqual(['u1', 'u2']);
+    fold(draft, [{ kind: 'card-assignee-set', cardId: 'c1', userId: 'u1', assigned: false }]);
+    expect(draft.cards[0]!.assignees).toEqual(['u2']);
+    fold(draft, [{ kind: 'card-assignee-set', cardId: 'c1', userId: 'u2', assigned: true }]);
+    expect(draft.cards[0]!.assignees).toEqual(['u2']); // idempotent
+  });
+
+  it('join rows for cards this board does not hold skip quietly (other boards share the channel)', () => {
+    const draft = snapshot([list('l1', 1)], [card('c1', 'l1', 1)]);
+    const frozen: BoardSnapshot = JSON.parse(JSON.stringify(draft));
+    fold(draft, [
+      { kind: 'card-tag-attach', cardId: 'other-board-card', tag: { id: 't1', name: 'alpha' } },
+      { kind: 'card-assignee-set', cardId: 'other-board-card', userId: 'u1', assigned: true },
+    ]);
+    expect(draft).toEqual(frozen);
+  });
+
+  it('a counter row folds the unseen badge in O(1) — and a fetched view in the same burst still wins', () => {
+    const draft = snapshot([list('l1', 1)], [card('c1', 'l1', 1)]);
+    fold(draft, [
+      { kind: 'card-counter', cardId: 'c1', commentCount: 7, lastCommentAt: '2026-01-01' },
+    ]);
+    expect(draft.cards[0]!.comment_count).toBe(7);
+    expect(draft.cards[0]!.last_comment_at).toBe('2026-01-01');
+    // Unknown cards (the channel hears other boards) skip quietly.
+    const frozen: BoardSnapshot = JSON.parse(JSON.stringify(draft));
+    fold(draft, [
+      { kind: 'card-counter', cardId: 'other-card', commentCount: 9, lastCommentAt: null },
+    ]);
+    expect(draft).toEqual(frozen);
+    // A same-burst fetch is fresher: its view overwrites the counter.
+    fold(
+      draft,
+      [{ kind: 'card-counter', cardId: 'c1', commentCount: 99, lastCommentAt: '1999-01-01' }],
+      [{ ...card('c1', 'l1', 1), comment_count: 8, last_comment_at: '2026-01-02' }],
+    );
+    expect(draft.cards[0]!.comment_count).toBe(8);
+    expect(draft.cards[0]!.last_comment_at).toBe('2026-01-02');
+  });
+
+  it("a fetched view overwrites the same burst's join rows — the fetch is the fresher truth", () => {
+    const draft = snapshot([list('l1', 1)], [card('c1', 'l1', 1)]);
+    // Same burst: an attach event AND a card-touch (say, a title edit).
+    // The fetch runs after the events, so its view wins for the card.
+    fold(
+      draft,
+      [{ kind: 'card-tag-attach', cardId: 'c1', tag: { id: 't1', name: 'alpha' } }],
+      [{ ...card('c1', 'l1', 1, 'retitled'), tags: [{ id: 't9', name: 'from-db' }] }],
+    );
+    expect(draft.cards[0]!.title).toBe('retitled');
+    expect(draft.cards[0]!.tags.map((tag) => tag.id)).toEqual(['t9']);
+  });
+});
+
+// ── foldTimelineBurst: the live timeline's hot path (phase 3) ─────────────
+
+import { foldTimelineBurst } from './board-fold';
+import type { CardEventRow } from './boards';
+
+const evt = (id: number, kind = 'created'): CardEventRow => ({
+  id,
+  kind,
+  detail: {},
+  actor_id: null,
+  created_at: `2026-01-0${Math.min(id, 9)}T00:00:00Z`,
+  agent: false,
+});
+
+describe('foldTimelineBurst', () => {
+  it('an in-order burst extends the page — rows ship, no re-query', () => {
+    const page = [evt(1), evt(2)];
+    expect(foldTimelineBurst(page, [evt(3), evt(4)])).toMatchObject([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+    ]);
+  });
+
+  it('an empty burst folds null — the caller re-fetches (or idles)', () => {
+    expect(foldTimelineBurst([evt(1)], [])).toBeNull();
+  });
+
+  it('an out-of-order burst folds null — one re-fetch, never a guess', () => {
+    expect(foldTimelineBurst([evt(1), evt(3)], [evt(2)])).toBeNull();
+  });
+
+  it('the page stays bounded at 100 rows (the trail window)', () => {
+    const page = Array.from({ length: 99 }, (_, i) => evt(i + 1));
+    const folded = foldTimelineBurst(page, [evt(100), evt(101)]);
+    expect(folded?.length).toBe(100);
+    expect(folded?.at(-1)?.id).toBe(101);
+    expect(folded?.at(0)?.id).toBe(2); // the oldest slid out
   });
 });

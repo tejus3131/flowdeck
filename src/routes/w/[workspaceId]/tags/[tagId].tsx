@@ -20,6 +20,7 @@ import {
 } from '../../../../lib/workspaces';
 import { errorMessage } from '../../../../lib/error-message';
 import { cachedStream, cachePut } from '../../../../lib/cache';
+import { useEntities } from '../../../../lib/entity-store';
 import { perfFirstValue } from '../../../../lib/perf';
 
 const EMPTY_DETAIL: WorkspaceDetail = {
@@ -46,6 +47,8 @@ const TIME_WINDOWS: Array<{ id: string; label: string; days: number | null }> = 
 
 export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>) {
   const workspaceLive = liveQuery(workspaceStream, 'workspace');
+  // Declared before the engine: its ingest closure references the store.
+  const entities = useEntities();
   const engine = createEngine<WorkspaceDetail>({
     streamSource: (key) =>
       perfFirstValue(
@@ -69,6 +72,8 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
       ),
     }),
     merge: mergeWorkspaceDetail,
+    // The vocabulary lands in the entity store with every snapshot.
+    ingest: (detail) => entities.ingestWorkspaceDetail(detail),
     status: () => workspaceLive.status(props.params.workspaceId),
     refresh: async () => {
       const snapshot = await getWorkspaceSnapshot(props.params.workspaceId);
@@ -80,9 +85,10 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
     const view = engine.view();
     return view.workspace.id ? view : null;
   });
-  const tag = createMemo(
-    () => (detail()?.tags ?? []).find((t) => t.id === props.params.tagId) ?? null,
-  );
+  // The tag row resolves from the entity store (phase 1, ADR-1): a rename
+  // on ANY surface — here, the board, another tab — lands as one store
+  // write and this page's heading, chips, and links move in that frame.
+  const tag = createMemo(() => entities.tagById(props.params.tagId) ?? null);
   const isAdmin = () => detail()?.myRole === 'owner' || detail()?.myRole === 'admin';
 
   // ── filters: search through the entries + a time window ─────────────

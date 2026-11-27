@@ -196,6 +196,9 @@ public leaks nothing — anon keys are public by design; RLS is the gate.
 **Decision.** CI inspects changed paths and deploys in order:
 migrations → edge functions → worker. Schema lands before code; the app is
 already deploy-order-tolerant (see the 0032 fallback in `snapshot()`).
+The changed-paths window is "since the last successful deploy of the
+environment" — a failed deploy self-heals on the next merge
+(ci-cd.md W2/W3).
 
 **Consequences.** Docs-only PRs deploy nothing. A migration-only PR doesn't
 rebuild the worker. The order is a rule — code that requires a migration
@@ -223,8 +226,10 @@ minted. Rejected.
    environments, which only protected-branch merges can enter.
 2. **Minimum scope.** Cloudflare token: "Edit Cloudflare Workers" on this
    account + zone only. Supabase: `db push` uses the per-project DB
-   password (`--db-url`), not the account-wide access token; the access
-   token is used only for `functions deploy`.
+   password (`--remote=<db url>`, CLI 3.x's replacement for the
+   deprecated `--db-url` — same URL, same credential), not the
+   account-wide access token; the access token is used only for
+   `functions deploy`.
 3. **TTL + rotation.** Cloudflare tokens get a TTL (90 days) — expiry
    forces rotation; the calendar reminder is the rotation runbook.
    Supabase access token rotated quarterly.
@@ -248,11 +253,3 @@ A leaked deploy token is IP-bound, time-bound, minimally scoped, and
 rotates. The residual risk — a compromised runner during a deploy run —
 is bounded by TTL + scope + rotation. When (if) Cloudflare or Supabase
 ship OIDC federation, this ADR is superseded by a new one.
-
-**Decision.** CI inspects changed paths and deploys in order:
-migrations → edge functions → worker. Schema lands before code; the app is
-already deploy-order-tolerant (see the 0032 fallback in `snapshot()`).
-
-**Consequences.** Docs-only PRs deploy nothing. A migration-only PR doesn't
-rebuild the worker. The order is a rule — code that requires a migration
-ships in the same merge, never before it.

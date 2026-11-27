@@ -16,6 +16,7 @@ import {
 } from '../../../../lib/workspaces';
 import { errorMessage } from '../../../../lib/error-message';
 import { cachedStream, cachePut } from '../../../../lib/cache';
+import { useEntities } from '../../../../lib/entity-store';
 import { perfFirstValue } from '../../../../lib/perf';
 
 const EMPTY_DETAIL: WorkspaceDetail = {
@@ -33,6 +34,8 @@ const EMPTY_DETAIL: WorkspaceDetail = {
 
 export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
   const workspaceLive = liveQuery(workspaceStream, 'workspace');
+  // Declared before the engine: its ingest closure references the store.
+  const entities = useEntities();
   const engine = createEngine<WorkspaceDetail>({
     streamSource: (key) =>
       perfFirstValue(
@@ -56,6 +59,9 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
       ),
     }),
     merge: mergeWorkspaceDetail,
+    // The vocabulary lands in the entity store with every snapshot —
+    // the list below reads it through the tagsOfWorkspace selector.
+    ingest: (detail) => entities.ingestWorkspaceDetail(detail),
     status: () => workspaceLive.status(props.params.workspaceId),
     refresh: async () => {
       const snapshot = await getWorkspaceSnapshot(props.params.workspaceId);
@@ -68,10 +74,18 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
     return view.workspace.id ? view : null;
   });
 
+  // The vocabulary reads through the entity store (phase 1, ADR-1): the
+  // detail gate below keeps the Loading state honest, and every row —
+  // name, description — resolves from the one store reference.
+  const tags = createMemo(() => entities.tagsOfWorkspace(props.params.workspaceId));
+
   // Card counts per tag — visible cards only (RLS on card_tags).
   const [counts, setCounts] = createSignal<Record<string, number>>({});
   createEffect(
-    () => (detail()?.tags ?? []).map((tag) => tag.id).join(','),
+    () =>
+      tags()
+        .map((tag) => tag.id)
+        .join(','),
     (ids) => {
       if (!ids) return;
       getTagCardCounts(ids.split(',').filter(Boolean))
@@ -148,7 +162,7 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
 
             {/* The vocabulary. */}
             <Show
-              when={(data().tags ?? []).length > 0}
+              when={tags().length > 0}
               fallback={
                 <p class="mt-8 text-sm text-neutral-400">
                   No tags yet — create one above, or type <span class="font-medium">#</span> in any
@@ -157,7 +171,7 @@ export default function TagsPage(props: RouteProps<'/w/:workspaceId/tags'>) {
               }
             >
               <ul class="mt-4 flex flex-col gap-1.5">
-                <For each={data().tags}>
+                <For each={tags()}>
                   {(tag) => (
                     <li>
                       <a

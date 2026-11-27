@@ -21,10 +21,21 @@ const sql = (...statements: string[]): string =>
   );
 
 const canConnect = (() => {
+  // The skip must be VISIBLE, not silent: without host psql the whole
+  // suite is invisible, and a green run here is not a green run.
+  try {
+    execFileSync('psql', ['--version'], { stdio: 'ignore' });
+  } catch {
+    // vitest drops console output from fully-skipped files — a plain
+    // console.warn is INVISIBLE. stderr is not intercepted.
+    process.stderr.write('[db-guards] host psql not found — guard tests SKIP (invisible)\n');
+    return false;
+  }
   try {
     sql('select 1');
     return true;
   } catch {
+    console.warn('[db-guards] local stack unreachable at 127.0.0.1:54322 — guard tests SKIP');
     return false;
   }
 })();

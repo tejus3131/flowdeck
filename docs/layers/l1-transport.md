@@ -32,7 +32,14 @@ knows nothing about what the entities mean.
    bound only. A one-row change that emits `resync` is a bug (the canonical
    test).
 3. **Scope every subscription.** Unfiltered table subscriptions (the old
-   `tags` handler) are review blockers.
+   `tags` handler) are review blockers — with one named pattern: the
+   card-side join tables (`card_tags`, `card_assignees`, `card_comments`)
+   carry no `board_id` to filter by, so the board topic binds them
+   unfiltered and filters by the snapshot's card set at the fold (the
+   phase-4 digest). The cost is stated and accepted: the binding hears
+   comment activity on any visible card across the viewer's boards and
+   wakes the topic for an empty digest. A board column on those tables
+   (denormalized scope) would close it if the wake cost ever shows.
 4. **One connection per scope, reused** (performance-rules 4). Opening a
    panel subscribes to cached data; it never creates a channel.
 5. **Every topic carries the revision** so clients can ask "what changed
