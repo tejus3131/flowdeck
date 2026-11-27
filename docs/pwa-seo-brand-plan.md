@@ -18,7 +18,8 @@ One source of truth for the brand; the SEO document head built on it.
 1. `src/lib/brand.ts` — the typed brand config (schema in
    [`research/brand-and-legal.md`](./research/brand-and-legal.md)):
    `name`, `shortName`, `tagline`, `description`, `legalName`,
-   `contactEmail`, `url`, `themeColor`, `ogImage`, `social`. Reads
+   `contactEmail`, `url`, `themeColor`, `ogImage`, `social`,
+   `senderEmail` (drives `RESEND_FROM`). Reads
    `VITE_APP_NAME` as the override; server code (invite emails) imports
    the same constant.
    **Edge-function exception:** `supabase/functions/mcp/index.ts` is a
@@ -128,13 +129,14 @@ update flow never discarding queued edits.
 
 ## PR breakdown
 
-| PR               | Phase | Contents                                                                     |
-| ---------------- | ----- | ---------------------------------------------------------------------------- |
-| Brand foundation | 5     | `brand.ts`, string migration, grep guard, manifest from config               |
-| SEO shell        | 5     | head/meta/OG/canonicals, robots, sitemap, noindex middleware, JSON-LD, fonts |
-| Legal pages      | 5     | privacy, terms, contact; then subprocessors/DPA/security.txt                 |
-| Offline shell    | 6     | SW precache + navigation fallback + update flow                              |
-| Offline UX       | 6     | banner, watermarks, pending badges, persistence, install UX                  |
+| PR               | Phase | Contents                                                                                 |
+| ---------------- | ----- | ---------------------------------------------------------------------------------------- |
+| Brand foundation | 5     | `brand.ts`, string migration, grep guard, manifest from config                           |
+| SEO shell        | 5     | head/meta/OG/canonicals, robots, sitemap, `_headers`, noindex middleware, JSON-LD, fonts |
+| Legal pages      | 5     | privacy, terms, contact; then subprocessors/DPA/security.txt                             |
+| Data rights      | 5     | in-app export + delete-account flows, orphaned-workspace decision                        |
+| Offline shell    | 6     | SW precache + navigation fallback + update flow                                          |
+| Offline UX       | 6     | banner, watermarks, pending badges, persistence, install UX                              |
 
 Each PR: `pnpm preflight` green, one concern per commit, docs updated in
 the same commit. The SW PR needs a migration-style note (cache name
@@ -158,7 +160,8 @@ existing flag infrastructure to "verify in prod."
 
 ## Order of operations (the full pre-redesign sequence)
 
-1. Flags foundation (ADR-17 runtime — in flight on `feat/flags-typed-runtime`)
+1. Flags foundation (ADR-17 runtime — the typed flag boundary; merge
+   state tracked in the PR stack, not referenced by branch name here)
 2. Phase 5 (brand + SEO) — the redesign consumes `brand.ts` and the head
 3. Phase 6 (offline) — independent of 5, can interleave
 4. Shared UI foundation (tokens/primitives) → playground → redesign sprint
