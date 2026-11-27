@@ -31,9 +31,6 @@ let testOverride: FlagClient | null = null;
  *  the public env values — the server snapshot still resolves). */
 export function flagClient(): FlagClient | null {
   if (testOverride) return testOverride;
-  // No VITE_POSTHOG_HOST: the shared runtime (lib/telemetry.ts) talks to
-  // OUR origin — the worker's /ingest proxy forwards to PostHog
-  // (docs/posthog.md), past the ad-blocker lists that match *.posthog.com.
   if (isServer || !env.VITE_POSTHOG_KEY) return null;
   // The shared runtime (lib/telemetry.ts) owns the instance: it talks to
   // OUR origin under /ingest — the worker's allowlisted proxy forwards

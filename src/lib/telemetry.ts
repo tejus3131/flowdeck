@@ -42,10 +42,12 @@ export function telemetryRuntime(): TelemetryRuntime | null {
   if (!env.VITE_POSTHOG_KEY) return null;
   if (!instance) {
     posthog.init(env.VITE_POSTHOG_KEY, {
-      // Our own origin — the worker's /ingest proxy forwards to PostHog
-      // (docs/posthog.md), past the ad-blocker lists that match
-      // *.posthog.com. Server-side evaluation goes direct, not via us.
-      api_host: window.location.origin,
+      // Our own origin under /ingest — the worker's allowlisted proxy
+      // forwards to PostHog (docs/posthog.md), past the ad-blocker
+      // lists that match *.posthog.com. posthog-js appends its
+      // endpoint paths directly to api_host, so the /ingest prefix
+      // must be part of the host itself.
+      api_host: `${window.location.origin}/ingest`,
       // A SPA: pageviews ride the history API.
       capture_pageview: 'history_change',
       capture_pageleave: true,
@@ -190,8 +192,12 @@ function onPerfSample(label: string, duration: number, at: number): void {
 }
 
 /** cache_hit/cache_miss — one counter per (entity type, minute), never
- *  per read (taxonomy rule). Called from cache.ts on every get. */
+ *  per read (taxonomy rule). Called from cache.ts on every get. The
+ *  buckets are client-only shared state: cacheGet also runs server-side
+ *  (the cached streams' SSR pass), and a server-side Map that never
+ *  flushes would leak — so the server is a no-op here. */
 export function telemetryCacheAccess(key: string, hit: boolean, at: number): void {
+  if (isServer) return;
   const type = key.split(':')[0] ?? 'unknown';
   const minute = minuteOf(at);
   const bucket = cacheBuckets.get(type);

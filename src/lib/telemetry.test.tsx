@@ -3,7 +3,7 @@
 // reads) aggregate, flush once per (label/type, minute), and never send
 // per-sample. Behavior events fire once per durable action (the engine
 // contract) with bounded, no-PII properties.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   __flushTelemetryForTests,
@@ -21,6 +21,7 @@ import {
   telemetryCacheAccess,
   type TelemetryRuntime,
 } from './telemetry';
+import { perfEnd, perfStart } from './perf';
 import { createRoot, flush } from 'solid-js';
 import { createEngine, type OpSpec } from './sync';
 
@@ -203,6 +204,34 @@ describe('cache counters (cache_hit / cache_miss)', () => {
 describe('startTelemetry', () => {
   it('is a no-op without a runtime (dev, SSR)', () => {
     expect(startTelemetry()).toBeNull();
+  });
+
+  it('wires the perf sink through the real record path — teardown unwires it', () => {
+    vi.useFakeTimers();
+    let teardown: (() => void) | null = null;
+    try {
+      const { runtime, captured } = fakeRuntime();
+      setTelemetryRuntimeForTests(runtime);
+      teardown = startTelemetry();
+      expect(teardown).not.toBeNull();
+      // The REAL record() call an open path makes — the wired sink (not
+      // a test seam) must receive it and land it in the buckets.
+      perfEnd('board-open', perfStart('board-open')!);
+      vi.advanceTimersByTime(61_000); // the bucket completes
+      __flushTelemetryForTests();
+      expect(captured).toHaveLength(1);
+      expect(captured[0]!.event).toBe('page_open');
+      // Teardown removes the sink: samples after it never reach PostHog.
+      teardown!();
+      teardown = null;
+      perfEnd('board-open', perfStart('board-open')!);
+      vi.advanceTimersByTime(61_000);
+      __flushTelemetryForTests();
+      expect(captured).toHaveLength(1);
+    } finally {
+      teardown?.();
+      vi.useRealTimers();
+    }
   });
 });
 
