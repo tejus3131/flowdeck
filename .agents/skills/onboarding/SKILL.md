@@ -61,7 +61,9 @@ read-order below puts `ui-data.md` before any view work.
 7. `docs/ci-cd.md` — branch model (`feat/*` → PR → `preview` → release PR
    → `main`), the deploy legs, the release records, the secrets/vars split.
 8. `docs/performance-rules.md` and `docs/observability.md` — the budgets
-   and the event taxonomy.
+   and the event taxonomy. The behavioral layer — what humans do with the
+   product, and how a number becomes a decision — lives in
+   `docs/data-playbook.md`.
 
 ## 3. Verify the environment actually works
 
