@@ -8,6 +8,7 @@ import { createEffect, createMemo } from 'solid-js';
 
 import type { MeProfile } from '../lib/auth';
 import { syncFlagClient, type FlagSyncState } from '../lib/flags/client';
+import { FLAGS } from '../lib/flags/registry';
 import { getMyWorkspaces } from '../lib/workspaces';
 
 export function FlagSync(props: { me: () => MeProfile | null }) {
@@ -30,7 +31,11 @@ export function FlagSync(props: { me: () => MeProfile | null }) {
       // already resolved this exact state.
       if (
         prev !== undefined &&
-        (prev.userId !== next.userId || prev.workspaceId !== next.workspaceId)
+        (prev.userId !== next.userId || prev.workspaceId !== next.workspaceId) &&
+        // No-op while the registry is empty — there is no flag whose
+        // value could have changed, so don't pay a server round-trip.
+        // Self-heals: the first registered flag arms this path again.
+        Object.keys(FLAGS).length > 0
       ) {
         revalidate('flags');
       }

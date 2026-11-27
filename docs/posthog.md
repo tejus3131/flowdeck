@@ -114,13 +114,27 @@ redesign's release flags arrive with the first redesigned surface.
 ## The first-party ingest proxy
 
 The browser SDK points at **our own origin** (`api_host` =
-`window.location.origin`), and the worker's middleware forwards the
-SDK's `/ingest/*` (capture, flag decide, replays) and `/static/*`
-(recorder assets) paths to `POSTHOG_HOST` — the same dumb-pipe proxy
-PostHog documents for Cloudflare Workers. Why: most ad blockers match
-`*.posthog.com` by default, so direct delivery silently loses data;
-a same-domain path beats those lists (not every list — generic
-`/ingest` patterns exist — but the big win is first-party delivery).
+`window.location.origin` + the `/ingest` path prefix), and the worker's
+middleware forwards ONLY the SDK's known endpoint families to
+`POSTHOG_HOST` — event ingest (`e`), `batch`, `decide`, client flag
+evaluation (`flags`), session recording (`s`), the v1 ingest API
+(`i/v0`), `surveys`, `trackers`, and the `/static/*` loader assets.
+Why: most ad blockers match `*.posthog.com` by default, so direct
+delivery silently loses data; a same-domain path beats those lists
+(not every list — generic `/ingest` patterns exist — but the big win is
+first-party delivery).
+
+The leg is deliberately not a dumb pipe, for two session-safety and
+hygiene reasons:
+
+- **Nothing browser-sent reaches upstream except Content-Type.** The
+  browser sends these requests with the app's own cookies (the Supabase
+  session JWT among them) and auth headers; the proxy drops all of
+  them, and strips any upstream `Set-Cookie` from the response —
+  PostHog never reads our credentials nor writes cookies on our origin.
+- **It is not a generic relay.** An unmatched `/ingest/*` path is a 404,
+  and a best-effort per-isolate rate limit (120 req/min/IP) caps abusive
+  clients; Cloudflare's edge remains the global backstop.
 
 Cost: **$0 at our scale** — the Workers free tier allows 100k
 requests/day, far above our traffic; even outgrowing it would mean the
@@ -135,6 +149,11 @@ forwarding is free. Server-side evaluation does NOT ride the proxy
 | `VITE_POSTHOG_KEY` | GitHub environment variable (`preview` and `production` — same value, one project)                                      | public by design                |
 | `POSTHOG_HOST`     | `wrangler.jsonc` vars (both environments)                                                                               | public                          |
 | `POSTHOG_KEY`      | `wrangler secret put POSTHOG_KEY` (per env) — publishable value, kept out of the repo like the Supabase publishable key | public-by-design, repo-external |
+
+`VITE_POSTHOG_KEY` and `POSTHOG_KEY` hold the SAME project token and
+MUST match — one is the build-baked copy for the browser SDK, the other
+the worker secret for server-side evaluation. A mismatch shows up as
+flags resolving to fallbacks on one side only.
 
 Absent values are a supported state (local dev, PR builds): the client
 SDK no-ops and flag evaluation resolves declared fallbacks — nothing

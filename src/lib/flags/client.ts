@@ -34,11 +34,13 @@ export function flagClient(): FlagClient | null {
   if (isServer || !env.VITE_POSTHOG_KEY) return null;
   if (!instance) {
     posthog.init(env.VITE_POSTHOG_KEY, {
-      // First-party: the SDK talks to OUR origin — the worker's
-      // /ingest proxy forwards to PostHog (docs/posthog.md) — so
-      // telemetry rides a same-domain path past the ad-blocker
-      // blocklists that match *.posthog.com.
-      api_host: window.location.origin,
+      // First-party: the SDK talks to OUR origin under /ingest — the
+      // worker's proxy forwards that allowlisted endpoint family to
+      // PostHog (docs/posthog.md) — so requests ride a same-domain
+      // path past the ad-blocker blocklists that match *.posthog.com.
+      // posthog-js appends its endpoint paths directly to api_host,
+      // so the /ingest prefix must be part of the host itself.
+      api_host: `${window.location.origin}/ingest`,
       // Flags only: this PR must not start sending telemetry anywhere.
       // The sink PR enables capture with the privacy config (masking,
       // replay sampling) decided there.
