@@ -105,6 +105,21 @@ store wins forever.
 const label = entities.tagById(item.id)?.name ?? item.name ?? 'tag';
 ```
 
+## URL state — what belongs where
+
+Three homes for state, one each:
+
+- **The URL** carries shareable open-state only — which card is open in
+  the drawer (a deep link someone can paste). Nothing else.
+- **The store** carries entities.
+- **View-local signals** carry the rest: hover, drag in flight, transient
+  UI. None of it is shareable, so none of it is addressable.
+
+A card id in the URL is a pointer, not a copy: the drawer resolves it
+through the same selector at render time (rule 1), so a renamed or moved
+card updates the open drawer in one frame, and a stale URL resolves to
+nothing instead of a frozen snapshot.
+
 ## Adding an entity to the store
 
 New UI must never read a snapshot slice — so if the entity it needs is not
