@@ -33,7 +33,16 @@ same PostHog stream.
 telemetry — deliberately, because the six phases were engineering work.
 The redesign's success metric is behavioral, so the behavior layer below
 lands with the PostHog foundation PR and rides the same PRs as the UI
-work it measures.
+work it measures — as its **own commits**. Instrumentation is never
+smuggled into a UI commit; each commit still does one thing, and a UI
+revert must not have to untangle a tracking change to revert cleanly.
+
+**The pre-redesign baseline.** A before/after claim needs a before. The
+PostHog foundation PR lands **before the first redesign PR merges**, then
+runs long enough to accumulate a baseline of the North Star and its
+input metrics — that frozen window is what every redesign result
+compares against. Skipping it means the redesign gets judged by vibes,
+which is the failure mode this playbook exists to prevent.
 
 **The honesty rule.** Telemetry tells us _what_, never _why_ and never
 _whether users like it_. "Like" is inferred, never captured:
@@ -106,6 +115,14 @@ Backend-captured where possible (ad blockers, accuracy); frontend for
 interaction journeys where partial data is acceptable. Version events
 (`_v2`) instead of mutating meaning — historical comparability is worth
 more than a tidy name.
+
+**Provisional until the surfaces exist.** Affordance-dependent events
+(`composer_abandoned`, `undo_used`, `pref_changed`) are confirmed,
+renamed, or dropped when the redesign fixes what those affordances
+actually are. The foundation PR implements the stable core
+(`card_created`, `card_completed`, `chat_message_sent`,
+`teammate_invited`); the rest follow the redesigned surfaces, one PR
+behind them.
 
 ## What we deliberately do not track
 
