@@ -958,6 +958,24 @@ function oauthDiscovery(pathname: string): Response | null {
   return null;
 }
 
+/** The consent-code row. The edge function's client is untyped (no
+ *  generated database types on Deno), so the row shape is declared here
+ *  — it mirrors the mcp_auth_codes migration and is asserted at the
+ *  single read below. */
+type McpAuthCode = {
+  id: string;
+  user_id: string;
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  expires_at: string;
+  used_at: string | null;
+  workspace_scope: string[] | null;
+  allowed_ops: string[] | null;
+  workspace_ops: Record<string, string[]> | null;
+  connection_name: string | null;
+};
+
 /** POST /token — the authorization_code + PKCE exchange. Single-use
  * codes, 10-minute TTL, redirect_uri and client_id must match, and the
  * minted credential is a normal api_tokens PAT (shared revocation and
@@ -988,11 +1006,12 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_request', 'code, code_verifier, client_id and redirect_uri are required');
   }
 
-  const { data: stored } = await service
+  const { data: storedData } = await service
     .from('mcp_auth_codes')
     .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops, workspace_ops, connection_name')
     .eq('code_hash', await sha256Hex(code))
     .maybeSingle();
+  const stored = storedData as McpAuthCode | null;
   if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
     return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
   }
@@ -1003,10 +1022,12 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_grant', 'PKCE verification failed');
   }
 
-  // Single-use: claim the code; a racing exchange finds nothing.
+  // Single-use: claim the code; a racing exchange finds nothing. The
+  // payload casts ride the untyped client (its builder types rows as
+  // `never`); the row type above owns the shape.
   const { data: claimed } = await service
     .from('mcp_auth_codes')
-    .update({ used_at: new Date().toISOString() })
+    .update({ used_at: new Date().toISOString() } as never)
     .eq('id', stored.id)
     .is('used_at', null)
     .select('id')
@@ -1027,7 +1048,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     workspace_scope: stored.workspace_scope ?? null,
     allowed_ops: stored.allowed_ops ?? null,
     workspace_ops: stored.workspace_ops ?? null,
-  });
+  } as never);
   if (insertError) {
     return oauthError(500, 'server_error', 'could not mint the token');
   }
@@ -1036,6 +1057,57 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     200,
     { 'Cache-Control': 'no-store' },
   );
+}
+
+// Telemetry: the taxonomy's mcp_tool_call event (docs/observability.md).
+// POSTs to PostHog's public /capture endpoint with the token owner's
+// user UUID as the distinct id; the properties are ids, timings, and
+// counts only — never tool args (no user content leaves the server).
+// Absent env config (local dev, a project without telemetry) skips the
+// capture entirely. A short timeout bounds the latency a tool call can
+// inherit, and a capture failure is swallowed — telemetry must never
+// fail an agent's op.
+const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST');
+const POSTHOG_KEY = Deno.env.get('POSTHOG_KEY');
+const APP_ENV = Deno.env.get('APP_ENV') ?? 'local';
+
+async function captureToolCall(input: {
+  tool: string;
+  op: string;
+  workspaceIds: string[];
+  ms: number;
+  ok: boolean;
+  rows: number | null;
+  distinctId: string;
+}): Promise<void> {
+  if (!POSTHOG_HOST || !POSTHOG_KEY) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1000);
+  try {
+    await fetch(`${POSTHOG_HOST.replace(/\/+$/, '')}/capture/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        api_key: POSTHOG_KEY,
+        event: 'mcp_tool_call',
+        distinct_id: input.distinctId,
+        properties: {
+          tool: input.tool,
+          op: input.op,
+          workspace_id: input.workspaceIds.length === 1 ? input.workspaceIds[0]! : null,
+          ms: input.ms,
+          ok: input.ok,
+          rows: input.rows,
+          app_environment: APP_ENV,
+        },
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    // Swallowed by design — see above.
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 Deno.serve(async (request) => {
@@ -1073,7 +1145,10 @@ Deno.serve(async (request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } },
     );
-    return oauthTokenExchange(request, service);
+    // The cast aligns the inferred client instantiation with the
+    // declaration's ReturnType (the pinned supabase-js types infer
+    // different generics at the two sites).
+    return oauthTokenExchange(request, service as ReturnType<typeof createClient>);
   }
   // Streamable HTTP: this server only answers client POSTs.
   if (request.method !== 'POST') {
@@ -1206,6 +1281,7 @@ Deno.serve(async (request) => {
           isError: true,
         });
       }
+      const toolStartedAt = Date.now();
       const { data, error } = await service.rpc('mcp_exec', {
         p_user_id: tokenRow.user_id,
         p_op: tool.op,
@@ -1213,6 +1289,23 @@ Deno.serve(async (request) => {
         // The connection's workspace boundary (null = account-wide).
         p_workspace_ids: scopeOf(tokenRow.workspace_ops, tokenRow.workspace_scope),
         p_ws_ops: tokenRow.workspace_ops ?? null,
+      });
+      // The taxonomy's mcp_tool_call — agent actions are part of the
+      // North Star. Absent env values simply skip the capture; the
+      // short internal timeout bounds what a tool call can inherit.
+      // Fire-and-forget: a slow or failed capture must never add
+      // latency to the agent's op (the internal timeout only bounds the
+      // fetch, not the await — void drops the promise entirely).
+      void captureToolCall({
+        tool: name,
+        op: tool.op,
+        workspaceIds: tokenRow.workspace_ops ? Object.keys(tokenRow.workspace_ops) : [],
+        ms: Date.now() - toolStartedAt,
+        ok: !error && (data as { ok?: boolean } | null)?.ok === true,
+        rows: Array.isArray((data as { data?: unknown } | null)?.data)
+          ? ((data as { data: unknown[] }).data.length as number)
+          : null,
+        distinctId: tokenRow.user_id,
       });
       const result = (data ?? {}) as { ok?: boolean; data?: unknown };
       if (error || result.ok !== true) {

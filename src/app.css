@@ -1,10 +1,86 @@
 @import 'tailwindcss';
 
+/* The frozen token layer (ADR-16) — raw --fd-* semantics; the @theme
+   inline block below maps them into Tailwind utilities. */
+@import './styles/tokens.css';
+
 /* Class-based dark mode: the theme lives in the database (profiles.theme),
    applied to <html> server-side from a mirror cookie plus an inline head
    script, so there is no flash and the choice follows the user across
    devices via realtime. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind reads the SAME custom properties the components read (L5:
+   tokens are CSS custom properties that Tailwind 4 reads via @theme).
+   `inline` makes each utility emit the var() reference directly, so the
+   .dark and [data-gray] runtime overrides flow through every utility. */
+@theme inline {
+  --font-fd: var(--fd-font);
+  --font-fd-mono: var(--fd-mono);
+
+  --color-fd-bg: var(--fd-bg);
+  --color-fd-bg-1: var(--fd-bg-1);
+  --color-fd-bg-2: var(--fd-bg-2);
+  --color-fd-line: var(--fd-line);
+  --color-fd-text: var(--fd-text);
+  --color-fd-text-2: var(--fd-text-2);
+  --color-fd-text-3: var(--fd-text-3);
+  --color-fd-accent: var(--fd-accent);
+  --color-fd-accent-hover: var(--fd-accent-hover);
+  --color-fd-accent-tint: var(--fd-accent-tint);
+  --color-fd-danger: var(--fd-danger);
+  --color-fd-success: var(--fd-success);
+  --color-fd-tag-1: var(--fd-tag-1);
+  --color-fd-tag-2: var(--fd-tag-2);
+  --color-fd-tag-3: var(--fd-tag-3);
+  --color-fd-tag-4: var(--fd-tag-4);
+  --color-fd-tag-5: var(--fd-tag-5);
+  --color-fd-tag-6: var(--fd-tag-6);
+  --color-fd-tag-7: var(--fd-tag-7);
+  --color-fd-tag-8: var(--fd-tag-8);
+
+  --radius-fd-sm: var(--fd-radius-sm);
+  --radius-fd-md: var(--fd-radius-md);
+  --radius-fd-lg: var(--fd-radius-lg);
+  --radius-fd-full: var(--fd-radius-full);
+
+  --shadow-fd-1: var(--fd-shadow-1);
+  --shadow-fd-2: var(--fd-shadow-2);
+
+  --ease-fd-out: var(--fd-ease-out);
+  --ease-fd-panel: var(--fd-ease-panel);
+  --ease-fd-move: var(--fd-ease-move);
+  --ease-fd-drop: var(--fd-ease-drop);
+  --ease-fd-spring: var(--fd-ease-spring);
+
+  /* Spacing and motion durations ride the frozen grid too: the -fd-*
+     names give utilities (p-fd-2, duration-fd-1) that read the same
+     custom properties. Micro-spacing below the grid (≤ 2px, e.g. a
+     badge's vertical inset) is the one documented exception — it rides
+     Tailwind's default scale (docs/design-system.md, spacing). */
+  --spacing-fd-1: var(--fd-space-1);
+  --spacing-fd-2: var(--fd-space-2);
+  --spacing-fd-3: var(--fd-space-3);
+  --spacing-fd-4: var(--fd-space-4);
+  --spacing-fd-5: var(--fd-space-5);
+  --spacing-fd-6: var(--fd-space-6);
+
+  --transition-duration-fd-1: var(--fd-dur-1);
+  --transition-duration-fd-2: var(--fd-dur-2);
+  --transition-duration-fd-3: var(--fd-dur-3);
+
+  /* The type scale carries its line-heights (the frozen table) */
+  --text-fd-xs: var(--fd-text-xs-size);
+  --text-fd-xs--line-height: var(--fd-text-xs-lh);
+  --text-fd-sm: var(--fd-text-sm-size);
+  --text-fd-sm--line-height: var(--fd-text-sm-lh);
+  --text-fd-base: var(--fd-text-base-size);
+  --text-fd-base--line-height: var(--fd-text-base-lh);
+  --text-fd-lg: var(--fd-text-lg-size);
+  --text-fd-lg--line-height: var(--fd-text-lg-lh);
+  --text-fd-xl: var(--fd-text-xl-size);
+  --text-fd-xl--line-height: var(--fd-text-xl-lh);
+}
 
 /* Flowdeck design tokens & base. Native form controls and scrollbars match
    the active theme; every interactive element gets explicit colors (the
@@ -18,6 +94,9 @@
 }
 
 body {
+  /* The frozen type token: one family (Inter variable) for everything
+     (docs/design-system.md — Typography). */
+  font-family: var(--fd-font);
   @apply bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
 }
 

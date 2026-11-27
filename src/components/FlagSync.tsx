@@ -4,17 +4,27 @@
 // `flag()` re-reads against the new context. Mirrors ThemeSync's shape:
 // a client-only null renderer mounted once in App.
 import { revalidate } from '@solidjs/router';
-import { createEffect, createMemo } from 'solid-js';
+import { createEffect, createMemo, onSettled } from 'solid-js';
 
 import type { MeProfile } from '../lib/auth';
 import { syncFlagClient, type FlagSyncState } from '../lib/flags/client';
 import { FLAGS } from '../lib/flags/registry';
+import { setAuthStateForTelemetry, startTelemetry } from '../lib/telemetry';
 import { getMyWorkspaces } from '../lib/workspaces';
 
 export function FlagSync(props: { me: () => MeProfile | null }) {
   // The same request-scoped query WorkspaceSwitcher reads — no extra
   // fetch, and the workspace list is already serialized for hydration.
   const workspaces = createMemo(() => getMyWorkspaces());
+
+  // The telemetry sinks (perf marks + cache counters → minute buckets)
+  // start once per app load; FlagSync owns their teardown, and the
+  // auth-state accessor rides the same identity lifecycle as the flags.
+  onSettled(() => {
+    setAuthStateForTelemetry(() => !!props.me());
+    // null = no client runtime (dev, SSR): nothing to tear down.
+    return startTelemetry() ?? undefined;
+  });
 
   const state = (): FlagSyncState => ({
     userId: props.me()?.id ?? null,

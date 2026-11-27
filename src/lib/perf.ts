@@ -28,6 +28,15 @@ function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
+/** The telemetry sink's mark tap: one call per recorded sample. Set by
+ *  lib/telemetry.ts on the client (minute buckets → page_open/panel_open
+ *  counters); null in dev, SSR, and tests. */
+export type PerfSink = (label: string, duration: number, at: number) => void;
+let sink: PerfSink | null = null;
+export function setPerfSink(next: PerfSink | null): void {
+  sink = next;
+}
+
 function record(label: string, duration: number): void {
   let list = samples.get(label);
   if (!list) {
@@ -36,6 +45,13 @@ function record(label: string, duration: number): void {
   }
   list.push(duration);
   if (list.length > MAX_PER_LABEL) list.shift();
+  if (sink) {
+    try {
+      sink(label, duration, Date.now());
+    } catch {
+      // Telemetry must never take an open path down with it.
+    }
+  }
 }
 
 /** Ownership token for an open mark — only its holder's end records. */

@@ -7,6 +7,15 @@ elevation, spring, type density — resolve through the variants defined in
 [`design-playground.md`](./design-playground.md). Changes to this file are
 ADR-grade: they reopen decisions, so they get a line in `docs/adr.md` too.
 
+**Implemented:** the values below are real — `src/styles/tokens.css`
+carries them as `--fd-*` custom properties (light, dark, and the
+`[data-gray="cool"]` P1-B swap), `src/app.css` maps them into Tailwind's
+theme (`bg-fd-bg`, `text-fd-sm`, `rounded-fd-md`… read the same
+variables), and `src/components/ui/` holds the shared primitives that
+consume them. Production surfaces and the playground import those
+primitives; the P-variants render by flipping data attributes, not by
+copying values.
+
 ## Color
 
 Built in OKLCH (Tailwind 4 native; Stripe's finding: HSL lightness is
@@ -47,6 +56,7 @@ by feel becomes the default and the other stays as a one-token swap.
   --fd-text-2: oklch(0.72 0.005 260); /* secondary */
   --fd-text-3: oklch(0.56 0.005 260); /* placeholders, timestamps */
   --fd-accent: oklch(0.68 0.19 275); /* lighter for dark-bg contrast */
+  --fd-accent-hover: oklch(0.72 0.19 275);
   --fd-accent-tint: oklch(0.3 0.06 275); /* selected rows, focus wells */
   --fd-danger: oklch(0.7 0.19 25);
   --fd-success: oklch(0.72 0.15 150);
@@ -87,16 +97,16 @@ Danger/success appear only in their semantic roles.
 One family: **Inter** (variable). Notion's calm is one-font + 1.5
 line-height + a reading measure; we inherit all three.
 
-| Token            | Value                                     | Use                                           |
-| ---------------- | ----------------------------------------- | --------------------------------------------- |
-| `--fd-font`      | `Inter, -apple-system, sans-serif`        | everything                                    |
-| `--fd-text-xs`   | 11px / 1.45                               | badges, timestamps                            |
-| `--fd-text-sm`   | 13px / 1.5                                | card titles, body default (P4 tests 13 vs 14) |
-| `--fd-text-base` | 14px / 1.5                                | drawer body, chat messages                    |
-| `--fd-text-lg`   | 16px / 1.4                                | drawer title, section heads                   |
-| `--fd-text-xl`   | 20px / 1.3                                | page titles                                   |
-| `--fd-measure`   | 708px                                     | description/comment reading width             |
-| `--fd-mono`      | `ui-monospace, SFMono-Regular, monospace` | code chips                                    |
+| Token            | Value                                                | Use                                           |
+| ---------------- | ---------------------------------------------------- | --------------------------------------------- |
+| `--fd-font`      | `'Inter Variable', Inter, -apple-system, sans-serif` | everything                                    |
+| `--fd-text-xs`   | 11px / 1.45                                          | badges, timestamps                            |
+| `--fd-text-sm`   | 13px / 1.5                                           | card titles, body default (P4 tests 13 vs 14) |
+| `--fd-text-base` | 14px / 1.5                                           | drawer body, chat messages                    |
+| `--fd-text-lg`   | 16px / 1.4                                           | drawer title, section heads                   |
+| `--fd-text-xl`   | 20px / 1.3                                           | page titles                                   |
+| `--fd-measure`   | 708px                                                | description/comment reading width             |
+| `--fd-mono`      | `ui-monospace, SFMono-Regular, monospace`            | code chips                                    |
 
 Weights: 400 body, 500 emphasis/labels, 600 titles. No 700 — Inter at
 600 reads bold enough and stays calm.
@@ -122,6 +132,13 @@ before any component adopts them.
 --fd-radius-lg: 14px; /* drawer, modals */
 --fd-radius-full: 999px; /* avatars, pills */
 ```
+
+Tailwind carries the grid as `p-fd-1…6` / `gap-fd-*` / `m-fd-*`
+utilities (`--spacing-fd-*` in `app.css`'s `@theme`), so the same custom
+properties drive every spacing utility. Micro-spacing below the grid —
+a badge's 2px vertical inset is the current example — is the one
+deliberate exception: it rides Tailwind's default scale rather than
+inventing a token for a sub-grid value.
 
 ## Motion
 
@@ -160,6 +177,9 @@ Two levels only (Linear's "felt not seen"):
 
 Flat vs elevated cards is the P2 experiment; both use these two shadows.
 
+Tailwind carries the budget as `duration-fd-1…3` / `ease-fd-*`
+utilities (`--duration-fd-*` in `app.css`'s `@theme`).
+
 ## Component tokens (the contract)
 
 Components read tokens; they never hardcode. The checklist a new
@@ -173,3 +193,20 @@ Two sources of truth, no overlap: this file owns how a component
 component that hardcodes a color violates the token freeze; a component
 that threads an entity name from a prop violates the store rule. Both
 are review blockers.
+
+Two values in the current primitives are named, documented exceptions
+rather than tokens — both are ratios without a second consumer yet; the
+first second consumer tokenizes them here first:
+
+- the danger button's hover is `opacity-90` (a darken of `--fd-danger`
+  by 10%, not a new color);
+- the badge's tinted fill is `color-mix(… 18%, transparent)` of its hue
+  token — the 18% alpha is the chip-fill recipe, one value serving all
+  eight hues.
+
+**Known follow-ups** (pre-existing, tracked here so the freeze has an
+owner): raw hex values still live in `Document.tsx`, `presence.ts`, and
+`workspaces.ts`'s email HTML; `app.css` still carries pre-existing
+`@apply` layers that bypass tokens (one duplicates the Input
+primitive's style); `--fd-measure` has no consumer yet. Each becomes a
+token-consumption PR of its own — none ship new values.

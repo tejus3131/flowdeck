@@ -43,6 +43,7 @@ import {
   setTeamMemberRole,
 } from '../../../lib/teams';
 import { errorMessage } from '../../../lib/error-message';
+import { captureTeammateInvited } from '../../../lib/telemetry';
 import { cachedStream, cachePut } from '../../../lib/cache';
 import { perfFirstValue } from '../../../lib/perf';
 
@@ -229,6 +230,9 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
         role,
       });
       setInviteEmail('');
+      // The invite is server-confirmed here (the aha-candidate event):
+      // teammate_invited, with the channel that actually delivered it.
+      captureTeammateInvited({ channel: result.emailed ? 'email' : 'link' });
       // Relay-after-ack: the server minted the invite's id + token, so
       // the payload can only exist post-response. Everyone (self
       // included) applies it as a provisional the echo retires.

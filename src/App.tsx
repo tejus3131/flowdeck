@@ -15,6 +15,8 @@ import { PerfPanel } from './components/PerfPanel';
 import { perfActive } from './lib/perf';
 import { cachePersist, cacheSetUser } from './lib/cache';
 import { EntityContext, createEntityStore } from './lib/entity-store';
+// The frozen type token's face (docs/design-system.md — one family).
+import '@fontsource-variable/inter';
 import './app.css';
 
 export default function App() {

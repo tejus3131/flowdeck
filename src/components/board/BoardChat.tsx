@@ -37,6 +37,7 @@ import {
   type BlockedTeam,
 } from '../../lib/access';
 import { errorMessage } from '../../lib/error-message';
+import { captureChatMessageSent } from '../../lib/telemetry';
 
 /**
  * The board-level chat — the card drawer's comment experience, lifted to
@@ -298,6 +299,9 @@ export function BoardChat(props: {
         );
       },
       send: () => postBoardMessage(props.boardId, body, clientOp),
+      // The board chat's behavior event (a card comment is a different
+      // surface; the board chat is the collaboration pulse).
+      telemetry: () => captureChatMessageSent({ boardId: props.boardId, length: body.length }),
       echo: (durable) => durable.list.some((row) => row.client_op === clientOp),
     });
     checkBlocked(body);

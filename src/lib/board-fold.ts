@@ -59,8 +59,11 @@ export type FoldEvent =
   /** board_revisions UPDATE — the exact server cursor (migration 0032). */
   | { kind: 'revision'; value: number }
   /** A visibility-shaping change (board_access, board_team_access, team
-   *  members, the tag vocabulary): only a full re-snapshot is correct. */
-  | { kind: 'resync' };
+   *  members, the tag vocabulary, a deleted board): only a full
+   *  re-snapshot is correct. The trigger rides along for the
+   *  sync_resync telemetry — the taxonomy's answer to "why did the
+   *  canonical test resync". */
+  | { kind: 'resync'; trigger?: 'access' | 'board-delete' | 'vocabulary' };
 
 /** A debounced burst, planned: what the fold does with it. */
 export type FoldPlan = {
@@ -82,6 +85,8 @@ export type FoldPlan = {
   revision: number;
   /** True when only a full re-snapshot answers the burst. */
   resync: boolean;
+  /** The first resync trigger in the burst (the telemetry property). */
+  resyncTrigger?: 'access' | 'board-delete' | 'vocabulary';
 };
 
 /** Plan a batch: dedupe touches against deletes, keep the max revision.
@@ -150,6 +155,7 @@ export function planFold(events: FoldEvent[]): FoldPlan {
         break;
       case 'resync':
         plan.resync = true;
+        if (event.trigger) plan.resyncTrigger ??= event.trigger;
         break;
     }
   }
