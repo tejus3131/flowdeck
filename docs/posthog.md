@@ -108,13 +108,30 @@ and the PostHog flag's description (for dashboard visibility):
 | ------------------- | ------- | ---------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
 | `playground-access` | boolean | permission | deny     | Developer preview cohort (`/playground/*`), exact UUID conditions. Fallback denies; route returns the normal 404. |
 
+## The first-party ingest proxy
+
+The browser SDK points at **our own origin** (`api_host` =
+`window.location.origin`), and the worker's middleware forwards the
+SDK's `/ingest/*` (capture, flag decide, replays) and `/static/*`
+(recorder assets) paths to `POSTHOG_HOST` — the same dumb-pipe proxy
+PostHog documents for Cloudflare Workers. Why: most ad blockers match
+`*.posthog.com` by default, so direct delivery silently loses data;
+a same-domain path beats those lists (not every list — generic
+`/ingest` patterns exist — but the big win is first-party delivery).
+
+Cost: **$0 at our scale** — the Workers free tier allows 100k
+requests/day, far above our traffic; even outgrowing it would mean the
+$5/mo plan's 10M/mo. Cloudflare charges no egress bandwidth, so
+forwarding is free. Server-side evaluation does NOT ride the proxy
+(`POSTHOG_HOST` direct from the worker — servers have no blockers).
+
 ## Runtime wiring (where the values live)
 
-| Variable                                | Where                                                                                                                   | Visibility                      |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `VITE_POSTHOG_HOST`, `VITE_POSTHOG_KEY` | GitHub environment variables (`preview` and `production` — same values, one project)                                    | public by design                |
-| `POSTHOG_HOST`                          | `wrangler.jsonc` vars (both environments)                                                                               | public                          |
-| `POSTHOG_KEY`                           | `wrangler secret put POSTHOG_KEY` (per env) — publishable value, kept out of the repo like the Supabase publishable key | public-by-design, repo-external |
+| Variable           | Where                                                                                                                   | Visibility                      |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `VITE_POSTHOG_KEY` | GitHub environment variable (`preview` and `production` — same value, one project)                                      | public by design                |
+| `POSTHOG_HOST`     | `wrangler.jsonc` vars (both environments)                                                                               | public                          |
+| `POSTHOG_KEY`      | `wrangler secret put POSTHOG_KEY` (per env) — publishable value, kept out of the repo like the Supabase publishable key | public-by-design, repo-external |
 
 Absent values are a supported state (local dev, PR builds): the client
 SDK no-ops and flag evaluation resolves declared fallbacks — nothing

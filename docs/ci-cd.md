@@ -208,8 +208,9 @@ Repo-level **variables** (scheduled workflows run outside environments):
 values for the keep-alive pings.
 
 **PostHog (one project, both environments — [posthog.md](./posthog.md)):**
-`VITE_POSTHOG_HOST` + `VITE_POSTHOG_KEY` as environment variables on
-`preview` and `production` (the deploy workflows pass them to the build);
+`VITE_POSTHOG_KEY` as an environment variable on `preview` and
+`production` (the deploy workflows pass it to the build; the SDK talks to
+our own origin — the worker's /ingest proxy forwards to PostHog);
 `POSTHOG_HOST` rides `wrangler.jsonc` vars, `POSTHOG_KEY` is a wrangler
 secret per env (public-by-design value, kept out of the repo).
 

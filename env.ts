@@ -54,12 +54,11 @@ export default {
     // gracefully no-op (e.g. a build without presence).
     VITE_SUPABASE_URL: v.optional(v.pipe(v.string(), v.url())),
     VITE_SUPABASE_PUBLISHABLE_KEY: v.optional(v.pipe(v.string(), v.minLength(20))),
-    // PostHog Cloud host + public project token for the browser flag
-    // runtime (identify + workspace person-property override lifecycle).
-    // Both publishable; absent (local dev, PR builds) → the client SDK
-    // no-ops and the server snapshot still resolves flags. See
-    // docs/posthog.md.
-    VITE_POSTHOG_HOST: v.optional(v.pipe(v.string(), v.url())),
+    // The PostHog public project token for the browser runtime. The SDK
+    // talks to OUR origin (the worker's /ingest proxy forwards to
+    // PostHog — docs/posthog.md), so no client host var exists.
+    // Publishable; absent (local dev, PR builds) → the client SDK
+    // no-ops and the server snapshot still resolves flags.
     VITE_POSTHOG_KEY: v.optional(v.pipe(v.string(), v.minLength(20))),
   },
 };

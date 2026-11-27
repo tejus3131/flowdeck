@@ -11,9 +11,29 @@
 import type { StartMiddleware } from '@solidjs/vite-plugin';
 import { createAPIHandler } from 'filesystem-routing/api';
 import routes from 'virtual:file-routes';
+import { env } from 'virtual:solid-env/server';
+
+// The first-party PostHog proxy (docs/posthog.md): the browser SDK points
+// at OUR origin, and this leg forwards the SDK's /ingest/* (capture,
+// flags, replays) and /static/* (recorder assets) paths to PostHog —
+// a same-domain path beats the ad-blocker blocklists that match
+// *.posthog.com. A dumb pipe: no header or body munging, and a failed
+// upstream surfaces the upstream's own response.
+const POSTHOG_UPSTREAM = env.POSTHOG_HOST ?? 'https://us.i.posthog.com';
+
+const posthogProxy: StartMiddleware = async (event, next) => {
+  const url = new URL(event.request.url);
+  const proxied =
+    url.pathname === '/ingest' ||
+    url.pathname.startsWith('/ingest/') ||
+    url.pathname.startsWith('/static/');
+  if (!proxied) return next();
+  const target = new URL(url.pathname + url.search, POSTHOG_UPSTREAM);
+  return fetch(new Request(target, event.request));
+};
 
 // createAPIHandler serves the GET/POST/... exports of route modules
 // (see src/routes/api) and passes everything else down the chain. It takes
 // the request event directly and hands that same event to the handler, with
 // the matched params written onto it.
-export default [createAPIHandler(routes)] satisfies StartMiddleware[];
+export default [posthogProxy, createAPIHandler(routes)] satisfies StartMiddleware[];

@@ -12,7 +12,6 @@ declare module 'virtual:solid-env/client' {
     readonly "VITE_APP_URL": __Out<__Schema["client"]["VITE_APP_URL"]>;
     readonly "VITE_SUPABASE_URL": __Out<__Schema["client"]["VITE_SUPABASE_URL"]>;
     readonly "VITE_SUPABASE_PUBLISHABLE_KEY": __Out<__Schema["client"]["VITE_SUPABASE_PUBLISHABLE_KEY"]>;
-    readonly "VITE_POSTHOG_HOST": __Out<__Schema["client"]["VITE_POSTHOG_HOST"]>;
     readonly "VITE_POSTHOG_KEY": __Out<__Schema["client"]["VITE_POSTHOG_KEY"]>;
   };
   export { env };
@@ -39,7 +38,6 @@ declare module 'virtual:solid-env/server' {
     readonly "VITE_APP_URL": __Out<__Schema["client"]["VITE_APP_URL"]>;
     readonly "VITE_SUPABASE_URL": __Out<__Schema["client"]["VITE_SUPABASE_URL"]>;
     readonly "VITE_SUPABASE_PUBLISHABLE_KEY": __Out<__Schema["client"]["VITE_SUPABASE_PUBLISHABLE_KEY"]>;
-    readonly "VITE_POSTHOG_HOST": __Out<__Schema["client"]["VITE_POSTHOG_HOST"]>;
     readonly "VITE_POSTHOG_KEY": __Out<__Schema["client"]["VITE_POSTHOG_KEY"]>;
   };
   export { env };

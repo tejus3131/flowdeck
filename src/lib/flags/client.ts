@@ -31,10 +31,14 @@ let testOverride: FlagClient | null = null;
  *  the public env values — the server snapshot still resolves). */
 export function flagClient(): FlagClient | null {
   if (testOverride) return testOverride;
-  if (isServer || !env.VITE_POSTHOG_HOST || !env.VITE_POSTHOG_KEY) return null;
+  if (isServer || !env.VITE_POSTHOG_KEY) return null;
   if (!instance) {
     posthog.init(env.VITE_POSTHOG_KEY, {
-      api_host: env.VITE_POSTHOG_HOST,
+      // First-party: the SDK talks to OUR origin — the worker's
+      // /ingest proxy forwards to PostHog (docs/posthog.md) — so
+      // telemetry rides a same-domain path past the ad-blocker
+      // blocklists that match *.posthog.com.
+      api_host: window.location.origin,
       // Flags only: this PR must not start sending telemetry anywhere.
       // The sink PR enables capture with the privacy config (masking,
       // replay sampling) decided there.
