@@ -44,6 +44,35 @@ input metrics — that frozen window is what every redesign result
 compares against. Skipping it means the redesign gets judged by vibes,
 which is the failure mode this playbook exists to prevent.
 
+**The baseline, concretely (recorded when the sink landed):** the window
+opens when the observability PR reaches **production** and runs until
+the first redesign surface ships. The frozen numbers are the
+"Pre-redesign baseline" dashboard tiles — `page_open`/`panel_open`
+p50/p95 by route/panel (the performance "before"), `mutation_echo` p95
+and `sync_resync` by trigger (the "is the architecture holding" before),
+and the North Star inputs (`card_created`, `card_completed`,
+`chat_message_sent`, `teammate_invited`, `mcp_tool_call`). Preview
+traffic is filtered out (`app_environment`); the comparison window for
+any redesign claim is the same-length window on production, per route.
+
+**The redesign's rollback metric (the pre-registered kill criteria):**
+
+> We believe that the redesigned surfaces, shipped behind release flags
+> with the existing surface as fallback, will result in faster opens and
+> more collaborative actions. We'll know it's working if the affected
+> routes' `page_open`/`panel_open` p95 holds or drops against the frozen
+> baseline and the North Star inputs do not decline. **Kill criteria:**
+> roll the flag back to control if, in the two weeks after a surface
+> reaches 100%, either (a) the affected route's `page_open` p95 regresses
+>
+> > 20% vs. baseline, (b) the `exception` rate for the surface doubles
+> > vs. its baseline week, or (c) `sync_resync` counts spike >2× without a
+> > known fold cause (the canonical test failing in prod). A rollback is a
+> > flag flip, not a revert scramble — that is the point of the flag.
+
+No experiment launches with the baseline PR; the policy remains
+ship-and-observe with the canary → 100% → holdout ladder below.
+
 That foundation also implements the typed flag runtime and SSR contract in
 [`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md):
 the event baseline alone is not sufficient to make the UI rollout reversible.

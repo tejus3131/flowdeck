@@ -26,11 +26,15 @@ fallback served in that state ([`feature-flags-and-ui-playground.md`](./feature-
   workspace targeting uses the transient person-property override
   instead. Do not enable it.
 - **Privacy posture (project settings):** IP anonymization ON (PostHog
-  drops the IP from every ingested event); session recording OFF at
-  project level until the telemetry sink ships its masking config and
-  sampling; a test-account filter excludes internal traffic from
-  insights. The taxonomy's no-PII rule is the parent policy
-  ([`observability.md`](./observability.md) rule 3).
+  drops the IP from every ingested event); session recording ON with
+  10% baseline sampling, 100% on signup/onboarding/invite URLs, and
+  100% of exception sessions (event trigger) — the SDK config masks
+  every text node, attribute, and input in a recording; autocapture ON
+  for the friction signals with `mask_all_text` +
+  `mask_all_element_attributes` (dead/rage clicks are read as rates per
+  element, never as content); a test-account filter excludes internal
+  traffic from insights. The taxonomy's no-PII rule is the parent
+  policy ([`observability.md`](./observability.md) rules 2–3).
 - **Server-side flag evaluation** uses the public `POST /flags?v=2`
   endpoint (project token only, no secret on the evaluation path, no
   sensitive data returned). Verified live: distinct-ID conditions and
@@ -144,11 +148,13 @@ forwarding is free. Server-side evaluation does NOT ride the proxy
 
 ## Runtime wiring (where the values live)
 
-| Variable           | Where                                                                                                                   | Visibility                      |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `VITE_POSTHOG_KEY` | GitHub environment variable (`preview` and `production` — same value, one project)                                      | public by design                |
-| `POSTHOG_HOST`     | `wrangler.jsonc` vars (both environments)                                                                               | public                          |
-| `POSTHOG_KEY`      | `wrangler secret put POSTHOG_KEY` (per env) — publishable value, kept out of the repo like the Supabase publishable key | public-by-design, repo-external |
+| Variable                                 | Where                                                                                                                   | Visibility                          |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `VITE_POSTHOG_KEY`                       | GitHub environment variable (`preview` and `production` — same value, one project)                                      | public by design                    |
+| `VITE_APP_ENV`                           | GitHub environment variable per deployment (`preview` / `production`) — the `app_environment` event property            | public                              |
+| `POSTHOG_HOST`                           | `wrangler.jsonc` vars (both environments)                                                                               | public                              |
+| `POSTHOG_KEY`                            | `wrangler secret put POSTHOG_KEY` (per env) — publishable value, kept out of the repo like the Supabase publishable key | public-by-design, repo-external     |
+| `POSTHOG_HOST`, `POSTHOG_KEY`, `APP_ENV` | Supabase function secrets per project (the MCP edge function's server-side capture)                                     | key public-by-design, repo-external |
 
 `VITE_POSTHOG_KEY` and `POSTHOG_KEY` hold the SAME project token and
 MUST match — one is the build-baked copy for the browser SDK, the other
@@ -159,3 +165,10 @@ Absent values are a supported state (local dev, PR builds): the client
 SDK no-ops and flag evaluation resolves declared fallbacks — nothing
 crashes, nothing calls PostHog. PR CI builds never need the values
 (ADR-15 unchanged).
+
+The MCP edge function captures `mcp_tool_call` server-side (the
+taxonomy's agent row); its values live as Supabase function secrets per
+project: `POSTHOG_HOST`, `POSTHOG_KEY`, and `APP_ENV` (`preview` /
+`production` — the same split, server-side). Absent values skip the
+capture; tool calls never fail or wait on telemetry beyond a 1s
+timeout.
