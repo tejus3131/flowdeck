@@ -297,8 +297,17 @@ keep them request-scoped, and bootstrap only the matching client values with
 the same distinct ID. Validate the PostHog evaluation and billing strategy
 on the actual Worker before choosing remote evaluation or shared caching.
 Never use a browser flag as authorization or as a replacement for RLS.
-PostHog's included flag-request allocation is not an automatic hard cap:
-configure an organization billing limit and measure usage before rollout.
+Keep PostHog on its no-card Free tier: usage stops at free limits. Measure
+flag request volume and preserve safe fallbacks for quota exhaustion.
+Person targeting is the default for developer access and personal UI. For
+workspace-specific UI, evaluate as the authenticated person while passing
+the verified active workspace UUID as a transient person-property override.
+Exact workspace conditions use 100% rollout; PostHog percentage rollouts
+remain person-bucketed and cannot ensure one variant per workspace. PostHog
+Group Analytics is paid and excluded by ADR-8's strict $0 rule. If
+workspace-randomized experiments become necessary, assignment and analysis
+must use a separately designed Flowdeck-owned mechanism rather than a
+PostHog group experiment.
 
 The developer playground is a server-gated `/playground/*` route family.
 It returns the normal 404 before rendering or loading data for unauthorized

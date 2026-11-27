@@ -252,6 +252,16 @@ So the playbook at our size:
 - **Scope rollouts to the surface**: personal preferences may be user-level;
   shared board and collaboration experiences should be consistent per
   workspace. Flag value and audience are distinct from experiment exposure.
+- **$0 workspace targeting**: do not enable PostHog Group Analytics. Its
+  group-targeted flags require a paid add-on billed across all identified
+  events. Instead, send the verified active workspace UUID as a transient
+  person-property override and target exact workspace IDs in flag rules
+  with 100% rollout. User percentage rollouts still split by person, not
+  workspace. If workspace-randomized experiments become necessary, use a
+  Flowdeck-owned deterministic workspace assignment and treat analysis as
+  custom, not as a native PostHog group experiment. Details and SDK
+  requirements:
+  [`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
 - **Qualitative-first below ~100 users**: five good interviews outrank
   any test we can run. Ask about the _last time_ they did the task, not
   what they want.

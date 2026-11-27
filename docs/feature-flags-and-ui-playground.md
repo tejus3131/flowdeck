@@ -33,9 +33,11 @@ article](https://martinfowler.com/articles/feature-toggles.html). PostHog's
 current docs add constraints important to this deployment:
 
 - The first **1,000,000 flag-evaluation requests per month** are currently
-  included. Requests above that are usage-priced; configure an organization
-  billing limit rather than assuming the free allocation is an automatic
-  hard stop. See [flag cost guidance](https://posthog.com/docs/feature-flags/cutting-costs).
+  included. Keep the project on PostHog's no-card Free tier: usage stops at
+  free limits, so quota exhaustion must follow each flag's safe fallback.
+  Monitor request volume against the allowance. See
+  [flag cost guidance](https://posthog.com/docs/feature-flags/cutting-costs)
+  and [pricing](https://posthog.com/pricing).
 - Server-side remote evaluation is a request to PostHog each time flags are
   evaluated. PostHog specifically cautions against local-evaluation clients
   created for each edge/Lambda invocation: their in-memory definition cache
@@ -74,6 +76,70 @@ The public application layer should expose a single typed accessor (conceptually
 and a matching client context. A component selects a variant; it does not
 perform evaluation or decide how failures are handled.
 
+### Targeting unit: person or workspace
+
+Within PostHog's free monthly flag-request allowance, person-targeted
+evaluation can receive context-specific person properties. Use that to
+filter by the active workspace without turning on Group Analytics:
+
+| Flowdeck need                         | Evaluation identity and context                                                            | Behavior                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Developer preview access; personal UI | `distinct_id = user UUID`; no workspace property                                           | Per-account access and rollout.                                                          |
+| Workspace-specific UI switch          | `distinct_id = user UUID`; person property `flowdeck_workspace_id = active workspace UUID` | An exact workspace-ID condition applies to every member when the rule's rollout is 100%. |
+
+A cohort is a set of people, not a workspace. For Flowdeck, send the
+verified active workspace as a transient person-property override:
+
+1. Server-side, keep Flowdeck's authenticated user UUID as the PostHog
+   distinct ID and evaluate with
+   `personProperties: { flowdeck_workspace_id: verifiedWorkspaceId }`.
+   Derive the workspace from the verified board/workspace relationship,
+   never directly from an untrusted URL parameter.
+2. In the browser, call
+   `posthog.setPersonPropertiesForFlags({ flowdeck_workspace_id: workspaceId })`
+   for the active workspace. PostHog documents that this is sent with flag
+   requests, is not persisted on the person or emitted as a `$set` event,
+   and triggers flag reload by default. The override is stored in the
+   browser SDK's local persistence, is additive, and remains until replaced
+   or reset. Update it only when the active workspace changes, not from
+   components, to avoid redundant `/flags` requests. When no workspace is
+   active or the user signs out, call
+   `posthog.resetPersonPropertiesForFlags()` and then
+   `posthog.reloadFeatureFlags()`; web reset does not reload automatically.
+3. On workspace switch, refresh the workspace property and wait for the
+   corresponding flags to resolve before rendering the new workspace's
+   variant. Bootstrap SSR decisions from the same user ID and verified
+   workspace property to prevent a stale or mismatched first render.
+
+**Important limit:** person-property filters are not group bucketing.
+PostHog's user-targeted rollout percentage and multivariate assignment hash
+the user's distinct ID. A percentage rollout can therefore split members
+of one workspace even when all of them send the same workspace property.
+For a manual workspace-specific switch or variant, add an exact
+`flowdeck_workspace_id` condition and set its rollout to 100%. For a
+multivariate flag, assign 100% of that condition's variant allocation to
+the chosen variant. Do not use a percentage-based user rollout for
+collaborative surfaces. Verify that two different users in the same
+workspace receive the same exact-match rule, and that switching workspaces
+causes a fresh evaluation. Do not add a broader user-targeted fallback to a
+workspace-scoped flag; missing workspace context must return its declared
+control fallback, not silently split teammates by user.
+
+**Strict $0 boundary:** do not enable PostHog Group Analytics. It is a paid
+add-on billed across all identified events, not just events carrying group
+properties. The free person-property override approach above is the
+supported workspace filter for explicitly targeted workspaces; it does not
+provide native percentage rollout or randomization by workspace.
+
+If workspace-randomized experiments become necessary under the $0 limit,
+use a Flowdeck-owned deterministic assignment keyed by
+`(experiment key, workspace UUID)` and emit exposure/outcome events with
+both the person identity and workspace ID as ordinary event properties.
+That is not a native PostHog group experiment: PostHog's experiment
+assignment/analysis is not workspace-level without Group Analytics.
+Keep this behind the typed flag boundary and make the assignment and
+analysis method a separate implementation decision before launching.
+
 ### Defaults are explicit and fail safe
 
 There is no universal safe value; each flag declares its fallback:
@@ -88,8 +154,8 @@ There is no universal safe value; each flag declares its fallback:
 Validate returned multivariate values against the registry. Unknown values
 use the declared fallback and emit a bounded diagnostic, never an arbitrary
 variant. PostHog quota limiting can return empty flag values; the application
-must remain usable under the fallbacks above. Set and monitor the PostHog
-organization billing limit before enabling production evaluation.
+must remain usable under the fallbacks above. Keep the project on the
+no-card Free tier and monitor usage before production rollout.
 
 An application-level kill switch is only as fast and reliable as the
 evaluation path. Remote flags cannot promise an immediate change for an
@@ -99,9 +165,9 @@ security, data integrity, or a time-critical operational incident.
 
 ### Evaluation, SSR, and exposure
 
-1. Resolve the authenticated identity before evaluating user-targeted flags.
-   Use Flowdeck's stable user UUID as the PostHog distinct ID; never use
-   email, names, message content, or other PII as flag properties.
+1. Resolve the authenticated identity before evaluating person-targeted
+   flags. Use Flowdeck's stable user UUID as the PostHog distinct ID; never
+   use email, names, message content, or other PII as flag properties.
 2. Resolve a request's needed flags once and keep the result in that request's
    context. Never put user-specific decisions in a module-global Worker
    cache. Do not initialize a polling PostHog client per component or per
@@ -116,11 +182,17 @@ security, data integrity, or a time-critical operational incident.
    Node process cache or introduce a cron/KV system without measured need.
    Verify SDK behavior and budget before choosing remote evaluation,
    shared-definition caching, or another strategy.
-5. Normal release routing must not accidentally count as an experiment
+5. For workspace-scoped surfaces, evaluate with the user distinct ID plus
+   the verified current workspace as a transient person-property override.
+   Never reuse a result from a previous workspace. Exact workspace rules must use 100% rollout and, for
+   multivariate flags, a single 100% variant; user-based percentages are
+   not workspace-stable.
+6. Normal release routing must not accidentally count as an experiment
    exposure. When an experiment is intentionally launched, its production
    code reads the assigned value through PostHog's exposure-recording API.
-   Pre-register the primary metric and duration, and randomize collaborative
-   surfaces at workspace scope as required by [the playbook](./data-playbook.md).
+   Pre-register the primary metric and duration. Collaborative experiments
+   need workspace-level assignment; under the $0 rule this requires a
+   Flowdeck-owned assignment as described in [the playbook](./data-playbook.md).
 
 For whole-page redesigns, branch at the route/surface boundary so the server
 renders only the selected experience. For smaller component variants,
@@ -240,7 +312,12 @@ ship-and-observe, with the holdout and qualitative checks in the
 
 ## References
 
+- [PostHog: pricing and free allowances](https://posthog.com/pricing)
 - [PostHog: feature flag costs and quota limiting](https://posthog.com/docs/feature-flags/cutting-costs)
+- [PostHog: person/group flag targeting and rollout identity](https://posthog.com/docs/feature-flags/user-and-group-targeting)
+- [PostHog: property overrides for flag evaluation](https://posthog.com/docs/feature-flags/property-overrides)
+- [PostHog: Group Analytics billing](https://posthog.com/docs/product-analytics/group-analytics)
+- [PostHog: creating feature flags](https://posthog.com/docs/feature-flags/creating-feature-flags)
 - [PostHog: server-side local evaluation](https://posthog.com/docs/feature-flags/local-evaluation)
 - [PostHog: bootstrapping flags](https://posthog.com/docs/feature-flags/bootstrapping)
 - [PostHog: recording experiment exposures](https://posthog.com/docs/experiments/adding-experiment-code)

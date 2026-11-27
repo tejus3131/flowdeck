@@ -14,11 +14,11 @@ quarterly decision cadence. Read both before adding any event.
 
 ## The stack
 
-| Tool            | What it gives us                                                                         | Free tier                                                                                 | Cost control                                                            |
-| --------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| PostHog Cloud   | product analytics, feature flags, experiments, session replay, exceptions                | 1M flag-evaluation requests/mo included; usage-priced above. Product quotas vary by plan. | Organization billing limit; lean taxonomy, sampled replays              |
-| Workers Logs    | server-side logs: `[perf]` slow reads, `[boardStream]` fold/resync lines, channel errors | 3-day retention                                                                           | the escape hatch is Axiom Personal (500GB/mo) if retention ever matters |
-| `perf.ts` marks | client-side p50/p95 per open path (the `?perf=1` panel)                                  | free (ours)                                                                               | a batched sink → PostHog counters, not one event per mark               |
+| Tool            | What it gives us                                                                         | Free tier                                                                                                        | Cost control                                                            |
+| --------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| PostHog Cloud   | product analytics, feature flags, experiments, session replay, exceptions                | Free monthly allowances; feature flags include 1M requests. Group Analytics is paid and excluded by the $0 rule. | Stay within free limits; lean taxonomy, sampled replays                 |
+| Workers Logs    | server-side logs: `[perf]` slow reads, `[boardStream]` fold/resync lines, channel errors | 3-day retention                                                                                                  | the escape hatch is Axiom Personal (500GB/mo) if retention ever matters |
+| `perf.ts` marks | client-side p50/p95 per open path (the `?perf=1` panel)                                  | free (ours)                                                                                                      | a batched sink → PostHog counters, not one event per mark               |
 
 Local dev sends nothing (`import.meta.env.DEV` guard on the sink); the
 PostHog key is `VITE_`-prefixed — public by design.
@@ -62,8 +62,8 @@ adds its event — the observability mirror of performance-rules 12).
 - Flag requests are metered: client SDK reads are cached, but initialization,
   identity/property changes, explicit reloads, and server-side remote
   evaluations can call `/flags`. Do not poll in a loop or fork flags per
-  entity. Measure request volume and configure a billing limit before
-  production rollout; see
+  entity. Keep the project on its no-card Free tier, measure request volume,
+  and ensure quota exhaustion follows safe fallbacks; see
   [`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
 
 ## Dashboards (build these when the sink lands)
