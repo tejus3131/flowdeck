@@ -48,15 +48,22 @@ staged files automatically; preflight is the full check.
 2. `docs/layers/` — per-layer contracts (L0 database → L5 views). Each says
    what the layer Owns / May not / Rules. Your change belongs to a layer;
    obey its contract.
-3. `docs/adr.md` — decision records. **Before proposing anything already
+3. `docs/ui-data.md` — the how-to for any UI work: components read the
+   store by id (selectors), never snapshot slices threaded as props;
+   markdown contexts, flow-callback gotchas, and the per-entity checklist
+   for adding entities to the store. **A view built against this doc shows
+   every entity change in one frame; a view built without it shows the
+   change only when its own snapshot re-fetches — the staleness bug class
+   this repo treats as a layering violation.**
+4. `docs/adr.md` — decision records. **Before proposing anything already
    decided** (no CRDTs, no bought sync engines, RLS-only, outbox…), read
    this. New decisions get a new ADR number in the same PR.
-4. `docs/ci-cd.md` — branch model, environments, deploy matrix. **Rule:
+5. `docs/ci-cd.md` — branch model, environments, deploy matrix. **Rule:
    any change to `.github/workflows/*` updates this file in the same
    commit.** No exceptions.
-5. `docs/performance-rules.md` — the 13 rules; check your change against
+6. `docs/performance-rules.md` — the 13 rules; check your change against
    them (budgets, no unbounded stores, no refetch storms).
-6. `docs/observability.md` — event taxonomy; new events follow the
+7. `docs/observability.md` — event taxonomy; new events follow the
    taxonomy and the free-tier budget.
 
 ## The canonical test

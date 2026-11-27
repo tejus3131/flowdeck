@@ -58,13 +58,13 @@ a drawer, a page backed by rows. Five rules, in order of how you'll hit them:
    description. "Feels faster" is not a number.
 
 8. **Mutations go through the sync engine.** Optimistic apply, guards, echo
-   retirement — `src/lib/sync.ts`. Never a direct fetch-then-setState
+   retirement — the sync engine, never a direct fetch-then-setState
    mutation; that re-adds the spinner the engine removed.
 
-9. **Code-split panels, don't append to the route.** The board route is a
-   4,000-line file; new UI becomes its own module (and its own lazy chunk
-   when it's heavy). Bundle size is a first-load budget, and first load is
-   the one thing the cache can't help.
+9. **Code-split panels, don't append to the route.** A route is a wiring
+   file; new UI becomes its own module (and its own lazy chunk when it's
+   heavy). Bundle size is a first-load budget, and first load is the one
+   thing the cache can't help.
 
 10. **Unbounded lists virtualize.** Anything that can grow without limit
     (chat histories, timelines, card lists) renders a window, not the world.

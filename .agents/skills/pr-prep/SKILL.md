@@ -54,17 +54,22 @@ Read your own diff as if you were the maintainer, with these open:
   copies, new `resync` triggers, or new realtime channels fail this.
 - `docs/performance-rules.md` — budgets, unbounded stores, refetch storms.
 - `docs/observability.md` — new events follow the taxonomy and budget.
+- `docs/ui-data.md` — any UI change: run the two grep guards (snapshot-copy
+  reads of `props.workspaceTags` / `props.members` / `props.teams` /
+  `detail().tags…`) and review every hit; the only acceptable ones are
+  event handlers and the rule-4 snapshot fallbacks. Then run the canonical
+  test by hand: change one row, confirm every surface updates in one frame.
 
 ## 5. Evidence per area (goes in the PR description)
 
-| Area           | Required evidence                                                                         |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| UI             | Screen recording or before→after screenshots, **light + dark**                            |
-| Server / data  | Data-path explanation + tests added/updated; `db reset` passes                            |
-| MCP tools      | Tested against local stack; `src/routes/docs/mcp.tsx` updated for schema/behavior changes |
-| Migrations     | Guard note in the PR                                                                      |
-| CI / workflows | `docs/ci-cd.md` diff in the same commit + validated YAML                                  |
-| Docs           | The doc diffs are part of the PR, not a follow-up                                         |
+| Area           | Required evidence                                                                 |
+| -------------- | --------------------------------------------------------------------------------- |
+| UI             | Screen recording or before→after screenshots, **light + dark**                    |
+| Server / data  | Data-path explanation + tests added/updated; `db reset` passes                    |
+| MCP tools      | Tested against local stack; the MCP docs page updated for schema/behavior changes |
+| Migrations     | Guard note in the PR                                                              |
+| CI / workflows | `docs/ci-cd.md` diff in the same commit + validated YAML                          |
+| Docs           | The doc diffs are part of the PR, not a follow-up                                 |
 
 UI recording tip: a phone/screen recording of the two states is fine — it
 doesn't need production polish, it needs to show the behavior.

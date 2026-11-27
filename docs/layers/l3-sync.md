@@ -22,21 +22,21 @@ ADR-6; only payload shapes move to entity keys (ADR-1).
 
 ## Rules
 
-1. **The four rules of the engine stay** (from `sync.ts`): local apply is
+1. **The four rules of the engine stay**: local apply is
    never blocked; guards hold until echo; ACK is the server call's
    resolution; ops are independent.
-2. **Solid 2 discipline stays** (the file's own hard lessons): reads lag
+2. **Solid 2 discipline stays** (the engine's own hard lessons): reads lag
    writes — retirement decisions read data from before any write; the
    store is written only from reactive effect contexts; async
    continuations request merges through signals; draft setters only.
 3. **The fold stays pure** — every ordering edge unit-tested, not
    discovered in production.
-4. **Ops are registered, not inlined**: the op registry (`board-ops`,
-   `workspace-ops`) is the vocabulary; a mutation outside it is a bug
+4. **Ops are registered, not inlined**: the op registry (one per scope)
+   is the vocabulary; a mutation outside it is a bug
    (performance-rules 8).
-5. **Kept ops stay kept**: the `delete-card` comment in `board-ops.ts` is
-   the pattern — old clients may relay in-flight ops; history replays.
-   Do not "clean up" op kinds.
+5. **Kept ops stay kept**: retiring an op kind orphans old clients that
+   may still relay it in flight, and history replays it. Do not "clean
+   up" op kinds.
 6. **Guards are entity keys now**: an in-flight `update-card` guards
    `card:${id}` — incoming events for that entity wait; everything else
    applies. Finer-grained than the old snapshot guard, same semantics.
