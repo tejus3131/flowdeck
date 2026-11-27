@@ -207,6 +207,12 @@ Repo-level **variables** (scheduled workflows run outside environments):
 `PROD_SUPABASE_URL`, `PROD_SUPABASE_PUBLISHABLE_KEY` — public-by-design
 values for the keep-alive pings.
 
+**PostHog (one project, both environments — [posthog.md](./posthog.md)):**
+`VITE_POSTHOG_HOST` + `VITE_POSTHOG_KEY` as environment variables on
+`preview` and `production` (the deploy workflows pass them to the build);
+`POSTHOG_HOST` rides `wrangler.jsonc` vars, `POSTHOG_KEY` is a wrangler
+secret per env (public-by-design value, kept out of the repo).
+
 Supabase token scope (least privilege): Migrations + Edge Functions
 read-write on both projects; everything else None. Function secrets
 (`APP_ORIGIN`, `MCP_PUBLIC_URL`) are set **once per project in the

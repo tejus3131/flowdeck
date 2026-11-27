@@ -5,6 +5,7 @@ import { env } from 'virtual:solid-env/client';
 import { paths, Router } from './router';
 import { getMe } from './lib/auth';
 import { ThemeSync } from './components/ThemeSync';
+import { FlagSync } from './components/FlagSync';
 import { UserMenu } from './components/UserMenu';
 import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { NotificationFeed } from './components/NotificationFeed';
@@ -55,6 +56,10 @@ export default function App() {
             <>
               <Title>{env.VITE_APP_NAME}</Title>
               <ThemeSync me={me} />
+              {/* The flag runtime's client half: posthog-js identity +
+                  workspace override lifecycle, and snapshot refresh on
+                  context changes (ADR-17). */}
+              <FlagSync me={me} />
               <nav class="sticky top-0 z-40 flex h-12 items-center justify-between border-b border-neutral-200 bg-white/80 px-4 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
                 <a href={paths()} class="flex items-center gap-2">
                   <span class="flex h-5 w-5 items-center justify-center rounded bg-indigo-600 text-[11px] font-bold text-white">

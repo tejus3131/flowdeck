@@ -31,6 +31,15 @@ export default {
     VAPID_PUBLIC_KEY: v.optional(v.string()),
     VAPID_PRIVATE_KEY: v.optional(v.string()),
     VAPID_SUBJECT: v.optional(v.string(), 'mailto:notifications@flowdeck.local'),
+    // PostHog Cloud host for server-side flag evaluation (e.g.
+    // https://us.i.posthog.com). Optional + absent → flag evaluation
+    // short-circuits to the declared registry fallbacks (local dev, or a
+    // deployment without flags). See docs/posthog.md.
+    POSTHOG_HOST: v.optional(v.pipe(v.string(), v.url())),
+    // The PostHog project token — public by design (the /flags endpoint
+    // is the public evaluation API and returns nothing sensitive), but
+    // kept out of the repo like the Supabase publishable key.
+    POSTHOG_KEY: v.optional(v.pipe(v.string(), v.minLength(20))),
   },
   client: {
     VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Flowdeck'),
@@ -45,5 +54,12 @@ export default {
     // gracefully no-op (e.g. a build without presence).
     VITE_SUPABASE_URL: v.optional(v.pipe(v.string(), v.url())),
     VITE_SUPABASE_PUBLISHABLE_KEY: v.optional(v.pipe(v.string(), v.minLength(20))),
+    // PostHog Cloud host + public project token for the browser flag
+    // runtime (identify + workspace person-property override lifecycle).
+    // Both publishable; absent (local dev, PR builds) → the client SDK
+    // no-ops and the server snapshot still resolves flags. See
+    // docs/posthog.md.
+    VITE_POSTHOG_HOST: v.optional(v.pipe(v.string(), v.url())),
+    VITE_POSTHOG_KEY: v.optional(v.pipe(v.string(), v.minLength(20))),
   },
 };

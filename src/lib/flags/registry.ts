@@ -1,0 +1,72 @@
+// The typed flag registry (ADR-17): the single source of truth for every
+// feature flag Flowdeck consumes. Application code reads decisions through
+// `flag()` (./snapshot.ts) — components never import a PostHog SDK or name
+// a PostHog key directly.
+//
+// Every registered flag records the metadata the flag contract requires
+// (docs/feature-flags-and-ui-playground.md): purpose, safe fallback, scope,
+// owner, and expiry, plus the exact behavior the fallback restores. The
+// registry is code — a key is renamed by migration, and a flag is removed
+// here AND in PostHog when its lifecycle ends (governance and lifecycle
+// rules: docs/posthog.md).
+export type FlagPurpose = 'release' | 'operational' | 'permission' | 'experiment';
+
+/** Who the flag must be consistent for. Workspace-scoped flags evaluate
+ *  with the verified active workspace as a person-property override, and
+ *  their PostHog rules must use exact workspace IDs at 100% rollout — a
+ *  user-percentage rule would split teammates (the contract's limit). */
+export type FlagScope = 'user' | 'workspace';
+
+export type FlagMeta = {
+  readonly purpose: FlagPurpose;
+  readonly scope: FlagScope;
+  /** The responsible maintainer (the review/expiry owner). */
+  readonly owner: string;
+  /** Removal/review date for temporary flags, or the explicit reason a
+   *  permission/ops flag is permanent (data-playbook lifecycle table). */
+  readonly expiry: string;
+  /** The exact behavior the fallback restores. */
+  readonly rollback: string;
+};
+
+export type BooleanFlagDef = FlagMeta & {
+  readonly kind: 'boolean';
+  /** The value when evaluation is missing, times out, is quota-limited,
+   *  or returns an unknown value. There is no universal safe value. */
+  readonly fallback: boolean;
+};
+
+export type VariantFlagDef = FlagMeta & {
+  readonly kind: 'variant';
+  /** The finite, stable variant union. Renaming a variant is a migration. */
+  readonly variants: readonly string[];
+  /** The declared control — the value for "off", unknown, and missing. */
+  readonly fallback: string;
+};
+
+export type FlagDef = BooleanFlagDef | VariantFlagDef;
+
+export const FLAGS = {
+  // Developer playground access (docs/feature-flags-and-ui-playground.md):
+  // a permission decision, not a rollout. Every /playground route checks
+  // it SERVER-side and fails closed to the app's normal 404; the flag
+  // never gates data (RLS does) and its PostHog rule targets exact
+  // Flowdeck user UUIDs — never email (the no-PII taxonomy).
+  'playground-access': {
+    kind: 'boolean',
+    purpose: 'permission',
+    scope: 'user',
+    owner: 'tejus3131',
+    expiry: 'permanent — permission flag; reviewed quarterly with the registry',
+    fallback: false,
+    rollback:
+      'Deactivate the flag (or empty its condition): /playground/* returns 404 for everyone. No routes, data, or surfaces are affected.',
+  },
+} as const satisfies Record<string, FlagDef>;
+
+export type FlagKey = keyof typeof FLAGS;
+
+/** The typed value of a flag: its variant union, or a boolean. */
+export type FlagValue<K extends FlagKey> = (typeof FLAGS)[K] extends VariantFlagDef
+  ? (typeof FLAGS)[K]['variants'][number]
+  : boolean;

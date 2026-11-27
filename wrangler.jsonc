@@ -26,12 +26,18 @@
   },
   "vars": {
     "SUPABASE_URL": "https://ylarhvcbpppujpjnpxkq.supabase.co",
+    // PostHog Cloud host for server-side flag evaluation (public API
+    // endpoint; the project token is a wrangler secret — POSTHOG_KEY —
+    // public-by-design but kept out of the repo like the Supabase
+    // publishable key). See docs/posthog.md.
+    "POSTHOG_HOST": "https://us.i.posthog.com",
   },
   "env": {
     "preview": {
       "name": "flowdeck-preview",
       "vars": {
         "SUPABASE_URL": "https://nopozruoekakakvwfpmh.supabase.co",
+        "POSTHOG_HOST": "https://us.i.posthog.com",
       },
     },
   },
