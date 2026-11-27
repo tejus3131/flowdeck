@@ -39,6 +39,7 @@ import {
   type BoardOpPayload,
 } from '../../lib/board-ops';
 import { getMe } from '../../lib/auth';
+import { captureCardCompleted, captureCardCreated } from '../../lib/telemetry';
 import {
   boardChatStamp,
   stampBoardChatSeen,
@@ -218,8 +219,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // guards hold intermediate snapshots off, and the author's failure
   // relay (or the TTL) drops a prediction that never landed.
 
-  /** Author path: outbox op + relay to the other viewers. */
-  const runOp = (payload: BoardOpPayload, send: () => Promise<unknown>) => {
+  /** Author path: outbox op + relay to the other viewers. The optional
+   *  telemetry closure is the behavior event for the op — the engine
+   *  fires it when the echo retires (the write is durable). */
+  const runOp = (payload: BoardOpPayload, send: () => Promise<unknown>, telemetry?: () => void) => {
     const opId = crypto.randomUUID();
     engine.mutate({
       kind: payload.kind,
@@ -233,6 +236,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           throw error;
         }),
       echo: (durable) => echoBoardOp(durable, payload),
+      telemetry,
     });
     presence.broadcastOp({ opId, payload });
   };
@@ -710,9 +714,17 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         .cards.filter((c) => c.list_id === listId)
         .reduce((max, c) => Math.max(max, c.position), 0) || 0) + 1;
     const clientOp = crypto.randomUUID();
+    // Captured as a plain local: the telemetry closure fires at echo
+    // retirement (outside any tracked scope) and the board is stable
+    // for the life of the op.
+    const boardId = props.params.boardId;
     runOp(
       { kind: 'create-card', tempId: crypto.randomUUID(), listId, title, position, clientOp },
       () => createCard(listId, title, clientOp),
+      // The cardCreated behavior event: quick-add creates bare cards —
+      // description and due date arrive later via update-card, so both
+      // ship false at creation today.
+      () => captureCardCreated({ boardId, hasDescription: false, hasDueDate: false }),
     );
   };
 
@@ -742,6 +754,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
    *  the board's lists; unresolve brings it back to its frozen list (the
    *  RPC heals position and logs the trail). */
   const toggleResolve = (cardId: string, resolved: boolean) => {
+    // Same capture rule as addCard above — the closure fires untracked.
+    const boardId = props.params.boardId;
     runOp(
       {
         kind: 'resolve-card',
@@ -751,6 +765,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         by: me()?.id ?? null,
       },
       () => (resolved ? resolveCardServer(cardId) : unresolveCardServer(cardId)),
+      // Completion only — an unresolve is not a task success.
+      resolved ? () => captureCardCompleted({ boardId }) : undefined,
     );
   };
 

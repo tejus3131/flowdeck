@@ -49,6 +49,11 @@ export default {
     // them from this instead of hardcoding prod. Absent → local dev or a
     // build that doesn't advertise; those pages fall back to prod defaults.
     VITE_APP_URL: v.optional(v.pipe(v.string(), v.url())),
+    // Which deployment this build serves: preview | production. Rides
+    // every telemetry event as the app_environment super property — the
+    // one-project environment split (docs/posthog.md). Absent = local
+    // dev (which sends nothing).
+    VITE_APP_ENV: v.optional(v.picklist(['preview', 'production'])),
     // Public by design; used by the browser Supabase client (presence,
     // passkey ceremonies, avatar uploads). Absent → those features
     // gracefully no-op (e.g. a build without presence).

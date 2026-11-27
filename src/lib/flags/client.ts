@@ -1,12 +1,13 @@
-// The browser half of the flag runtime: one posthog-js instance whose
-// only job in the foundation is identity and flag context — the person-
-// property override lifecycle from the flag contract (identify on
-// sign-in, refresh on workspace switch, reset on sign-out). Telemetry
-// (events, replays, autocapture) is deliberately OFF here; the
-// observability sink turns capture on with its privacy config.
-import posthog from 'posthog-js';
+// The browser half of the flag runtime: the posthog-js identity and
+// flag-context lifecycle. The SDK INSTANCE is owned by lib/telemetry.ts
+// (one posthog-js for flags + telemetry, initialized once with the
+// privacy posture); this module owns the flag contract's override rules
+// (identify on sign-in, refresh on workspace switch, reset on
+// sign-out) and stays the test seam for that lifecycle.
 import { isServer } from '@solidjs/web';
 import { env } from 'virtual:solid-env/client';
+
+import { telemetryRuntime } from '../telemetry';
 
 /** The structural slice of posthog-js the flag lifecycle drives (and
  *  the seam tests inject). */
@@ -23,35 +24,22 @@ export type FlagClient = {
   reloadFeatureFlags(): void;
 };
 
-let instance: FlagClient | null = null;
 let testOverride: FlagClient | null = null;
 
-/** The app's single posthog-js instance, or null when flags have no
- *  client runtime (SSR, local dev without PostHog, or a build without
+/** The app's single posthog-js instance (flags + telemetry), or null
+ *  when flags have no client runtime (SSR, local dev, or a build without
  *  the public env values — the server snapshot still resolves). */
 export function flagClient(): FlagClient | null {
   if (testOverride) return testOverride;
+  // No VITE_POSTHOG_HOST: the shared runtime (lib/telemetry.ts) talks to
+  // OUR origin — the worker's /ingest proxy forwards to PostHog
+  // (docs/posthog.md), past the ad-blocker lists that match *.posthog.com.
   if (isServer || !env.VITE_POSTHOG_KEY) return null;
-  if (!instance) {
-    posthog.init(env.VITE_POSTHOG_KEY, {
-      // First-party: the SDK talks to OUR origin under /ingest — the
-      // worker's proxy forwards that allowlisted endpoint family to
-      // PostHog (docs/posthog.md) — so requests ride a same-domain
-      // path past the ad-blocker blocklists that match *.posthog.com.
-      // posthog-js appends its endpoint paths directly to api_host,
-      // so the /ingest prefix must be part of the host itself.
-      api_host: `${window.location.origin}/ingest`,
-      // Flags only: this PR must not start sending telemetry anywhere.
-      // The sink PR enables capture with the privacy config (masking,
-      // replay sampling) decided there.
-      autocapture: false,
-      capture_pageview: false,
-      capture_pageleave: false,
-      disable_session_recording: true,
-    });
-    instance = posthog as unknown as FlagClient;
-  }
-  return instance;
+  // The shared runtime (lib/telemetry.ts) owns the instance: it talks to
+  // OUR origin under /ingest — the worker's allowlisted proxy forwards
+  // to PostHog (docs/posthog.md), past the ad-blocker lists that match
+  // *.posthog.com.
+  return telemetryRuntime();
 }
 
 /** The identity/workspace state FlagSync feeds the client each turn. */
@@ -95,5 +83,4 @@ export function syncFlagClient(prev: FlagSyncState | undefined, next: FlagSyncSt
 /** Test seam: drive the lifecycle with a deterministic fake. */
 export function setFlagClientForTests(fake: FlagClient | null): void {
   testOverride = fake;
-  instance = null;
 }

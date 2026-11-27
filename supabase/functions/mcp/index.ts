@@ -1059,6 +1059,57 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
   );
 }
 
+// Telemetry: the taxonomy's mcp_tool_call event (docs/observability.md).
+// POSTs to PostHog's public /capture endpoint with the token owner's
+// user UUID as the distinct id; the properties are ids, timings, and
+// counts only — never tool args (no user content leaves the server).
+// Absent env config (local dev, a project without telemetry) skips the
+// capture entirely. A short timeout bounds the latency a tool call can
+// inherit, and a capture failure is swallowed — telemetry must never
+// fail an agent's op.
+const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST');
+const POSTHOG_KEY = Deno.env.get('POSTHOG_KEY');
+const APP_ENV = Deno.env.get('APP_ENV') ?? 'local';
+
+async function captureToolCall(input: {
+  tool: string;
+  op: string;
+  workspaceIds: string[];
+  ms: number;
+  ok: boolean;
+  rows: number | null;
+  distinctId: string;
+}): Promise<void> {
+  if (!POSTHOG_HOST || !POSTHOG_KEY) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1000);
+  try {
+    await fetch(`${POSTHOG_HOST.replace(/\/+$/, '')}/capture/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        api_key: POSTHOG_KEY,
+        event: 'mcp_tool_call',
+        distinct_id: input.distinctId,
+        properties: {
+          tool: input.tool,
+          op: input.op,
+          workspace_id: input.workspaceIds.length === 1 ? input.workspaceIds[0]! : null,
+          ms: input.ms,
+          ok: input.ok,
+          rows: input.rows,
+          app_environment: APP_ENV,
+        },
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    // Swallowed by design — see above.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS });
@@ -1230,6 +1281,7 @@ Deno.serve(async (request) => {
           isError: true,
         });
       }
+      const toolStartedAt = Date.now();
       const { data, error } = await service.rpc('mcp_exec', {
         p_user_id: tokenRow.user_id,
         p_op: tool.op,
@@ -1237,6 +1289,23 @@ Deno.serve(async (request) => {
         // The connection's workspace boundary (null = account-wide).
         p_workspace_ids: scopeOf(tokenRow.workspace_ops, tokenRow.workspace_scope),
         p_ws_ops: tokenRow.workspace_ops ?? null,
+      });
+      // The taxonomy's mcp_tool_call — agent actions are part of the
+      // North Star. Absent env values simply skip the capture; the
+      // short internal timeout bounds what a tool call can inherit.
+      // Fire-and-forget: a slow or failed capture must never add
+      // latency to the agent's op (the internal timeout only bounds the
+      // fetch, not the await — void drops the promise entirely).
+      void captureToolCall({
+        tool: name,
+        op: tool.op,
+        workspaceIds: tokenRow.workspace_ops ? Object.keys(tokenRow.workspace_ops) : [],
+        ms: Date.now() - toolStartedAt,
+        ok: !error && (data as { ok?: boolean } | null)?.ok === true,
+        rows: Array.isArray((data as { data?: unknown } | null)?.data)
+          ? ((data as { data: unknown[] }).data.length as number)
+          : null,
+        distinctId: tokenRow.user_id,
       });
       const result = (data ?? {}) as { ok?: boolean; data?: unknown };
       if (error || result.ok !== true) {
