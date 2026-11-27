@@ -108,6 +108,30 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
+      path: "/playground/components/:name";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/components/[name]"), Extract<"default", keyof typeof import("./src/routes/playground/components/[name]")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/components/[name]"), Extract<"route", keyof typeof import("./src/routes/playground/components/[name]")>>>;
+    },
+    {
+      path: "/playground/components/";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/components/index"), Extract<"default", keyof typeof import("./src/routes/playground/components/index")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/components/index"), Extract<"route", keyof typeof import("./src/routes/playground/components/index")>>>;
+    },
+    {
+      path: "/playground/";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/index"), Extract<"default", keyof typeof import("./src/routes/playground/index")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/index"), Extract<"route", keyof typeof import("./src/routes/playground/index")>>>;
+    },
+    {
+      path: "/playground/tokens";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/tokens"), Extract<"default", keyof typeof import("./src/routes/playground/tokens")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/tokens"), Extract<"route", keyof typeof import("./src/routes/playground/tokens")>>>;
+    },
+    {
       path: "/profile";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/profile"), Extract<"default", keyof typeof import("./src/routes/profile")>>>;
@@ -232,6 +256,14 @@ declare module "virtual:file-routes" {
       children?: undefined;
     },
     {
+      path: "/playground/";
+      id: "/playground/";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/index"), Extract<"default", keyof typeof import("./src/routes/playground/index")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/index"), Extract<"route", keyof typeof import("./src/routes/playground/index")>>>;
+      children?: undefined;
+    },
+    {
       path: "/invite/:token";
       id: "/invite/:token";
       page: true;
@@ -248,6 +280,14 @@ declare module "virtual:file-routes" {
       children?: undefined;
     },
     {
+      path: "/playground/tokens";
+      id: "/playground/tokens";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/tokens"), Extract<"default", keyof typeof import("./src/routes/playground/tokens")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/tokens"), Extract<"route", keyof typeof import("./src/routes/playground/tokens")>>>;
+      children?: undefined;
+    },
+    {
       path: "/connection/:tokenId";
       id: "/connection/:tokenId";
       page: true;
@@ -261,6 +301,14 @@ declare module "virtual:file-routes" {
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags/index"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags/index")>>>;
       $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/playground/components/";
+      id: "/playground/components/";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/components/index"), Extract<"default", keyof typeof import("./src/routes/playground/components/index")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/components/index"), Extract<"route", keyof typeof import("./src/routes/playground/components/index")>>>;
       children?: undefined;
     },
     {
@@ -285,6 +333,14 @@ declare module "virtual:file-routes" {
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/w/[workspaceId]/tags/[tagId]"), Extract<"default", keyof typeof import("./src/routes/w/[workspaceId]/tags/[tagId]")>>>;
       $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/playground/components/:name";
+      id: "/playground/components/:name";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/playground/components/[name]"), Extract<"default", keyof typeof import("./src/routes/playground/components/[name]")>>>;
+      $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/playground/components/[name]"), Extract<"route", keyof typeof import("./src/routes/playground/components/[name]")>>>;
       children?: undefined;
     }
   ];

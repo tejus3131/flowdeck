@@ -17,6 +17,7 @@
 // is about what the BROWSER waits for.
 import { isServer } from '@solidjs/web';
 import { perfCancel, perfEnd, perfStart } from './perf';
+import { telemetryCacheAccess } from './telemetry';
 
 const DB_NAME = 'flowdeck-cache';
 const STORE = 'entries';
@@ -188,8 +189,12 @@ function scoped(key: string): string {
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const store = await backend();
   const entry = await store.get(scoped(key));
+  // The taxonomy's cache_hit/cache_miss counter — aggregated per
+  // (type, minute) by the sink; a Map increment, never a send per read.
+  const hit = !!entry && Date.now() - entry.at <= TTL_MS;
+  telemetryCacheAccess(key, hit, Date.now());
   if (!entry) return null;
-  if (Date.now() - entry.at > TTL_MS) {
+  if (!hit) {
     void store.delete(scoped(key));
     return null;
   }

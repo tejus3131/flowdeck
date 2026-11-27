@@ -77,6 +77,21 @@ export default defineConfig({
           name: 'client',
           environment: 'jsdom',
           include: ['src/**/*.test.tsx'],
+          alias: [
+            // The plugin's env modules validate the WHOLE schema at module
+            // load — including the required server vars, which a PR CI run
+            // must never have (ADR-15). Client-project tests import both
+            // halves (the flags runtime's snapshot reads the server module),
+            // so both are stubbed with the same contract (live reads).
+            {
+              find: 'virtual:solid-env/client',
+              replacement: fileURLToPath(new URL('./vitest-env-client-stub.ts', import.meta.url)),
+            },
+            {
+              find: 'virtual:solid-env/server',
+              replacement: fileURLToPath(new URL('./vitest-env-server-stub.ts', import.meta.url)),
+            },
+          ],
         },
       },
       {

@@ -36,6 +36,7 @@ import { getRequestEvent, isServer } from '@solidjs/web';
 
 import type { BoardSnapshot } from './boards';
 import { errorMessage } from './error-message';
+import { captureMutationEcho } from './telemetry';
 
 export type SyncStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
@@ -70,6 +71,11 @@ export interface OpSpec<S = unknown> {
   send?: () => Promise<unknown>;
   /** True when the durable snapshot contains this op's change. */
   echo: (durable: S) => boolean;
+  /** Behavior telemetry (the taxonomy's stable core): fires ONCE when
+   *  this AUTHOR op's echo retires — the write is durable, which is the
+   *  moment the action actually happened. Provisional (relayed) ops never
+   *  fire it: the author's own client counts the action once. */
+  telemetry?: () => void;
 }
 
 /** Guard id for the board's own row (name etc.). */
@@ -483,16 +489,33 @@ function createEngineBody<S extends object>(
   /** Shared retire + merge pass (writes ops first, then merges once). */
   function applyWithRetire(snapshot: S, retiring: ReadonlySet<string>) {
     if (retiring.size > 0) {
+      // Retirements are collected (a store write runs its draft once) and
+      // their telemetry emitted after the write — the echo landed, which
+      // is the outbox budget's mutation_echo sample and the moment a
+      // behavior event becomes true.
+      const retired: PendingOp[] = [];
       setOps((draft) => {
         for (const op of [...draft.list]) {
           const spec = specs.get(op.id);
           const done = op.status === 'inFlight' && (spec?.echo(snapshot) ?? false);
           if (done) {
             const index = draft.list.indexOf(op);
-            if (index >= 0) draft.list.splice(index, 1);
+            if (index >= 0) {
+              retired.push(op);
+              draft.list.splice(index, 1);
+            }
           }
         }
       });
+      for (const op of retired) {
+        captureMutationEcho({
+          kind: op.kind,
+          ms: Date.now() - op.at,
+          ok: true,
+          remote: !!op.remote,
+        });
+        if (!op.remote) specs.get(op.id)?.telemetry?.();
+      }
     }
     // The guard set is read before any write (reads lag writes); released
     // guards let the durable state win again for those entities.
@@ -551,6 +574,16 @@ function createEngineBody<S extends object>(
       if (settled) return;
       settled = true;
       const message = errorMessage(error);
+      // The failed mutation_echo — a failed write is a budget sample too.
+      const failed = ops.list.find((entry) => entry.id === id);
+      if (failed) {
+        captureMutationEcho({
+          kind: failed.kind,
+          ms: Date.now() - failed.at,
+          ok: false,
+          remote: false,
+        });
+      }
       // Mark failed (guards drop via status) and re-merge: the durable
       // state wins again for this op's entities — that IS the revert.
       setOps((draft) => {
@@ -638,15 +671,28 @@ function createEngineBody<S extends object>(
     }
     if (retiring.length > 0 || stale.length > 0 || expiredRemote.length > 0) {
       if (retiring.length > 0) {
+        const retired: PendingOp[] = [];
         setOps((draft) => {
           for (const op of [...draft.list]) {
             const spec = specs.get(op.id);
             if (op.status === 'inFlight' && spec?.echo(lastDurable)) {
               const index = draft.list.indexOf(op);
-              if (index >= 0) draft.list.splice(index, 1);
+              if (index >= 0) {
+                retired.push(op);
+                draft.list.splice(index, 1);
+              }
             }
           }
         });
+        for (const op of retired) {
+          captureMutationEcho({
+            kind: op.kind,
+            ms: Date.now() - op.at,
+            ok: true,
+            remote: !!op.remote,
+          });
+          if (!op.remote) specs.get(op.id)?.telemetry?.();
+        }
       }
       if (stale.length > 0) {
         setOps((draft) => {
@@ -656,6 +702,17 @@ function createEngineBody<S extends object>(
             }
           }
         });
+        for (const id of stale) {
+          const op = current.find((entry) => entry.id === id);
+          if (op) {
+            captureMutationEcho({
+              kind: op.kind,
+              ms: Date.now() - op.at,
+              ok: false,
+              remote: false,
+            });
+          }
+        }
       }
       if (expiredRemote.length > 0) {
         setOps((draft) => {
@@ -694,6 +751,13 @@ function createEngineBody<S extends object>(
     spec.send().then(
       () => setTimeout(() => sweep(), 200),
       (error: unknown) => {
+        const startedAt = ops.list.find((entry) => entry.id === opId)?.at ?? Date.now();
+        captureMutationEcho({
+          kind: spec.kind,
+          ms: Date.now() - startedAt,
+          ok: false,
+          remote: false,
+        });
         setOps((draft) => {
           const op = draft.list.find((entry) => entry.id === opId);
           if (op) {

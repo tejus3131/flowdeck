@@ -2,11 +2,12 @@
 
 The experiment layer over the frozen tokens: [`design-system.md`](./design-system.md)
 freezes the values; this doc defines the variants that still have two
-right answers, and how one gets picked. The playground is not a shipped
-page — it lands as its own redesign PR that renders the variants inside
-the real surfaces, because gray, accent, and density decisions are only
-trustworthy at real density with real data. Deciding them from a mock
-page is how taste gets re-derived per PR all over again.
+right answers, and how one gets picked. The developer playground's
+foundations are live (`/playground/tokens` renders the P1 gray axis side
+by side); the DECIDING happens in real use — each axis still ships behind
+a local toggle inside the real surfaces, because gray, accent, and density
+decisions are only trustworthy at real density with real data. Deciding
+them from a mock page is how taste gets re-derived per PR all over again.
 
 This is the focused token-axis playground, not the complete developer
 component/surface catalogue. The full route, access, and variant-comparison
