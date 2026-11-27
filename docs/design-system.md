@@ -7,6 +7,15 @@ elevation, spring, type density — resolve through the variants defined in
 [`design-playground.md`](./design-playground.md). Changes to this file are
 ADR-grade: they reopen decisions, so they get a line in `docs/adr.md` too.
 
+**Implemented:** the values below are real — `src/styles/tokens.css`
+carries them as `--fd-*` custom properties (light, dark, and the
+`[data-gray="cool"]` P1-B swap), `src/app.css` maps them into Tailwind's
+theme (`bg-fd-bg`, `text-fd-sm`, `rounded-fd-md`… read the same
+variables), and `src/components/ui/` holds the shared primitives that
+consume them. Production surfaces and the playground import those
+primitives; the P-variants render by flipping data attributes, not by
+copying values.
+
 ## Color
 
 Built in OKLCH (Tailwind 4 native; Stripe's finding: HSL lightness is
