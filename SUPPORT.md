@@ -16,4 +16,6 @@ documentation first, then issues.
 - **Anything else:** open a discussion on the repository.
 
 If something in the docs is wrong or unclear, that's a bug too — an
-issue or a PR fixing the doc is always welcome.
+issue is always welcome. Pull requests are limited to the maintainer and
+invited collaborators (the branch ruleset locks `preview` and `main`);
+see [`CONTRIBUTING.md`](CONTRIBUTING.md) for how contributing works.
