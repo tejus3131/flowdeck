@@ -37,9 +37,11 @@ lives in — this contract is what makes the redesign safe.
 3. **Unbounded lists virtualize** (performance-rules 10).
 4. **Every panel gets a perf mark and a budget**; PRs that touch a view's
    loading include before/after numbers (performance-rules 7).
-5. **Feature flags gate redesign surfaces** (ADR-8): new UI ships dark
-   behind a PostHog flag, flips per-user or per-percent, and the old
-   surface stays until the flag reaches 100%.
+5. **Feature flags gate redesign surfaces** (ADR-8, ADR-17): components
+   read typed decisions from the request/client flag context; they never
+   evaluate PostHog directly. New UI defaults to the existing surface.
+   The evaluation, SSR, rollback, and developer-playground contract is in
+   [`feature-flags-and-ui-playground.md`](../feature-flags-and-ui-playground.md).
 6. **A route is a wiring file.** If a route grows a component, the
    component moves out. Target: no route file over ~300 lines.
 
