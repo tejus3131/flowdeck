@@ -101,11 +101,11 @@ Deploy matrix, **in order**, environment `preview` — the table
 classifies **paths**; the diff window is "since the last successful
 deploy":
 
-| Changed paths (since last successful deploy)                                                          | Action                                                    |
-| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --remote=<db url> --yes` (preview)      |
-| `supabase/functions/**`                                                                               | `supabase functions deploy mcp --no-verify-jwt` (preview) |
-| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy`    |
+| Changed paths (since last successful deploy)                                                          | Action                                                           |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --remote=<db url> --yes` (preview)             |
+| `supabase/functions/**`                                                                               | `supabase functions deploy mcp --no-verify-jwt --yes` (preview)  |
+| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && pnpm exec wrangler deploy` |
 
 `concurrency: deploy-preview` queues deploys (never cancels a
 mid-deploy). A queued run may compute its base before the in-flight run
@@ -127,7 +127,7 @@ run must never tag, or it would poison the next run's base.
 
 Same tag-based diffing against **`release-r*`** (never `preview-r*`),
 against prod refs, gated on the `production` environment approval.
-`wrangler deploy` (no `--env` — top level IS production).
+`pnpm exec wrangler deploy` (no `--env` — top level IS production).
 
 ### Releases (both deploy workflows)
 
@@ -241,6 +241,23 @@ not GitHub.
 - **Workflow changes update this file in the same commit** — the docs
   are the contract; behavior that outlives its documentation is a bug.
   (This rule exists because the drift bit three reviews in a row.)
+
+### CLI inventory & policy (every external CLI in CI)
+
+Every CLI any workflow invokes, its pin, and its CI-safety requirement.
+Adding a CLI to any workflow means adding its row here in the same
+commit — the #84 merge shipped the first-ever `functions` deploy leg and
+it died on a missing `--yes` the migrations leg had already learned.
+
+| CLI          | Pin                                        | Where invoked                                       | CI-safety rule                                                                                                                           |
+| ------------ | ------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm`       | `packageManager: pnpm@11.14.0` + action    | every job                                           | `--frozen-lockfile` on install — never resolve deps live                                                                                 |
+| `node`       | `node-version: 24` (setup-node)            | every job                                           | major pinned; patch floats with the distro — acceptable                                                                                  |
+| `supabase`   | `version: 3.4.0` (setup-cli action)        | quality (local stack), deploy-preview/prod (remote) | **every remote-mutating command carries `--yes`** — `db push` and `functions deploy` both; CI has no terminal to answer prompts          |
+| `deno`       | `deno-version: v2.9.8` (setup-deno action) | quality `functions` job (`deno check`)              | read-only typecheck — no flags needed                                                                                                    |
+| `wrangler`   | devDependency, lockfile-pinned (^4.165.0)  | deploy-preview/prod (`pnpm exec wrangler deploy`)   | invoked via `pnpm exec`, **never `npx`** — npx silently downloads latest on resolution failure, floating the deploy version              |
+| `gh`         | preinstalled on ubuntu-latest (floats)     | deploy-preview/prod release steps                   | `GH_TOKEN` set explicitly; every command fully-argued (no interactive paths) — floats are acceptable, gh's release/API surface is stable |
+| `curl`/`git` | runner image                               | keep-alive, pr-intel                                | read-only usage — no pin needed                                                                                                          |
 
 ## Preview access setup (one-time)
 
