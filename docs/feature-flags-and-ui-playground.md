@@ -2,9 +2,11 @@
 
 The implementation contract for the redesign flags and the developer-only
 variant gallery. This extends [the data playbook](./data-playbook.md)'s
-rollout policy and [L5](./layers/l5-views.md)'s flag rule. It is a design
-for the foundation PR, not a claim that PostHog or the playground is already
-integrated.
+rollout policy and [L5](./layers/l5-views.md)'s flag rule. The flag runtime
+is integrated — the typed registry, request-scoped evaluation, and client
+override lifecycle live in `src/lib/flags/` (one project, one
+`app_environment` property: [posthog.md](./posthog.md)); the playground
+routes are not yet built.
 
 ## What the research says
 

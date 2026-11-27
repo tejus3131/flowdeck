@@ -21,7 +21,9 @@ quarterly decision cadence. Read both before adding any event.
 | `perf.ts` marks | client-side p50/p95 per open path (the `?perf=1` panel)                                  | free (ours)                                                                                                      | a batched sink → PostHog counters, not one event per mark               |
 
 Local dev sends nothing (`import.meta.env.DEV` guard on the sink); the
-PostHog key is `VITE_`-prefixed — public by design.
+PostHog key is `VITE_`-prefixed — public by design. The project's
+configuration record — free-tier allowances, the one-project/one-property
+environment split, and flag governance — is [`posthog.md`](./posthog.md).
 
 ## The event taxonomy
 
