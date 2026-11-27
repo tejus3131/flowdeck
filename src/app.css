@@ -53,6 +53,22 @@
   --ease-fd-drop: var(--fd-ease-drop);
   --ease-fd-spring: var(--fd-ease-spring);
 
+  /* Spacing and motion durations ride the frozen grid too: the -fd-*
+     names give utilities (p-fd-2, duration-fd-1) that read the same
+     custom properties. Micro-spacing below the grid (≤ 2px, e.g. a
+     badge's vertical inset) is the one documented exception — it rides
+     Tailwind's default scale (docs/design-system.md, spacing). */
+  --spacing-fd-1: var(--fd-space-1);
+  --spacing-fd-2: var(--fd-space-2);
+  --spacing-fd-3: var(--fd-space-3);
+  --spacing-fd-4: var(--fd-space-4);
+  --spacing-fd-5: var(--fd-space-5);
+  --spacing-fd-6: var(--fd-space-6);
+
+  --transition-duration-fd-1: var(--fd-dur-1);
+  --transition-duration-fd-2: var(--fd-dur-2);
+  --transition-duration-fd-3: var(--fd-dur-3);
+
   /* The type scale carries its line-heights (the frozen table) */
   --text-fd-xs: var(--fd-text-xs-size);
   --text-fd-xs--line-height: var(--fd-text-xs-lh);

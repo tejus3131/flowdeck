@@ -20,8 +20,8 @@ export function Input(
       onInput={(event) => props.onInput?.(event.currentTarget.value)}
       aria-invalid={props.invalid ? 'true' : undefined}
       class={[
-        'w-full rounded-fd-sm border bg-fd-bg-1 px-3 py-2 text-fd-sm text-fd-text outline-none',
-        'placeholder:text-fd-text-3 transition-colors duration-100 ease-fd-out',
+        'w-full rounded-fd-sm border bg-fd-bg-1 px-fd-3 py-fd-2 text-fd-sm text-fd-text outline-none',
+        'placeholder:text-fd-text-3 transition-colors duration-fd-1 ease-fd-out',
         'focus:border-fd-accent focus:ring-2 focus:ring-fd-accent-tint',
         'disabled:cursor-not-allowed disabled:opacity-50',
         props.invalid ? 'border-fd-danger' : 'border-fd-line',

@@ -18,8 +18,8 @@ const VARIANT: Record<ButtonVariant, string> = {
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: 'px-2 py-1 text-fd-xs',
-  md: 'px-3 py-1.5 text-fd-sm',
+  sm: 'px-fd-2 py-fd-1 text-fd-xs',
+  md: 'px-fd-3 py-fd-1 text-fd-sm',
 };
 
 export function Button(
@@ -37,8 +37,8 @@ export function Button(
       disabled={props.disabled ?? false}
       onClick={() => props.onClick?.()}
       class={[
-        'inline-flex items-center justify-center gap-1.5 rounded-fd-sm font-medium',
-        'transition-colors duration-100 ease-fd-out',
+        'inline-flex items-center justify-center gap-fd-1 rounded-fd-sm font-medium',
+        'transition-colors duration-fd-1 ease-fd-out',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-accent',
         'disabled:cursor-not-allowed disabled:opacity-50',
         VARIANT[props.variant ?? 'primary'],

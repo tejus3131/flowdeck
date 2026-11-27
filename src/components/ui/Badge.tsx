@@ -16,7 +16,7 @@ const TAG_VARS = [
 export function Badge(props: ParentProps & { hue?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 }) {
   return (
     <span
-      class={`inline-flex items-center rounded-fd-full px-2 py-0.5 text-fd-xs font-medium
+      class={`inline-flex items-center rounded-fd-full px-fd-2 py-0.5 text-fd-xs font-medium
         ${TAG_VARS[(props.hue ?? 1) - 1]}`}
       style={{
         'background-color': `color-mix(in oklch, var(--fd-tag-${props.hue ?? 1}) 18%, transparent)`,
