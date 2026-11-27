@@ -958,6 +958,24 @@ function oauthDiscovery(pathname: string): Response | null {
   return null;
 }
 
+/** The consent-code row. The edge function's client is untyped (no
+ *  generated database types on Deno), so the row shape is declared here
+ *  — it mirrors the mcp_auth_codes migration and is asserted at the
+ *  single read below. */
+type McpAuthCode = {
+  id: string;
+  user_id: string;
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  expires_at: string;
+  used_at: string | null;
+  workspace_scope: string[] | null;
+  allowed_ops: string[] | null;
+  workspace_ops: Record<string, string[]> | null;
+  connection_name: string | null;
+};
+
 /** POST /token — the authorization_code + PKCE exchange. Single-use
  * codes, 10-minute TTL, redirect_uri and client_id must match, and the
  * minted credential is a normal api_tokens PAT (shared revocation and
@@ -988,11 +1006,12 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_request', 'code, code_verifier, client_id and redirect_uri are required');
   }
 
-  const { data: stored } = await service
+  const { data: storedData } = await service
     .from('mcp_auth_codes')
     .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops, workspace_ops, connection_name')
     .eq('code_hash', await sha256Hex(code))
     .maybeSingle();
+  const stored = storedData as McpAuthCode | null;
   if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
     return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
   }
@@ -1003,10 +1022,12 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_grant', 'PKCE verification failed');
   }
 
-  // Single-use: claim the code; a racing exchange finds nothing.
+  // Single-use: claim the code; a racing exchange finds nothing. The
+  // payload casts ride the untyped client (its builder types rows as
+  // `never`); the row type above owns the shape.
   const { data: claimed } = await service
     .from('mcp_auth_codes')
-    .update({ used_at: new Date().toISOString() })
+    .update({ used_at: new Date().toISOString() } as never)
     .eq('id', stored.id)
     .is('used_at', null)
     .select('id')
@@ -1027,7 +1048,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     workspace_scope: stored.workspace_scope ?? null,
     allowed_ops: stored.allowed_ops ?? null,
     workspace_ops: stored.workspace_ops ?? null,
-  });
+  } as never);
   if (insertError) {
     return oauthError(500, 'server_error', 'could not mint the token');
   }
@@ -1073,7 +1094,10 @@ Deno.serve(async (request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } },
     );
-    return oauthTokenExchange(request, service);
+    // The cast aligns the inferred client instantiation with the
+    // declaration's ReturnType (the pinned supabase-js types infer
+    // different generics at the two sites).
+    return oauthTokenExchange(request, service as ReturnType<typeof createClient>);
   }
   // Streamable HTTP: this server only answers client POSTs.
   if (request.method !== 'POST') {
