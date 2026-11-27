@@ -69,6 +69,9 @@ hooks format and lint staged files automatically.
 
 Branches: `main` = production, `preview` = integration. PRs target
 `preview`; the release PR `preview` → `main` ships to production.
+Pull requests are limited to the maintainer and invited collaborators —
+outside contributions go through issues; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Deployment
 
