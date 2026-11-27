@@ -59,6 +59,9 @@ reason).
 
 ## Open questions → answered by the playground, not by more research
 
+Each has a variant, a surface, and a resolution path — see
+[`design-playground.md`](./design-playground.md).
+
 - Warm-gray vs cool-gray at _our_ densities (P2 vs P1 settles it by feel)
 - Indigo vs violet accent under both themes
 - Flat cards (Linear) vs elevated cards (Canva) for a board people stare at all day
