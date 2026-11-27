@@ -8,6 +8,11 @@ the real surfaces, because gray, accent, and density decisions are only
 trustworthy at real density with real data. Deciding them from a mock
 page is how taste gets re-derived per PR all over again.
 
+This is the focused token-axis playground, not the complete developer
+component/surface catalogue. The full route, access, and variant-comparison
+contract lives in
+[`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
+
 ## The four variants
 
 | Variant | Axis                   | What it renders                                                                              | The question it answers                                                                           |

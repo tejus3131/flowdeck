@@ -14,11 +14,11 @@ quarterly decision cadence. Read both before adding any event.
 
 ## The stack
 
-| Tool            | What it gives us                                                                         | Free tier                                                                                                 | Cost control                                                            |
-| --------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| PostHog Cloud   | product analytics, feature flags, experiments, session replay, exceptions                | 1M events/mo, 1M flag requests/mo, 5K replays/mo, 100K exceptions/mo — **hard-capped, no surprise bills** | lean taxonomy (below), replays sampled 10%                              |
-| Workers Logs    | server-side logs: `[perf]` slow reads, `[boardStream]` fold/resync lines, channel errors | 3-day retention                                                                                           | the escape hatch is Axiom Personal (500GB/mo) if retention ever matters |
-| `perf.ts` marks | client-side p50/p95 per open path (the `?perf=1` panel)                                  | free (ours)                                                                                               | a batched sink → PostHog counters, not one event per mark               |
+| Tool            | What it gives us                                                                         | Free tier                                                                                 | Cost control                                                            |
+| --------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| PostHog Cloud   | product analytics, feature flags, experiments, session replay, exceptions                | 1M flag-evaluation requests/mo included; usage-priced above. Product quotas vary by plan. | Organization billing limit; lean taxonomy, sampled replays              |
+| Workers Logs    | server-side logs: `[perf]` slow reads, `[boardStream]` fold/resync lines, channel errors | 3-day retention                                                                           | the escape hatch is Axiom Personal (500GB/mo) if retention ever matters |
+| `perf.ts` marks | client-side p50/p95 per open path (the `?perf=1` panel)                                  | free (ours)                                                                               | a batched sink → PostHog counters, not one event per mark               |
 
 Local dev sends nothing (`import.meta.env.DEV` guard on the sink); the
 PostHog key is `VITE_`-prefixed — public by design.
@@ -47,9 +47,9 @@ adds its event — the observability mirror of performance-rules 12).
 ## Feature flags and experiments
 
 - **Flags gate redesign surfaces** (L5 rule 5): new UI ships dark behind a
-  PostHog flag, flips per-user first (the maintainers), then per-percent.
-  The old surface stays until the flag reads 100% — the old code is
-  deleted one release after that.
+  typed Flowdeck flag; the existing surface is its release fallback. The
+  runtime, SSR, kill-switch, and internal-playground contract is in
+  [`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
 - **Experiments need one primary metric, declared up front** — a
   `panel_open` p95, a `mutation_echo` p95, or a `page_open` retention
   shape. An experiment with no metric is a flag, not an experiment.
@@ -59,8 +59,12 @@ adds its event — the observability mirror of performance-rules 12).
   only causal comparison we can afford. Full reasoning and the flag
   lifecycle rules: [`data-playbook.md`](./data-playbook.md).
 - Experiments run on preview before prod (the same review the code gets).
-- Flag requests are metered (1M/mo) but cheap; do **not** poll flags in a
-  loop or fork them per entity.
+- Flag requests are metered: client SDK reads are cached, but initialization,
+  identity/property changes, explicit reloads, and server-side remote
+  evaluations can call `/flags`. Do not poll in a loop or fork flags per
+  entity. Measure request volume and configure a billing limit before
+  production rollout; see
+  [`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
 
 ## Dashboards (build these when the sink lands)
 

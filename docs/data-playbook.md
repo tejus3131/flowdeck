@@ -44,6 +44,10 @@ input metrics — that frozen window is what every redesign result
 compares against. Skipping it means the redesign gets judged by vibes,
 which is the failure mode this playbook exists to prevent.
 
+That foundation also implements the typed flag runtime and SSR contract in
+[`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md):
+the event baseline alone is not sufficient to make the UI rollout reversible.
+
 **The honesty rule.** Telemetry tells us _what_, never _why_ and never
 _whether users like it_. "Like" is inferred, never captured:
 
@@ -245,6 +249,9 @@ So the playbook at our size:
   writing, and **randomize at the workspace level, never per-user** —
   splitting teammates across variants contaminates both arms
   (interference; the multiplayer-product A/B trap).
+- **Scope rollouts to the surface**: personal preferences may be user-level;
+  shared board and collaboration experiences should be consistent per
+  workspace. Flag value and audience are distinct from experiment exposure.
 - **Qualitative-first below ~100 users**: five good interviews outrank
   any test we can run. Ask about the _last time_ they did the task, not
   what they want.
@@ -264,6 +271,12 @@ revert condition go in the flag description; **a flag at 100% is done —
 remove or archive it**; wrap flag reads in one function; CI tests both
 states; cap the total number of live flags (the Knight Capital failure
 is the canonical unmanaged-flag story).
+
+The registry, safe fallbacks, SSR evaluation, quota behavior, and
+developer-only playground access are specified in
+[`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
+In particular, permission flags fail closed and do not replace server
+authorization or database RLS.
 
 **The redesign rollout, concretely**: flag it (release type) → canary
 ~5% for a few days checking errors and replays → 100% → keep a 10%
