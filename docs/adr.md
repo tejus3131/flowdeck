@@ -325,3 +325,17 @@ independently. The component gallery can grow by component/surface page
 without a parallel implementation or additional hosting product. Temporary
 flags carry cleanup work; experiments remain off until separately justified
 by the data-playbook criteria.
+
+**Amendment (2026-11-27).** The playground's access mechanism changed:
+instead of a server-evaluated PostHog permission flag, access is
+**environment-gated** — the preview deployment is already Cloudflare
+Access-gated to the maintainer, so it IS the developer cohort, and
+production always returns the normal 404 (`VITE_APP_ENV` is baked at
+build time; a runtime failure cannot open the gate). The check stays
+server-side in every route's preload and fails closed. The typed flag
+boundary itself is unchanged — permission flags remain a supported kind
+for future per-account cohorts; the registry simply holds no flags until
+the first redesign release flag registers with the PR that consumes it.
+Net effect: one less PostHog dependency and no flag-metadata setup for a
+one-person cohort, at zero security cost (the flag was never the security
+boundary; Cloudflare Access and RLS are).

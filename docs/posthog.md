@@ -104,9 +104,12 @@ and the PostHog flag's description (for dashboard visibility):
 
 ## Current flags
 
-| Key                 | Kind    | Purpose    | Fallback | Notes                                                                                                             |
-| ------------------- | ------- | ---------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `playground-access` | boolean | permission | deny     | Developer preview cohort (`/playground/*`), exact UUID conditions. Fallback denies; route returns the normal 404. |
+**None.** The registry (`src/lib/flags/registry.ts`) is deliberately
+empty: playground access is environment-gated (ADR-17's amendment — the
+preview deployment is already Cloudflare-Access-gated to the maintainer,
+so `VITE_APP_ENV` decides and production always 404s; no PostHog flag is
+involved). A flag registers only with the PR that consumes it — the
+redesign's release flags arrive with the first redesigned surface.
 
 ## The first-party ingest proxy
 

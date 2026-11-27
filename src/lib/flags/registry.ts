@@ -46,23 +46,14 @@ export type VariantFlagDef = FlagMeta & {
 
 export type FlagDef = BooleanFlagDef | VariantFlagDef;
 
-export const FLAGS = {
-  // Developer playground access (docs/feature-flags-and-ui-playground.md):
-  // a permission decision, not a rollout. Every /playground route checks
-  // it SERVER-side and fails closed to the app's normal 404; the flag
-  // never gates data (RLS does) and its PostHog rule targets exact
-  // Flowdeck user UUIDs — never email (the no-PII taxonomy).
-  'playground-access': {
-    kind: 'boolean',
-    purpose: 'permission',
-    scope: 'user',
-    owner: 'tejus3131',
-    expiry: 'permanent — permission flag; reviewed quarterly with the registry',
-    fallback: false,
-    rollback:
-      'Deactivate the flag (or empty its condition): /playground/* returns 404 for everyone. No routes, data, or surfaces are affected.',
-  },
-} as const satisfies Record<string, FlagDef>;
+// The registry is EMPTY right now — deliberately. Playground access is
+// environment-gated (ADR-17's amendment: preview deployments are already
+// Cloudflare-Access-gated to the maintainer, so VITE_APP_ENV decides —
+// production always 404s; no PostHog flag involved). A flag registers
+// here ONLY with the PR that consumes it: the redesign's release flags
+// arrive with the first redesigned surface, each carrying the full
+// metadata plus its removal task (docs/posthog.md governs).
+export const FLAGS = {} as const satisfies Record<string, FlagDef>;
 
 export type FlagKey = keyof typeof FLAGS;
 

@@ -30,8 +30,8 @@ function warnOnce(topic: string, message: string): void {
 }
 
 /** Resolve a flag definition against its raw evaluation — the generic
- *  core `resolveFlag` specializes for registry keys (tests drive it
- *  with synthetic definitions for kinds the registry doesn't use yet).
+ *  core every registry key resolves through (tests drive it with
+ *  synthetic definitions for kinds the registry doesn't use yet).
  *
  *  - missing raw (not created, quota-limited, provider failure) → the
  *    declared fallback;
@@ -78,15 +78,6 @@ export function resolveFlagDef(
   return raw.variant;
 }
 
-/** Resolve ONE registered flag against its raw evaluation. */
-export function resolveFlag<K extends FlagKey>(
-  key: K,
-  raw: RawFlagValue | undefined,
-  context: FlagContext,
-): FlagValue<K> {
-  return resolveFlagDef(FLAGS[key], raw, context) as FlagValue<K>;
-}
-
 /** Resolve every registered flag from a raw evaluation result. Null raw
  *  (provider failure, absent config) resolves the whole snapshot to
  *  declared fallbacks — the app stays fully usable. */
@@ -96,7 +87,7 @@ export function evaluateAllFlags(
 ): FlagValues {
   const values = {} as Record<FlagKey, FlagValue<FlagKey>>;
   for (const key of Object.keys(FLAGS) as FlagKey[]) {
-    values[key] = resolveFlag(key, raw?.[key], context) as FlagValue<FlagKey>;
+    values[key] = resolveFlagDef(FLAGS[key], raw?.[key], context) as FlagValue<FlagKey>;
   }
   return values as FlagValues;
 }

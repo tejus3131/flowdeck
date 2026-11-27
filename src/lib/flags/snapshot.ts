@@ -15,7 +15,7 @@ import { env } from 'virtual:solid-env/server';
 import { createSupabaseRequestClient } from '../../server/supabase';
 import { evaluateAllFlags, type FlagValues } from './evaluate';
 import { posthogEvaluateFlags } from './provider';
-import { FLAGS, type FlagKey, type FlagValue } from './registry';
+import { FLAGS, type FlagDef, type FlagKey, type FlagValue } from './registry';
 
 const WORKSPACE_COOKIE = /(?:^|;\s*)fd_ws=([0-9a-f-]{36})/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -94,7 +94,10 @@ export function flagValue<K extends FlagKey>(
   snapshot: FlagSnapshot | undefined,
   key: K,
 ): FlagValue<K> {
-  return snapshot ? snapshot.values[key] : (FLAGS[key].fallback as FlagValue<K>);
+  // While the snapshot is still pending (a route's guard raced ahead of
+  // the evaluation), serve the registry's declared fallback — safe by
+  // definition, never a guess.
+  return snapshot ? snapshot.values[key] : ((FLAGS[key] as FlagDef).fallback as FlagValue<K>);
 }
 
 /** The reactive read for render code: a memo over the same request/

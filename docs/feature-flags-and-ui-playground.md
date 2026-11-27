@@ -84,10 +84,13 @@ Within PostHog's free monthly flag-request allowance, person-targeted
 evaluation can receive context-specific person properties. Use that to
 filter by the active workspace without turning on Group Analytics:
 
-| Flowdeck need                         | Evaluation identity and context                                                            | Behavior                                                                                 |
-| ------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Developer preview access; personal UI | `distinct_id = user UUID`; no workspace property                                           | Per-account access and rollout.                                                          |
-| Workspace-specific UI switch          | `distinct_id = user UUID`; person property `flowdeck_workspace_id = active workspace UUID` | An exact workspace-ID condition applies to every member when the rule's rollout is 100%. |
+| Flowdeck need                      | Evaluation identity and context                                                            | Behavior                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Personal UI (a per-account switch) | `distinct_id = user UUID`; no workspace property                                           | Per-account access and rollout.                                                          |
+| Workspace-specific UI switch       | `distinct_id = user UUID`; person property `flowdeck_workspace_id = active workspace UUID` | An exact workspace-ID condition applies to every member when the rule's rollout is 100%. |
+
+(The playground is NOT in this table — its access is environment-gated,
+not a flag; see the access policy below.)
 
 A cohort is a set of people, not a workspace. For Flowdeck, send the
 verified active workspace as a transient person-property override:
@@ -150,7 +153,7 @@ There is no universal safe value; each flag declares its fallback:
 | ---------------------------- | -------------------------------------------------- |
 | Release / redesign           | Existing production UI (`control`).                |
 | Optional operational feature | The documented safe/degraded path, often disabled. |
-| Internal playground access   | Deny.                                              |
+| Permission (beta/premium)    | Deny.                                              |
 | Experiment                   | Control variant; no assignment means no exposure.  |
 
 Validate returned multivariate values against the registry. Unknown values
@@ -221,23 +224,25 @@ rendering or returning data. Unauthorized requests receive the same normal
 404 response as an unknown route; do not rely on hiding navigation, client
 flags, or `noindex`.
 
-Access is a permission decision, not a rollout decision:
+Access is **environment-gated** (ADR-17's amendment — this replaced the
+original server-evaluated permission flag, which carried setup cost and a
+PostHog dependency for a one-person cohort):
 
-- Require an authenticated Flowdeck account. A server-evaluated PostHog
-  permission flag keyed to the authenticated account can manage the preview
-  cohort; never trust a client-side flag or a user-supplied identity. If the
-  server cannot establish access, deny.
-- A feature flag is not a security boundary for sensitive data or code. Add
-  a separate server permission or Cloudflare Access if the gallery ever
-  contains information that must be confidential. The playground uses
-  synthetic data and its built client chunks are not secret.
+- The preview deployment IS the developer cohort: it is already Cloudflare
+  Access-gated to the maintainer, so the playground renders when
+  `VITE_APP_ENV` is `preview` and local dev builds (`import.meta.env.DEV`)
+  may show it for development.
+- Production always returns the normal 404 — the environment value is
+  baked at build time, so no runtime failure can open the gate on prod.
+- The check runs in every route's preload (server-side) and the same baked
+  value drives the hydrated render, so server and client agree by
+  construction.
+- A feature flag was never a security boundary for sensitive data or code
+  either — if the gallery ever contains information that must be
+  confidential, add a separate server permission or Cloudflare Access. The
+  playground uses synthetic data and its built client chunks are not secret.
 - Add `X-Robots-Tag: noindex` to the playground and its not-found response
   as crawler hygiene, not as security.
-- Cloudflare Access on a dedicated hostname/path is an optional outer gate
-  for stronger organizational access control; verify current plan/user
-  limits before adopting it. It may show an Access login/block page rather
-  than Flowdeck's normal 404. See [Access account limits](https://developers.cloudflare.com/cloudflare-one/account-limits/)
-  and [self-hosted applications](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/).
 
 The gallery must use deterministic, synthetic fixtures by default. Never
 render real workspace content in a developer gallery. Page access does not

@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearFlagDiagnostics,
   evaluateAllFlags,
-  resolveFlag,
   resolveFlagDef,
   type FlagContext,
 } from './evaluate';
@@ -32,13 +31,10 @@ beforeEach(() => {
 // ── the registry ──────────────────────────────────────────────────────────
 
 describe('the flag registry', () => {
-  it('declares playground access as a fail-closed permission flag', () => {
-    const def = FLAGS['playground-access'];
-    expect(def.kind).toBe('boolean');
-    expect(def.purpose).toBe('permission');
-    expect(def.scope).toBe('user');
-    expect(def.fallback).toBe(false);
-    expect(def.rollback).toMatch(/404/i);
+  it('is deliberately empty — flags register with the PR that consumes them', () => {
+    // Playground access is environment-gated (ADR-17's amendment), not a
+    // flag; the redesign's release flags arrive with their surfaces.
+    expect(Object.keys(FLAGS)).toEqual([]);
   });
 });
 
@@ -47,21 +43,35 @@ describe('the flag registry', () => {
 const noWorkspace: FlagContext = { workspaceId: null };
 const inWorkspace: FlagContext = { workspaceId: '22222222-2222-2222-2222-222222222222' };
 
-describe('resolveFlag', () => {
+describe('resolveFlagDef (the core every registry key resolves through)', () => {
   it('reads a boolean flag: on is on, off is off, missing is the fallback', () => {
-    expect(resolveFlag('playground-access', { enabled: true, variant: null }, noWorkspace)).toBe(
-      true,
-    );
-    expect(resolveFlag('playground-access', { enabled: false, variant: null }, noWorkspace)).toBe(
-      false,
-    );
-    expect(resolveFlag('playground-access', undefined, noWorkspace)).toBe(false);
+    const def = {
+      kind: 'boolean',
+      purpose: 'release',
+      scope: 'user',
+      owner: 'test',
+      expiry: 'test',
+      fallback: false,
+      rollback: 'test',
+    } as const;
+    expect(resolveFlagDef(def, { enabled: true, variant: null }, noWorkspace)).toBe(true);
+    expect(resolveFlagDef(def, { enabled: false, variant: null }, noWorkspace)).toBe(false);
+    expect(resolveFlagDef(def, undefined, noWorkspace)).toBe(false);
   });
 
   it('emits one bounded diagnostic for a missing value, never a storm', () => {
+    const def = {
+      kind: 'boolean',
+      purpose: 'release',
+      scope: 'user',
+      owner: 'test',
+      expiry: 'test',
+      fallback: false,
+      rollback: 'test',
+    } as const;
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    resolveFlag('playground-access', undefined, noWorkspace);
-    resolveFlag('playground-access', undefined, noWorkspace);
+    resolveFlagDef(def, undefined, noWorkspace);
+    resolveFlagDef(def, undefined, noWorkspace);
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
@@ -111,13 +121,9 @@ describe('resolveFlagDef with synthetic definitions (kinds the registry does not
 });
 
 describe('evaluateAllFlags', () => {
-  it('resolves a whole provider failure (null raw) to declared fallbacks', () => {
-    const values = evaluateAllFlags(null, noWorkspace);
-    expect(values['playground-access']).toBe(false);
-  });
-
-  it('resolves an empty (quota-limited) evaluation to declared fallbacks', () => {
-    expect(evaluateAllFlags({}, noWorkspace)['playground-access']).toBe(false);
+  it('an empty registry resolves to an empty snapshot — provider failures are vacuously safe', () => {
+    expect(evaluateAllFlags(null, noWorkspace)).toEqual({});
+    expect(evaluateAllFlags({}, noWorkspace)).toEqual({});
   });
 });
 
