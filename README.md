@@ -43,7 +43,9 @@ to **Cloudflare Workers**.
   workflows, and deploy matrix.
 - [`docs/observability.md`](docs/observability.md) — the event taxonomy,
   dashboards, and the free-tier budget for analytics, flags, and MCP
-  profiling.
+  profiling. The behavioral layer — what humans do with the product, and
+  how a number becomes a decision — lives in
+  [`docs/data-playbook.md`](docs/data-playbook.md).
 - [`docs/dev-setup.md`](docs/dev-setup.md) — local development: the
   Supabase stack, preview MCP via environment-variable headers, local
   MCP serving.

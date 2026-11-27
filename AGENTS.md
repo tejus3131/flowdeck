@@ -68,7 +68,9 @@ staged files automatically; preflight is the full check.
 7. `docs/performance-rules.md` — the 13 rules; check your change against
    them (budgets, no unbounded stores, no refetch storms).
 8. `docs/observability.md` — event taxonomy; new events follow the
-   taxonomy and the free-tier budget.
+   taxonomy and the free-tier budget. The behavioral layer — what humans
+   do with the product, and how a number becomes a decision — lives in
+   `docs/data-playbook.md`.
 
 ## The canonical test
 
