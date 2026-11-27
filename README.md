@@ -32,6 +32,13 @@ to **Cloudflare Workers**.
   what it costs, what it rules out).
 - [`docs/layers/`](docs/layers/) — the per-layer contracts (L0 database →
   L5 views): what each layer owns and may not do.
+- [`docs/design-system.md`](docs/design-system.md) — the frozen design
+  tokens (ADR-16): color, type, spacing, motion. UI changes read these
+  values, never hardcode them; the sourced research
+  ([`docs/research/`](docs/research/)) and the adopt/adapt/skip filter
+  ([`docs/design-findings.md`](docs/design-findings.md)) trace every
+  number, and [`docs/design-playground.md`](docs/design-playground.md)
+  defines how the still-open axes resolve.
 - [`docs/ci-cd.md`](docs/ci-cd.md) — the branch model, environments,
   workflows, and deploy matrix.
 - [`docs/observability.md`](docs/observability.md) — the event taxonomy,

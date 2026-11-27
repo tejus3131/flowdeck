@@ -51,12 +51,16 @@ read-order below puts `ui-data.md` before any view work.
 4. `docs/ui-data.md` — the UI data-wiring how-to (store selectors, not
    snapshot slices). Required before any view work — see "The one bug
    class to internalize" below.
-5. `docs/adr.md` — the decision records. Scan the numbers and titles;
+5. `docs/design-system.md` — the frozen visual layer (ADR-16): UI changes
+   read `--fd-*` tokens, never hardcode values. The filtering behind it
+   (`docs/design-findings.md`) and the still-open axes
+   (`docs/design-playground.md`) are one link away.
+6. `docs/adr.md` — the decision records. Scan the numbers and titles;
    read fully any that touch your upcoming work. **Never re-propose
    something an ADR already decided against.**
-6. `docs/ci-cd.md` — branch model (`feat/*` → PR → `preview` → release PR
+7. `docs/ci-cd.md` — branch model (`feat/*` → PR → `preview` → release PR
    → `main`), the deploy legs, the release records, the secrets/vars split.
-7. `docs/performance-rules.md` and `docs/observability.md` — the budgets
+8. `docs/performance-rules.md` and `docs/observability.md` — the budgets
    and the event taxonomy.
 
 ## 3. Verify the environment actually works

@@ -7,7 +7,9 @@ lives in — this contract is what makes the redesign safe.
 
 - Components and panels (each its own module; heavy ones lazy chunks)
 - Routes as composition: a route wires panels together, nothing more
-- Design tokens and theme module, and Tailwind classes
+- Design tokens ([`design-system.md`](../design-system.md), the ADR-16
+  frozen layer — CSS custom properties that Tailwind 4 reads via `@theme`)
+  and Tailwind classes
 - Local UI state only: which tab is open, panel width, hover, composer
   drafts
 - Perf marks on open paths (`perfStart`/`perfEnd` with budgets)

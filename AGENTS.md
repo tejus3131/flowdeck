@@ -55,15 +55,19 @@ staged files automatically; preflight is the full check.
    every entity change in one frame; a view built without it shows the
    change only when its own snapshot re-fetches — the staleness bug class
    this repo treats as a layering violation.**
-4. `docs/adr.md` — decision records. **Before proposing anything already
+4. `docs/design-system.md` — the frozen visual layer (ADR-16): UI changes
+   read `--fd-*` tokens from it, never hardcode values; the still-open
+   axes (gray, accent, elevation, spring, type density) resolve through
+   `docs/design-playground.md`.
+5. `docs/adr.md` — decision records. **Before proposing anything already
    decided** (no CRDTs, no bought sync engines, RLS-only, outbox…), read
    this. New decisions get a new ADR number in the same PR.
-5. `docs/ci-cd.md` — branch model, environments, deploy matrix. **Rule:
+6. `docs/ci-cd.md` — branch model, environments, deploy matrix. **Rule:
    any change to `.github/workflows/*` updates this file in the same
    commit.** No exceptions.
-6. `docs/performance-rules.md` — the 13 rules; check your change against
+7. `docs/performance-rules.md` — the 13 rules; check your change against
    them (budgets, no unbounded stores, no refetch storms).
-7. `docs/observability.md` — event taxonomy; new events follow the
+8. `docs/observability.md` — event taxonomy; new events follow the
    taxonomy and the free-tier budget.
 
 ## The canonical test

@@ -59,6 +59,12 @@ Read your own diff as if you were the maintainer, with these open:
   `detail().tags…`) and review every hit; the only acceptable ones are
   event handlers and the rule-4 snapshot fallbacks. Then run the canonical
   test by hand: change one row, confirm every surface updates in one frame.
+- `docs/design-system.md` — any UI change: run the hardcoded-value grep
+  (`rg -n '#[0-9a-fA-F]{3,8}\b' src/ --glob '!**/*.css'`) and review every
+  hit; colors come from `--fd-*` tokens, spacing from the 8px scale, motion
+  from the budget. A value that doesn't exist is added to the
+  design-system doc first, never inlined. Drop-settle (330–550ms,
+  distance-scaled) is the one budget exception.
 
 ## 5. Evidence per area (goes in the PR description)
 
