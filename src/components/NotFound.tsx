@@ -2,8 +2,9 @@ import { Title } from '@solidjs/meta';
 
 // The app's one 404 view — shared by the catch-all route and the
 // playground's denied state: an unauthorized /playground request gets
-// the SAME response as an unknown route (the access check is the flag
-// contract's fail-closed deny; this component is what that deny shows).
+// the SAME response as an unknown route (the access check is the
+// environment gate's fail-closed deny; this component is what that
+// deny shows).
 export function NotFound() {
   return (
     <main>

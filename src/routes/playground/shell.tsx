@@ -10,11 +10,16 @@ import { Show, type ParentProps } from 'solid-js';
 import { NotFound } from '../../components/NotFound';
 import { playgroundEnabled } from './guard';
 
+// Lifecycle statuses ride the tag-hue tokens (the same fixed-L/C hues
+// the Badge primitive uses — they hold contrast in both themes, so no
+// dark: variants): exploration = hue 2, candidate = hue 5, shipping =
+// hue 3; retired is the neutral ladder. A status palette of its own is
+// a P3 decision if the gallery grows more statuses.
 export const LIFECYCLE = {
-  exploration: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200',
-  candidate: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
-  shipping: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200',
-  retired: 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400',
+  exploration: 'bg-fd-tag-2/15 text-fd-tag-2',
+  candidate: 'bg-fd-tag-5/15 text-fd-tag-5',
+  shipping: 'bg-fd-tag-3/15 text-fd-tag-3',
+  retired: 'bg-fd-bg-2 text-fd-text-3',
 } as const;
 
 export function LifecycleTag(props: { status: keyof typeof LIFECYCLE }) {
@@ -34,26 +39,17 @@ export function PlaygroundShell(props: ParentProps) {
       <main class="mx-auto max-w-5xl px-4 py-8">
         <Title>Playground - Flowdeck</Title>
         <header class="mb-6">
-          <p class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          <p class="text-fd-xs font-semibold uppercase tracking-wider text-fd-text-3">
             Developer playground — synthetic data only
           </p>
           <nav class="mt-1 flex gap-4 text-sm">
-            <a
-              class="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-              href="/playground"
-            >
+            <a class="font-medium text-fd-accent hover:underline" href="/playground">
               Gallery
             </a>
-            <a
-              class="text-neutral-600 hover:underline dark:text-neutral-300"
-              href="/playground/tokens"
-            >
+            <a class="text-fd-text-2 hover:underline" href="/playground/tokens">
               Tokens
             </a>
-            <a
-              class="text-neutral-600 hover:underline dark:text-neutral-300"
-              href="/playground/components"
-            >
+            <a class="text-fd-text-2 hover:underline" href="/playground/components">
               Components
             </a>
           </nav>
@@ -69,7 +65,7 @@ export function PlaygroundHeading(props: { title: string; note: string }) {
   return (
     <div class="mb-6">
       <h1 class="text-lg font-semibold">{props.title}</h1>
-      <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{props.note}</p>
+      <p class="mt-1 text-fd-sm text-fd-text-2">{props.note}</p>
     </div>
   );
 }

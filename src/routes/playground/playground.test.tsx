@@ -5,7 +5,7 @@
 // to the normal 404. No PostHog call, no snapshot mock: the gate has
 // no runtime dependency left to mock.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@solidjs/testing-library';
+import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 import { flush } from 'solid-js';
 
 import { playgroundAccess, playgroundEnabled } from './guard';
@@ -90,10 +90,9 @@ describe('PlaygroundShell — the client render agrees with the preload', () => 
         )}
       </Router>
     ));
-    // The router resolves its initial location asynchronously.
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    flush();
-    expect(getByText('gallery content')).toBeInTheDocument();
+    // The router resolves its initial location asynchronously — wait for
+    // the content, not the clock.
+    await waitFor(() => expect(getByText('gallery content')).toBeInTheDocument());
     expect(getByText('Developer playground — synthetic data only')).toBeInTheDocument();
     expect(getByRole('link', { name: 'Tokens' })).toBeInTheDocument();
   });
@@ -112,9 +111,7 @@ describe('PlaygroundShell — the client render agrees with the preload', () => 
         )}
       </Router>
     ));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    flush();
-    expect(getByText('Page Not Found')).toBeInTheDocument();
+    await waitFor(() => expect(getByText('Page Not Found')).toBeInTheDocument());
     expect(queryByText('gallery content')).not.toBeInTheDocument();
   });
 });

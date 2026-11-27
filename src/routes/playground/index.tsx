@@ -1,9 +1,8 @@
 import type { RouteDefinition } from '@solidjs/router';
-import { For } from 'solid-js';
 
 import { playgroundPreload } from './guard';
 import { PlaygroundHeading, PlaygroundShell, LifecycleTag } from './shell';
-import { PAGES, type PlaygroundPage } from './component-registry';
+import { ComponentList } from './component-registry';
 
 export const route = {
   preload: playgroundPreload,
@@ -17,32 +16,18 @@ export default function PlaygroundIndex() {
         note="The real production components and tokens, side by side, from synthetic fixtures. Previewing a variant here never changes anyone's production assignment."
       />
       <section>
-        <h2 class="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-400">
+        <h2 class="mb-fd-2 text-fd-sm font-semibold uppercase tracking-wider text-fd-text-3">
           Components
         </h2>
-        <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <For each={Object.entries(PAGES) as [string, PlaygroundPage][]}>
-            {([name, page]) => (
-              <li>
-                <a
-                  href={`/playground/components/${name}`}
-                  class="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
-                >
-                  <span class="font-medium">{page.title}</span>
-                  <LifecycleTag status={page.status} />
-                </a>
-              </li>
-            )}
-          </For>
-        </ul>
+        <ComponentList />
       </section>
-      <section class="mt-6">
-        <h2 class="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-400">
+      <section class="mt-fd-6">
+        <h2 class="mb-fd-2 text-fd-sm font-semibold uppercase tracking-wider text-fd-text-3">
           Foundations
         </h2>
         <a
           href="/playground/tokens"
-          class="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+          class="flex items-center justify-between rounded-fd-md border border-fd-line px-fd-3 py-fd-2 text-fd-sm hover:bg-fd-bg-1"
         >
           <span class="font-medium">Token sets</span>
           <LifecycleTag status="shipping" />

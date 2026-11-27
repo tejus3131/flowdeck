@@ -70,10 +70,7 @@ export default function PlaygroundTokens() {
         title="Token sets"
         note="The frozen layer (ADR-16) rendered from its own values. The gray axis is the open P1 experiment — swap it here; the choice is local and resets on reload."
       />
-      <div
-        data-gray={gray() === 'cool' ? 'cool' : undefined}
-        class="rounded-fd-lg bg-fd-bg p-4 dark:bg-neutral-950"
-      >
+      <div data-gray={gray() === 'cool' ? 'cool' : undefined} class="rounded-fd-lg bg-fd-bg p-4">
         <div class="mb-4 flex gap-2 text-sm">
           <button
             type="button"

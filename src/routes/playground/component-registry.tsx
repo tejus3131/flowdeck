@@ -11,16 +11,17 @@ import { Badge } from '../../components/ui/Badge';
 import { Surface } from '../../components/ui/Surface';
 import { TagChip } from '../../components/TagChip';
 import { FixtureContext } from './fixtures';
+import { LifecycleTag } from './shell';
 
 /** A labelled row of examples — the catalogue's one layout idea:
  * comparable variants side by side under the same fixture + viewport. */
 function Row(props: { label: string; children: JSX.Element }) {
   return (
     <section class="mb-8">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+      <h3 class="mb-2 text-fd-xs font-semibold uppercase tracking-wider text-fd-text-3">
         {props.label}
       </h3>
-      <div class="flex flex-wrap items-center gap-3 rounded-fd-md bg-fd-bg p-4 dark:bg-neutral-950">
+      <div class="flex flex-wrap items-center gap-3 rounded-fd-md bg-fd-bg p-4">
         {props.children}
       </div>
     </section>
@@ -29,17 +30,44 @@ function Row(props: { label: string; children: JSX.Element }) {
 
 /** Light and dark side by side — the tokens override on the .dark
  *  subtree, so both themes render in one viewport without touching the
- *  user's own theme choice. */
-function ThemePair(props: { children: JSX.Element }) {
+ *  user's own theme choice. The child is a RENDER FUNCTION: Solid
+ *  creates JSX children once, and mounting those same nodes twice would
+ *  move them into the second panel (the light panel would render
+ *  empty) — calling the function per panel builds each side its own
+ *  nodes. */
+function ThemePair(props: { children: () => JSX.Element }) {
   return (
     <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <div class="rounded-fd-md bg-fd-bg p-4">{props.children}</div>
-      <div class="dark rounded-fd-md bg-fd-bg p-4">{props.children}</div>
+      <div class="rounded-fd-md bg-fd-bg p-4">{props.children()}</div>
+      <div class="dark rounded-fd-md bg-fd-bg p-4">{props.children()}</div>
     </div>
   );
 }
 
 const BUTTON_VARIANTS: ButtonVariant[] = ['primary', 'secondary', 'ghost', 'danger'];
+
+/** The catalogue's index list — the gallery index and the components
+ *  index render the SAME list (one source; they used to be two copies
+ *  that could drift). */
+export function ComponentList() {
+  return (
+    <ul class="grid grid-cols-1 gap-fd-2 sm:grid-cols-2">
+      <For each={Object.entries(PAGES) as [string, PlaygroundPage][]}>
+        {([name, page]: [string, PlaygroundPage]) => (
+          <li>
+            <a
+              href={`/playground/components/${name}`}
+              class="flex items-center justify-between rounded-fd-md border border-fd-line px-fd-3 py-fd-2 text-fd-sm hover:bg-fd-bg-1"
+            >
+              <span class="font-medium">{page.title}</span>
+              <LifecycleTag status={page.status} />
+            </a>
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+}
 
 export type PlaygroundPage = {
   title: string;
@@ -64,14 +92,18 @@ export const PAGES: Record<string, PlaygroundPage> = {
         </Row>
         <Row label="States — hover, focus-visible (keyboard), disabled">
           <Button>Hover me</Button>
-          <span class="text-xs text-neutral-400">← tab into the next one</span>
+          <span class="text-fd-xs text-fd-text-3">← tab into the next one</span>
           <Button onClick={() => {}}>Focus target</Button>
           <Button disabled>Disabled</Button>
         </Row>
         <Row label="Themes — light and dark read the same tokens">
           <ThemePair>
-            <Button>Primary</Button>
-            <Button variant="secondary">Secondary</Button>
+            {() => (
+              <>
+                <Button>Primary</Button>
+                <Button variant="secondary">Secondary</Button>
+              </>
+            )}
           </ThemePair>
         </Row>
       </>
@@ -110,11 +142,13 @@ export const PAGES: Record<string, PlaygroundPage> = {
     render: () => (
       <Row label="The 8 perceptually even hues — light and dark hold contrast">
         <ThemePair>
-          <div class="flex flex-wrap gap-2">
-            <For each={[1, 2, 3, 4, 5, 6, 7, 8] as const}>
-              {(hue) => <Badge hue={hue}>hue {hue}</Badge>}
-            </For>
-          </div>
+          {() => (
+            <div class="flex flex-wrap gap-2">
+              <For each={[1, 2, 3, 4, 5, 6, 7, 8] as const}>
+                {(hue) => <Badge hue={hue}>hue {hue}</Badge>}
+              </For>
+            </div>
+          )}
         </ThemePair>
       </Row>
     ),
@@ -131,14 +165,16 @@ export const PAGES: Record<string, PlaygroundPage> = {
         </Row>
         <Row label="Flat vs elevated — the P2 experiment, side by side">
           <ThemePair>
-            <div class="flex gap-3">
-              <Surface flat>
-                <div class="p-4 text-fd-sm">Flat</div>
-              </Surface>
-              <Surface>
-                <div class="p-4 text-fd-sm">Elevated</div>
-              </Surface>
-            </div>
+            {() => (
+              <div class="flex gap-3">
+                <Surface flat>
+                  <div class="p-4 text-fd-sm">Flat</div>
+                </Surface>
+                <Surface>
+                  <div class="p-4 text-fd-sm">Elevated</div>
+                </Surface>
+              </div>
+            )}
           </ThemePair>
         </Row>
       </>
