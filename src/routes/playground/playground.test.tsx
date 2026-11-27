@@ -1,43 +1,42 @@
-// Playground tests — the access contract (ADR-17) and the fixture
-// discipline: a denied, failed, or pending evaluation renders the
-// normal 404 (fail closed), the granted path renders the real
-// components from synthetic data only, and the pure decision function
-// is deterministic. The PostHog flag is never fetched here — the
-// snapshot is injected through the router's query cache.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+// Playground tests — the access contract (ADR-17 amendment:
+// environment gating, not flags) and the fixture discipline. The
+// decision is pure — baked build values in, a boolean out — so
+// production (and any build without VITE_APP_ENV=preview) fails closed
+// to the normal 404. No PostHog call, no snapshot mock: the gate has
+// no runtime dependency left to mock.
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 import { flush } from 'solid-js';
-import { query } from '@solidjs/router';
 
-import { playgroundAccess } from './guard';
+import { playgroundAccess, playgroundEnabled } from './guard';
 import { PAGES } from './component-registry';
 import { createSeededEntities, SYNTHETIC_TAGS } from './fixtures';
 import { Button } from '../../components/ui/Button';
 
-import { getFlagSnapshot } from '../../lib/flags/snapshot';
-
-const granted = { values: { 'playground-access': true } };
-const denied = { values: { 'playground-access': false } };
-
-/** The exact cache key the query reads (the router hashes name+args). */
-const flagsKey = getFlagSnapshot.keyFor();
-
-beforeEach(() => {
-  query.set(flagsKey, denied);
-});
-
 afterEach(() => {
-  query.delete(flagsKey);
+  vi.unstubAllEnvs();
 });
 
 describe('playgroundAccess — the pure decision', () => {
-  it('grants only on an explicit allow', () => {
-    expect(playgroundAccess(granted)).toBe(true);
-    expect(playgroundAccess(denied)).toBe(false);
+  it('allows the preview deployment (the developer cohort)', () => {
+    expect(playgroundAccess('preview', false)).toBe(true);
   });
 
-  it('fails closed while the snapshot is pending (a failed evaluation looks the same)', () => {
-    expect(playgroundAccess(undefined)).toBe(false);
+  it('denies production — always the normal 404 there', () => {
+    expect(playgroundAccess('production', false)).toBe(false);
+  });
+
+  it('fails closed when the env is absent (PR CI builds, a misbuild)', () => {
+    expect(playgroundAccess(undefined, false)).toBe(false);
+  });
+
+  it('allows local dev — nothing ever ships from pnpm dev', () => {
+    expect(playgroundAccess(undefined, true)).toBe(true);
+  });
+
+  it('wires the build values — vitest runs as dev mode with no env', () => {
+    // The test environment IS the dev-mode allow: DEV=true, env absent.
+    expect(playgroundEnabled()).toBe(true);
   });
 });
 
@@ -75,12 +74,11 @@ describe('interaction states are real interactions', () => {
   });
 });
 
-// The route-level denied/allowed rendering is covered by the shell
-// tests below — the same snapshot the server preload read drives the
-// client render, which is the SSR/hydration agreement by construction.
+// The route-level allowed/denied rendering: the shell reads the same
+// build-baked decision the preload read — SSR output and hydration
+// agree by construction (there is no second evaluation to diverge).
 describe('PlaygroundShell — the client render agrees with the preload', () => {
-  it('renders the gallery when the request snapshot grants access', async () => {
-    query.set(flagsKey, granted);
+  it('renders the gallery in the dev cohort (vitest runs as DEV)', async () => {
     const { Router } = await import('../../router');
     const { PlaygroundShell } = await import('./shell');
     const { getByText, getByRole } = render(() => (
@@ -100,8 +98,9 @@ describe('PlaygroundShell — the client render agrees with the preload', () => 
     expect(getByRole('link', { name: 'Tokens' })).toBeInTheDocument();
   });
 
-  it('renders the normal 404 when denied (fail closed — the client agrees with the preload)', async () => {
-    // beforeEach seeded the DENIED snapshot.
+  it('renders the normal 404 outside the cohort (fail closed)', async () => {
+    // A production-shaped environment: DEV off, env not preview.
+    vi.stubEnv('DEV', false);
     const { Router } = await import('../../router');
     const { PlaygroundShell } = await import('./shell');
     const { getByText, queryByText } = render(() => (

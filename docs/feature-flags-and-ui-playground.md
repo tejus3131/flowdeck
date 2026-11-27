@@ -7,8 +7,9 @@ is integrated — the typed registry, request-scoped evaluation, and client
 override lifecycle live in `src/lib/flags/` (one project, one
 `app_environment` property: [posthog.md](./posthog.md)) — and the
 playground is built: `/playground/*` (gallery, tokens, components) is
-server-gated by the `playground-access` flag and renders the production
-components and tokens from synthetic fixtures.
+environment-gated (ADR-17's amendment: preview deployments and local
+dev) and renders the production components and tokens from synthetic
+fixtures.
 
 ## What the research says
 

@@ -1,14 +1,14 @@
 // The developer playground (docs/feature-flags-and-ui-playground.md):
-// a server-gated catalogue of the REAL production components and the
-// token layer, rendered side by side from synthetic fixtures. Gallery
-// selection is explicitly local and non-persistent — a preview here
-// never changes anyone's production flag assignment.
+// an environment-gated catalogue (ADR-17 amendment) of the REAL
+// production components and the token layer, rendered side by side from
+// synthetic fixtures. Gallery selection is explicitly local and
+// non-persistent — a preview here never changes anyone's production
+// flag assignment.
 import { Title } from '@solidjs/meta';
 import { Show, type ParentProps } from 'solid-js';
 
-import { useFlags } from '../../lib/flags/snapshot';
 import { NotFound } from '../../components/NotFound';
-import { playgroundAccess } from './guard';
+import { playgroundEnabled } from './guard';
 
 export const LIFECYCLE = {
   exploration: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200',
@@ -26,12 +26,11 @@ export function LifecycleTag(props: { status: keyof typeof LIFECYCLE }) {
 }
 
 /** The shared shell: the client render agrees with the preload's server
- *  decision (the same request-scoped snapshot both read — a denied or
- *  failed evaluation renders the normal 404 on both sides). */
+ *  decision — both read the same build-baked environment values, so a
+ *  production request renders the normal 404 on both sides. */
 export function PlaygroundShell(props: ParentProps) {
-  const flags = useFlags();
   return (
-    <Show when={playgroundAccess(flags())} fallback={<NotFound />}>
+    <Show when={playgroundEnabled()} fallback={<NotFound />}>
       <main class="mx-auto max-w-5xl px-4 py-8">
         <Title>Playground - Flowdeck</Title>
         <header class="mb-6">
