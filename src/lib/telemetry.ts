@@ -124,6 +124,16 @@ export function captureTeammateInvited(input: { channel: 'email' | 'link' }): vo
   });
 }
 
+/** install_choice — the PWA install affordance's decision (the plan's
+ *  install UX deliverable). `accepted` is the prompt's userChoice;
+ *  `dismissed` is the card's "Not now". */
+export function captureInstallChoice(accepted: boolean, dismissed = false): void {
+  telemetryRuntime()?.capture('install_choice', {
+    accepted,
+    dismissed,
+  });
+}
+
 /** mutation_echo — the outbox budget's reality check. Emitted by the sync
  *  engine at echo retirement (ok) and failure/stale (ok: false). */
 export function captureMutationEcho(input: {

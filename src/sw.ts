@@ -14,7 +14,7 @@
  *     marked `cache-control: no-store` are never cached.
  *  4. `push` / `notificationclick` / `pushsubscriptionchange`: carried
  *     over unchanged from the notification-only worker (push shipped
- *     first) — same payloads, same `fd-navigate` / `fd-resubscribe`
+ *     first) — same payloads, same `orbit-navigate` / `orbit-resubscribe`
  *     postMessage protocol.
  *  5. `message`: the page-driven update protocol — SKIP_WAITING on the
  *     page's explicit request, and an outbox-drained notice so a waiting
@@ -90,12 +90,12 @@ self.addEventListener('activate', (event) => {
 // ── the page-driven update protocol ──────────────────────────────────────
 self.addEventListener('message', (event) => {
   const data = event.data as { type?: string } | undefined;
-  if (data?.type === 'fd-skip-waiting') {
+  if (data?.type === 'orbit-skip-waiting') {
     // The page's explicit apply (outbox empty, or the user chose
     // "Update now"). The reload itself happens on the page's
     // controllerchange handler — once, guarded there.
     self.skipWaiting();
-  } else if (data?.type === 'fd-outbox-drained') {
+  } else if (data?.type === 'orbit-outbox-drained') {
     // The outbox just emptied while an update was waiting: the page
     // applies on its next navigation (it owns that decision); nothing
     // to do here beyond acknowledging — kept as a protocol hook so the
@@ -170,8 +170,11 @@ async function handleNavigation(request: Request): Promise<Response> {
     if (isAppRoute) {
       // The precached shell: user-agnostic markup; the entity store
       // (IndexedDB) rehydrates the board, the outbox replays edits.
+      // The document is stored under its literal URL (/index.html —
+      // Cache API keys are exact), so the '/' lookup must use the
+      // stored key, not the request path.
       const shell =
-        (await cache.match('/')) ??
+        (await cache.match('/index.html')) ??
         (await cache.match(OFFLINE_URL)) ??
         (await cache.match(request));
       if (shell) return shell;
@@ -341,7 +344,7 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of windows) {
         if ('focus' in client) {
           await client.focus();
-          client.postMessage({ type: 'fd-navigate', url });
+          client.postMessage({ type: 'orbit-navigate', url });
           return;
         }
       }
@@ -354,6 +357,6 @@ self.addEventListener('notificationclick', (event) => {
 // re-subscribe and re-save the endpoint.
 self.addEventListener('pushsubscriptionchange', () => {
   void self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-    for (const client of windows) client.postMessage({ type: 'fd-resubscribe' });
+    for (const client of windows) client.postMessage({ type: 'orbit-resubscribe' });
   });
 });

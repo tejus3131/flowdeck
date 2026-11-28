@@ -9,7 +9,7 @@
 //     ready" chip reads it.
 //   * APPLY rules: on the next navigation when the outbox is empty; after
 //     the outbox drains, or on the user's explicit "Update now", when
-//     edits are pending. Applying = `fd-skip-waiting` message → the new
+//     edits are pending. Applying = `orbit-skip-waiting` message → the new
 //     worker activates → `controllerchange` fires → ONE guarded reload.
 //   * The reload guard is re-entrancy-safe across tabs: only the tab that
 //     saw the controllerchange reloads, once, keyed by the applied
@@ -59,6 +59,7 @@ export function isAppRoute(path: string): boolean {
 // ── the applied-version guard (one reload per version, per tab) ──────────
 const APPLIED_KEY = 'orbit:sw-applied-version';
 
+/** The SW version this tab has already reloaded for. Null = none yet. */
 function appliedVersion(): string | null {
   try {
     return sessionStorage.getItem(APPLIED_KEY);
@@ -89,18 +90,27 @@ export function wireSwUpdates(): void {
   wired = true;
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // The new worker took control. Reload exactly once per applied
-    // version: the old page is running old chunks against a new SW.
+    // The new worker took control. Reload exactly once per VERSION: the
+    // old page is running old chunks against a new SW. The version comes
+    // from /sw-version.txt (the build stamps it) — the guard stores it
+    // and only skips a reload for a version already applied, so a
+    // SECOND update in the same session still reloads.
     if (onceGuard) return;
-    const version = appliedVersion();
-    if (version) {
-      // This tab already reloaded for this version (another tab's
-      // storage write can't reach us, but our own mark does).
-      return;
-    }
-    markApplied(String(Date.now()));
-    onceGuard = true;
-    location.reload();
+    void (async () => {
+      let version: string | null = null;
+      try {
+        version = (
+          await fetch('/sw-version.txt', { cache: 'no-store' }).then((r) => r.text())
+        ).trim();
+      } catch {
+        version = null;
+      }
+      const applied = appliedVersion();
+      if (version && applied === version) return; // already reloaded for this version
+      if (version) markApplied(version);
+      onceGuard = true;
+      location.reload();
+    })();
   });
 
   void (async () => {
@@ -133,7 +143,7 @@ export function applySwUpdate(): void {
   if (isServer || !('serviceWorker' in navigator)) return;
   void (async () => {
     const registration = await navigator.serviceWorker.getRegistration();
-    registration?.waiting?.postMessage({ type: 'fd-skip-waiting' });
+    registration?.waiting?.postMessage({ type: 'orbit-skip-waiting' });
   })();
 }
 

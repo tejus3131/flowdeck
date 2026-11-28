@@ -77,7 +77,7 @@ export function PushSetup() {
     // async registration below can't use onCleanup).
     const onMessage = (event: MessageEvent) => {
       const data = event.data as { type?: string };
-      if (data?.type === 'fd-resubscribe') {
+      if (data?.type === 'orbit-resubscribe') {
         void navigator.serviceWorker
           .getRegistration()
           .then((registration) => (registration ? syncSubscription(registration) : undefined))

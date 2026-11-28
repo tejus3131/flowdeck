@@ -1,9 +1,8 @@
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileRoutes } from 'filesystem-routing/vite';
 import { routePathFromFile } from 'filesystem-routing';
-import { defineConfig, type Plugin } from 'vitest/config';
+import { defineConfig } from 'vitest/config';
 import solid from '@solidjs/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
@@ -20,67 +19,13 @@ const edgeDev = process.env.DEV_EDGE !== '0' && !process.env.VITEST;
 // The service worker is a classic script at a fixed URL (/sw.js), outside
 // the app graph: it must not be hashed (the browser re-checks the same
 // URL), must not import the app's modules, and must know the build's
-// hashed asset list to precache. This plugin transforms src/sw.ts (it
-// imports nothing, so a single-file transform is the whole compile) into
-// dist/client/sw.js, stamping the cache version (the build id) and the
-// precache manifest (every emitted client asset + the shell documents)
-// into the template's tokens. Dev serves public/sw.js as today (no
-// precache — dev assets are unhashed and change constantly).
-function serviceWorkerPlugin(): Plugin {
-  const swSource = fileURLToPath(new URL('./src/sw.ts', import.meta.url));
-  let outDir = '';
-  let version = '';
-  return {
-    name: 'orbit-service-worker',
-    apply: 'build',
-    configResolved(config) {
-      // The Cloudflare plugin flattens the client environment's outDir to
-      // dist/client directly (the built wrangler.json's assets.directory
-      // is ../client) — so outDir IS the client dir here. Fall back to
-      // dist/client for configs where it isn't.
-      const resolved = path.resolve(config.root, config.build.outDir);
-      outDir = path.basename(resolved) === 'client' ? resolved : path.resolve(resolved, 'client');
-      version = `${config.build.assetsDir}-${Date.now().toString(36)}`;
-    },
-    async closeBundle() {
-      if (!existsSync(outDir)) return;
-      // Every emitted client asset (hashed filenames) + the offline
-      // fallback document. The precache is the shell's building blocks;
-      // navigations themselves are never cached (SSR renders per user).
-      const assets: string[] = [];
-      const walk = (dir: string): void => {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-          const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) walk(full);
-          else assets.push(`/${path.relative(outDir, full).split(path.sep).join('/')}`);
-        }
-      };
-      walk(outDir);
-      const precache = assets.filter(
-        (url) =>
-          (url.startsWith('/assets/') ||
-            url === '/offline.html' ||
-            url === '/manifest.webmanifest') &&
-          !url.endsWith('.map') &&
-          // The build also emits pre-compressed .br/.gz twins (served by
-          // the asset layer's content-encoding negotiation) — the SW
-          // fetches by plain URL and gets the right encoding itself.
-          !url.endsWith('.br') &&
-          !url.endsWith('.gz'),
-      );
-      // Vite's own TypeScript transform (Oxc) — the same dependency the
-      // build already uses, no extra install. The SW source imports
-      // nothing, so a single-file transform is the whole compile.
-      const { transformWithOxc } = await import('vite');
-      const source = readFileSync(swSource, 'utf8')
-        .replace('__FD_SW_VERSION__', version)
-        .replace("'__FD_PRECACHE_MANIFEST__'", JSON.stringify(precache));
-      const result = await transformWithOxc(source, swSource, { target: 'es2020' });
-      mkdirSync(outDir, { recursive: true });
-      writeFileSync(path.join(outDir, 'sw.js'), result.code);
-    },
-  };
-}
+// hashed asset list to precache. It is emitted AFTER the build by
+// scripts/emit-sw.mjs (the 'build' script chains it) — not by a Vite
+// plugin, because the Cloudflare plugin's buildApp override owns the
+// build lifecycle and shared-plugin closeBundle hooks fire in the client
+// environment only, before dist/server/server.js exists (the shell
+// prerender needs the built handler). Dev serves public/sw.js as today
+// (no precache — dev assets are unhashed and change constantly).
 
 export default defineConfig({
   // Turnkey streaming SSR: no index.html and no entry files — the plugin
@@ -132,9 +77,6 @@ export default defineConfig({
           ? routePathFromFile(`/.well-known/${routeFile.slice('/well-known/'.length)}`)
           : routePathFromFile(routeFile),
     }),
-    // The offline shell: compile + stamp src/sw.ts → dist/client/sw.js
-    // (see the plugin comment above).
-    serviceWorkerPlugin(),
   ],
   server: {
     port: 3000,
