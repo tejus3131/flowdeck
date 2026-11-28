@@ -9,7 +9,7 @@
     "dev:node": "DEV_EDGE=0 vite",
     "dev:stack": "supabase start",
     "dev:reset": "supabase db reset",
-    "build": "vite build",
+    "build": "vite build && node scripts/emit-sw.mjs",
     "start": "node --env-file-if-exists=.env dist/server/node.js",
     "serve": "vite preview",
     "test": "vitest",

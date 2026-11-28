@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { fileRoutes } from 'filesystem-routing/vite';
 import { routePathFromFile } from 'filesystem-routing';
 import { defineConfig } from 'vitest/config';
@@ -14,6 +15,17 @@ import { manifestPlugin } from './vite-manifest-plugin';
 // the plugin for local dev and runs the SSR in Node instead. Builds keep
 // the plugin regardless: `vite build` always emits the Workers artifact.
 const edgeDev = process.env.DEV_EDGE !== '0' && !process.env.VITEST;
+
+// The service worker is a classic script at a fixed URL (/sw.js), outside
+// the app graph: it must not be hashed (the browser re-checks the same
+// URL), must not import the app's modules, and must know the build's
+// hashed asset list to precache. It is emitted AFTER the build by
+// scripts/emit-sw.mjs (the 'build' script chains it) — not by a Vite
+// plugin, because the Cloudflare plugin's buildApp override owns the
+// build lifecycle and shared-plugin closeBundle hooks fire in the client
+// environment only, before dist/server/server.js exists (the shell
+// prerender needs the built handler). Dev serves public/sw.js as today
+// (no precache — dev assets are unhashed and change constantly).
 
 export default defineConfig({
   // Turnkey streaming SSR: no index.html and no entry files — the plugin

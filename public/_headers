@@ -13,7 +13,15 @@
 # the deploy pipeline doesn't have; the preview domains are
 # unlisted-and-fine (no private data renders signed-out).
 
-# The service worker must revalidate on every load — a cached sw.js
-# would pin users to an old worker for up to 24h (the browser default).
+# /sw.js must never be cached: the browser re-fetches it on every page
+# load to discover new workers (developer.chrome.com/blog/fresher-sw).
+# A cached sw.js would freeze updates until the CDN entry expired.
 /sw.js
   Cache-Control: max-age=0, must-revalidate
+
+# The manifest and offline fallback are versioned by content — cache them
+# hard, the deploy swaps the bytes atomically.
+/manifest.webmanifest
+  Cache-Control: public, max-age=3600
+/offline.html
+  Cache-Control: public, max-age=3600

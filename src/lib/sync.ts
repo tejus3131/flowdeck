@@ -29,6 +29,7 @@ import {
   createMemo,
   createSignal,
   createStore,
+  onCleanup,
   onSettled,
   type Accessor,
 } from 'solid-js';
@@ -36,6 +37,7 @@ import { getRequestEvent, isServer } from '@solidjs/web';
 
 import type { BoardSnapshot } from './boards';
 import { errorMessage } from './error-message';
+import { swOutboxChanged } from './sw-update';
 import { captureMutationEcho } from './telemetry';
 
 export type SyncStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
@@ -97,6 +99,13 @@ export function isDocumentRender(): boolean {
 }
 
 const ACK_TIMEOUT_MS = 10_000;
+
+// ── the global outbox registry (the SW update flow's counter) ─────────────
+// Each engine reports its own in-flight count; the update decision reads
+// the SUM. Module-level: engines are created per page/surface, and the
+// "safe to update" moment is when NO engine holds edits.
+let engineSeq = 0;
+const enginePending = new Map<number, number>();
 /** How long after an ACK to wait for the live echo before refreshing. */
 const ECHO_GRACE_MS = 2_500;
 /** Client-side durable poll interval — realtime's silent-death fallback. */
@@ -412,6 +421,23 @@ function createEngineBody<S extends object>(
   // into the next (stale board flash before the first merge).
   const [view, setView] = createStore<S>(clone(empty) as never);
   const [ops, setOps] = createStore<{ list: PendingOp[] }>({ list: [] });
+  // The SW update flow watches the outbox: while an update waits, the
+  // moment this count hits 0 (every queued edit acked) is the safe moment
+  // to apply it. Client-only; a no-op on the server and when nothing
+  // waits. The count is GLOBAL (a module-level registry across engines):
+  // a second engine's creation would otherwise report 0 while board A
+  // still holds in-flight ops, and the update would apply mid-edit.
+  if (!isServer) {
+    const engineId = ++engineSeq;
+    createEffect(
+      () => ops.list.filter((op) => op.status === 'inFlight' && !op.remote).length,
+      (count) => {
+        enginePending.set(engineId, count);
+        swOutboxChanged([...enginePending.values()].reduce((sum, n) => sum + n, 0));
+      },
+    );
+    onCleanup(() => enginePending.delete(engineId));
+  }
   // Async continuations request a re-merge through this signal, carrying
   // the guard set to release (reads lag writes, so a re-merge can never
   // re-read the ops store to learn which guards just dropped); the merge

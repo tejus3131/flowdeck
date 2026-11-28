@@ -1,7 +1,9 @@
 import { Title } from '@solidjs/meta';
+import { useLocation } from '@solidjs/router';
 import { Loading, Show, createEffect, createMemo, onSettled } from 'solid-js';
 import { paths, Router } from './router';
 import { getMe } from './lib/auth';
+import { swNavigated } from './lib/sw-update';
 import { ThemeSync } from './components/ThemeSync';
 import { FlagSync } from './components/FlagSync';
 import { UserMenu } from './components/UserMenu';
@@ -9,6 +11,7 @@ import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { NotificationFeed } from './components/NotificationFeed';
 import { NotificationBell } from './components/NotificationBell';
 import { PushSetup } from './components/PushSetup';
+import { SwUpdateChip } from './components/SwUpdateChip';
 import { PerfPanel } from './components/PerfPanel';
 import { perfActive } from './lib/perf';
 import { cachePersist, cacheSetUser } from './lib/cache';
@@ -28,6 +31,7 @@ export default function App() {
         // query() reads the router cache, so the memo must live inside the
         // Router context — App's body is outside it.
         const me = createMemo(() => getMe());
+        const location = useLocation();
         // The app's one entity store (L2): every surface reads entities
         // through its selectors. Created here — once per app on the
         // client, once per request on the server (module state would leak
@@ -53,6 +57,14 @@ export default function App() {
             if (lastUserId !== undefined && lastUserId !== id) entities.clear();
             lastUserId = id;
             cacheSetUser(id);
+          },
+        );
+        // SPA navigations never trigger the browser's SW update check —
+        // each app-route navigation asks the registration to check here.
+        createEffect(
+          () => location.pathname,
+          (path) => {
+            swNavigated(path);
           },
         );
         return (
@@ -102,6 +114,9 @@ export default function App() {
                 <NotificationFeed />
                 <PushSetup />
               </Show>
+              {/* The SW update chip — app-wide, not auth-gated (the update
+                  applies whenever it's safe, signed in or not). */}
+              <SwUpdateChip />
               {/* The perf debug panel (?perf=1) — a devtool, mounted app-wide. */}
               <Show when={perfOn()}>
                 <PerfPanel />
