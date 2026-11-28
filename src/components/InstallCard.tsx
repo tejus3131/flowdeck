@@ -10,7 +10,7 @@
 import { Show, createSignal, onCleanup, onSettled } from 'solid-js';
 import { isServer } from '@solidjs/web';
 
-import { captureTeammateInvited } from '../lib/telemetry';
+import { captureInstallChoice } from '../lib/telemetry';
 import { isOnline } from '../lib/offline-state';
 
 type InstallPromptEvent = Event & {
@@ -48,7 +48,10 @@ export function noteEngagementEdit(): void {
   } catch {
     // blocked storage — the affordance just never arms
   }
+  for (const listener of engagementListeners) listener();
 }
+
+const engagementListeners = new Set<() => void>();
 
 function dismissed(): boolean {
   try {
@@ -64,7 +67,10 @@ export function installAvailable(): boolean {
 
 export function InstallCard() {
   const [available, setAvailable] = createSignal(installAvailable());
-  const [showIosHelp, setShowIosHelp] = createSignal(false);
+  // iOS has no beforeinstallprompt — the manual instructions ARE the
+  // affordance there (the fallback content the PR body promises).
+  const isIos = !isServer && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const [showIosHelp, setShowIosHelp] = createSignal(isIos);
   const [installed, setInstalled] = createSignal(
     isServer
       ? false
@@ -73,20 +79,21 @@ export function InstallCard() {
           (navigator as unknown as { standalone?: boolean }).standalone === true,
   );
 
-  // The capture can land after mount (the event fires early); poll the
-  // captured state on the connectivity channel's next tick instead of a
-  // timer — cheap and event-driven enough for a one-shot affordance.
+  // Event-driven: the capture and the edit threshold both re-run
+  // installAvailable() — no polling timer (the perf rules' budget). The
+  // board route's op effect calls noteEngagementEdit, which re-arms the
+  // card through the hook below.
   onSettled(() => {
-    const check = () => setAvailable(installAvailable());
-    check();
-    const interval = setInterval(check, 2000);
+    setAvailable(installAvailable());
+    const rearm = () => setAvailable(installAvailable());
+    engagementListeners.add(rearm);
     const onInstalled = () => {
       setInstalled(true);
       setAvailable(false);
     };
     addEventListener('appinstalled', onInstalled);
     onCleanup(() => {
-      clearInterval(interval);
+      engagementListeners.delete(rearm);
       removeEventListener('appinstalled', onInstalled);
     });
   });
@@ -96,10 +103,7 @@ export function InstallCard() {
     if (!prompt) return;
     await prompt.prompt();
     const { outcome } = await prompt.userChoice;
-    // The install decision — the data-playbook's aha-adjacent signal.
-    // (Rides the existing capture surface; a dedicated event would need
-    // a taxonomy row, and install_accepted/dismissed reads cleanly here.)
-    captureTeammateInvited({ channel: outcome === 'accepted' ? 'email' : 'link' });
+    captureInstallChoice(outcome === 'accepted');
     captured = null;
     setAvailable(false);
   };
@@ -110,6 +114,7 @@ export function InstallCard() {
     } catch {
       // ignore
     }
+    captureInstallChoice(false, true);
     setAvailable(false);
   };
 
@@ -129,7 +134,7 @@ export function InstallCard() {
       }
     >
       <div class="fixed bottom-4 right-4 z-[55] flex w-72 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-xs shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
-        <p class="font-semibold">📌 Install Flowdeck</p>
+        <p class="font-semibold">📌 Install Flowdeck</p>{' '}
         <p class="text-neutral-500 dark:text-neutral-400">
           Keep your boards one tap away and working offline. Changes you make offline sync when
           you're back.
