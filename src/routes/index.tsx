@@ -1,4 +1,3 @@
-import { Title } from '@solidjs/meta';
 import { liveQuery, revalidate } from '@solidjs/router';
 import { For, Show, createEffect, createMemo, onSettled, createSignal } from 'solid-js';
 
@@ -19,6 +18,8 @@ import {
 import { createEngine } from '../lib/sync';
 import { warmRecentBoards } from '../lib/prefetch';
 import { cacheGet, cachePut } from '../lib/cache';
+import { SeoHead } from '../lib/seo';
+import { landingJsonLd } from '../lib/json-ld';
 import type { WorkspaceDetail } from '../lib/workspaces';
 import {
   getMyWorkspaces,
@@ -711,7 +712,11 @@ export default function Home() {
 
   return (
     <main class="mx-auto max-w-4xl px-4 py-10">
-      <Title>{brand.name}</Title>
+      <SeoHead title={brand.name} description={brand.tagline} path="/" />
+      {/* A compile-time constant, not user input — the lint rule targets
+          unsanitized data. */}
+      {/* eslint-disable-next-line solid/no-innerhtml */}
+      <script type="application/ld+json" innerHTML={landingJsonLd()} />
       <h1 class="text-2xl font-semibold tracking-tight">{brand.name}</h1>
       <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{brand.tagline}</p>
 

@@ -1,10 +1,10 @@
-import { Title } from '@solidjs/meta';
 import { useNavigate, useSearchParams } from '@solidjs/router';
 import { revalidate } from '@solidjs/router';
 import { Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
 
 import { checkEmail, getMe, signIn } from '../lib/auth';
 import { brand } from '../lib/brand';
+import { SeoHead } from '../lib/seo';
 import { browserClient } from '../lib/supabase-client';
 
 /**
@@ -120,7 +120,11 @@ export default function SignIn() {
 
   return (
     <main class="mx-auto flex min-h-[80vh] max-w-sm flex-col justify-center px-4">
-      <Title>Sign in - {brand.name}</Title>
+      <SeoHead
+        title={`Sign in - ${brand.name}`}
+        description={`Sign in to ${brand.name} — ${brand.description}`}
+        path="/sign-in"
+      />
       <div class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
         <h1 class="text-xl font-semibold tracking-tight">Welcome to {brand.name}</h1>
 
