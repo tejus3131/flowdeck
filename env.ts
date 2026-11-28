@@ -24,13 +24,13 @@ export default {
     // invites still work — the UI shows a copyable accept link instead.
     RESEND_API_KEY: v.optional(v.string()),
     // Optional: the verified Resend sender for invite emails.
-    RESEND_FROM: v.optional(v.string(), 'Flowdeck <flowdeck@tejusgupta.dev>'),
+    RESEND_FROM: v.optional(v.string(), 'Orbit <orbit@tejusgupta.dev>'),
     // Optional: web-push VAPID credentials (base64url). The public key is
     // served to clients for pushManager.subscribe; the private one signs
     // pushes. Without them notifications still work — just in-app only.
     VAPID_PUBLIC_KEY: v.optional(v.string()),
     VAPID_PRIVATE_KEY: v.optional(v.string()),
-    VAPID_SUBJECT: v.optional(v.string(), 'mailto:notifications@flowdeck.local'),
+    VAPID_SUBJECT: v.optional(v.string(), 'mailto:notifications@orbit.local'),
     // PostHog Cloud host for server-side flag evaluation (e.g.
     // https://us.i.posthog.com). Optional + absent → flag evaluation
     // short-circuits to the declared registry fallbacks (local dev, or a
@@ -43,7 +43,7 @@ export default {
   },
   client: {
     VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Orbit'),
-    // The deployment's public base URL (e.g. https://flowdeck.tejusgupta.dev).
+    // The deployment's public base URL (e.g. https://orbit.tejusgupta.dev).
     // Baked per environment by CI (preview / production GitHub env vars);
     // pages that advertise environment-specific endpoints (docs/mcp) derive
     // them from this instead of hardcoding prod. Absent → local dev or a

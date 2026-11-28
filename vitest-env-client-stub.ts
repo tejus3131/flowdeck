@@ -7,7 +7,7 @@
 // run must never have (ADR-15); the client project's tests import these
 // modules (the flags runtime), so both halves are stubbed for tests.
 // Divergence from the real module: schema DEFAULTS (e.g. VITE_APP_NAME's
-// 'Flowdeck') are not applied here — a test that needs a default sets it.
+// 'Orbit') are not applied here — a test that needs a default sets it.
 export const env: Record<string, string | undefined> = new Proxy(
   {},
   { get: (_, key) => (typeof key === 'string' ? import.meta.env[key as never] : undefined) },

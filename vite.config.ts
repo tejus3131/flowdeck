@@ -31,7 +31,7 @@ function serviceWorkerPlugin(): Plugin {
   let outDir = '';
   let version = '';
   return {
-    name: 'flowdeck-service-worker',
+    name: 'orbit-service-worker',
     apply: 'build',
     configResolved(config) {
       // The Cloudflare plugin flattens the client environment's outDir to
