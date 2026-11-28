@@ -41,6 +41,13 @@ declare module "virtual:file-routes" {
       $$route: FileRouteEagerRef<Pick<typeof import("./src/routes/[...404]"), Extract<"route", keyof typeof import("./src/routes/[...404]")>>>;
     },
     {
+      path: "/api/account/export";
+      page: false;
+      $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/api/account/export"), Extract<"GET", keyof typeof import("./src/routes/api/account/export")>>>;
+      $HEAD: FileRouteLazyRef<Pick<typeof import("./src/routes/api/account/export"), Extract<"GET", keyof typeof import("./src/routes/api/account/export")>>>;
+      $$route?: undefined;
+    },
+    {
       path: "/api/mcp/*path";
       page: false;
       $GET: FileRouteLazyRef<Pick<typeof import("./src/routes/api/mcp/[...path]"), Extract<"GET", keyof typeof import("./src/routes/api/mcp/[...path]")>>>;
