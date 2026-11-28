@@ -48,6 +48,11 @@ export function telemetryRuntime(): TelemetryRuntime | null {
       // endpoint paths directly to api_host, so the /ingest prefix
       // must be part of the host itself.
       api_host: `${window.location.origin}/ingest`,
+      // Cookieless: no ph_* cookies, no localStorage identity — the
+      // distinct ID is a per-session random UUID, so analytics can never
+      // re-identify a person across sessions (the privacy policy's
+      // "no persistent identifiers" claim, enforced in code).
+      cookieless_mode: 'always',
       // A SPA: pageviews ride the history API.
       capture_pageview: 'history_change',
       capture_pageleave: true,
