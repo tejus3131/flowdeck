@@ -59,6 +59,7 @@ export function isAppRoute(path: string): boolean {
 // ── the applied-version guard (one reload per version, per tab) ──────────
 const APPLIED_KEY = 'flowdeck:sw-applied-version';
 
+/** The SW version this tab has already reloaded for. Null = none yet. */
 function appliedVersion(): string | null {
   try {
     return sessionStorage.getItem(APPLIED_KEY);
@@ -89,18 +90,27 @@ export function wireSwUpdates(): void {
   wired = true;
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // The new worker took control. Reload exactly once per applied
-    // version: the old page is running old chunks against a new SW.
+    // The new worker took control. Reload exactly once per VERSION: the
+    // old page is running old chunks against a new SW. The version comes
+    // from /sw-version.txt (the build stamps it) — the guard stores it
+    // and only skips a reload for a version already applied, so a
+    // SECOND update in the same session still reloads.
     if (onceGuard) return;
-    const version = appliedVersion();
-    if (version) {
-      // This tab already reloaded for this version (another tab's
-      // storage write can't reach us, but our own mark does).
-      return;
-    }
-    markApplied(String(Date.now()));
-    onceGuard = true;
-    location.reload();
+    void (async () => {
+      let version: string | null = null;
+      try {
+        version = (
+          await fetch('/sw-version.txt', { cache: 'no-store' }).then((r) => r.text())
+        ).trim();
+      } catch {
+        version = null;
+      }
+      const applied = appliedVersion();
+      if (version && applied === version) return; // already reloaded for this version
+      if (version) markApplied(version);
+      onceGuard = true;
+      location.reload();
+    })();
   });
 
   void (async () => {

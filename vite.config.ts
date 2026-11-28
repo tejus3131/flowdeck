@@ -56,11 +56,44 @@ function serviceWorkerPlugin(): Plugin {
         }
       };
       walk(outDir);
+      // The app shell document: the offline fallback for navigations is
+      // the app itself (the entity store rehydrates the board), so the
+      // precache needs a document at '/'. The build runs with SSR on —
+      // no static index.html is emitted — so the plugin renders one
+      // through the built handler (the same markup a signed-out visit
+      // gets: nav + loading shell; hydration adopts it on load).
+      let shellOk = true;
+      try {
+        // The handler validates server env at boot; the shell document
+        // is user-agnostic markup (nav + loading shell), so the local
+        // stack's URL with empty keys is exactly right — nothing in the
+        // shell document reads Supabase.
+        process.env.SUPABASE_URL ??= 'http://127.0.0.1:54321';
+        process.env.SUPABASE_PUBLISHABLE_KEY ??= 'local-shell-placeholder-key-0123456789';
+        process.env.SUPABASE_SECRET_KEY ??= 'local-shell-placeholder-key-0123456789';
+        const { handleRequest } = await import(
+          `${path.join(path.dirname(outDir), 'server', 'server.js')}`
+        );
+        const response = await handleRequest(new Request('http://localhost/'), {
+          renderMode: 'async',
+        });
+        const html = await response.text();
+        if (!html.includes('<html')) throw new Error('handler returned no HTML document');
+        writeFileSync(path.join(outDir, 'index.html'), html);
+        // Written after the walk — add it to the precache list directly.
+        assets.push('/index.html');
+      } catch (error) {
+        // No shell document → the SW's '/' fallback would miss and every
+        // offline navigation would land on offline.html. Fail the build.
+        shellOk = false;
+        console.error('[sw-plugin] shell prerender failed:', error);
+      }
       const precache = assets.filter(
         (url) =>
           (url.startsWith('/assets/') ||
             url === '/offline.html' ||
-            url === '/manifest.webmanifest') &&
+            url === '/manifest.webmanifest' ||
+            url === '/index.html') &&
           !url.endsWith('.map') &&
           // The build also emits pre-compressed .br/.gz twins (served by
           // the asset layer's content-encoding negotiation) — the SW
@@ -68,6 +101,7 @@ function serviceWorkerPlugin(): Plugin {
           !url.endsWith('.br') &&
           !url.endsWith('.gz'),
       );
+      if (!shellOk) throw new Error('[sw-plugin] shell prerender failed — see the error above');
       // Vite's own TypeScript transform (Oxc) — the same dependency the
       // build already uses, no extra install. The SW source imports
       // nothing, so a single-file transform is the whole compile.
@@ -77,7 +111,13 @@ function serviceWorkerPlugin(): Plugin {
         .replace("'__FD_PRECACHE_MANIFEST__'", JSON.stringify(precache));
       const result = await transformWithOxc(source, swSource, { target: 'es2020' });
       mkdirSync(outDir, { recursive: true });
+      // Served as /sw.js?v=<version>: the version query makes the
+      // controller's scriptURL self-identifying — the page's reload
+      // guard (src/lib/sw-update.ts) stores it and only skips a reload
+      // for a version it has already applied. The asset layer serves
+      // /sw.js regardless of query (max-age=0 via _headers).
       writeFileSync(path.join(outDir, 'sw.js'), result.code);
+      writeFileSync(path.join(outDir, 'sw-version.txt'), version);
     },
   };
 }
