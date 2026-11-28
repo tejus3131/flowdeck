@@ -81,7 +81,7 @@ d('DB guards (local stack)', () => {
               -- Copy whatever instance existing users carry; the zero
               -- UUID is the stack default on a fresh reset.
               coalesce((select instance_id from auth.users limit 1), '00000000-0000-0000-0000-000000000000'),
-              'authenticated', 'authenticated', 'probe@flowdeck.local', 'x', now(), now(), now(),
+              'authenticated', 'authenticated', 'probe@orbit.local', 'x', now(), now(), now(),
               '{"provider":"email","providers":["email"]}', '{"display_name":"Probe User"}',
               -- The token columns scan as plain strings server-side —
               -- GoTrue rows keep '' where a SQL insert would leave NULL,
@@ -89,9 +89,9 @@ d('DB guards (local stack)', () => {
               '', '', '', ''
        on conflict do nothing`,
       `insert into auth.identities (id, provider_id, user_id, identity_data, provider, created_at, updated_at)
-       values ('${OWNER}', '${OWNER}', '${OWNER}', json_build_object('sub', '${OWNER}', 'email', 'probe@flowdeck.local', 'email_verified', true, 'phone_verified', false), 'email', now(), now())
+       values ('${OWNER}', '${OWNER}', '${OWNER}', json_build_object('sub', '${OWNER}', 'email', 'probe@orbit.local', 'email_verified', true, 'phone_verified', false), 'email', now(), now())
        on conflict do nothing`,
-      `insert into public.profiles (id, email, display_name) values ('${OWNER}', 'probe@flowdeck.local', 'Probe User') on conflict do nothing`,
+      `insert into public.profiles (id, email, display_name) values ('${OWNER}', 'probe@orbit.local', 'Probe User') on conflict do nothing`,
     );
     WS = sql(
       `insert into public.workspaces (name, slug, owner_id) values ('DB guards ${SLUG}', '${SLUG}', '${OWNER}') returning id`,
@@ -119,7 +119,7 @@ d('DB guards (local stack)', () => {
     // The scratch world goes via the sanctioned purge path.
     sql(
       'begin',
-      "select set_config('flowdeck.purge', 'on', true)",
+      "select set_config('orbit.purge', 'on', true)",
       `delete from public.workspaces where id = '${WS}'`,
       'commit',
     );
@@ -134,7 +134,7 @@ d('DB guards (local stack)', () => {
     expect(bare).toContain('cards cannot be deleted');
     sql(
       'begin',
-      "select set_config('flowdeck.purge', 'on', true)",
+      "select set_config('orbit.purge', 'on', true)",
       `delete from public.cards where id = '${card}'`,
       'commit',
     );
@@ -178,7 +178,7 @@ d('DB guards (local stack)', () => {
     expect(cardRefusal).toContain('still hold');
     sql(
       'begin',
-      "select set_config('flowdeck.purge', 'on', true)",
+      "select set_config('orbit.purge', 'on', true)",
       `delete from public.cards where board_id = '${BOARD}'`,
       'commit',
     );
