@@ -119,4 +119,34 @@ const posthogProxy: StartMiddleware = async (event, next) => {
 // (see src/routes/api) and passes everything else down the chain. It takes
 // the request event directly and hands that same event to the handler, with
 // the matched params written onto it.
-export default [posthogProxy, createAPIHandler(routes)] satisfies StartMiddleware[];
+
+// ── crawler hygiene ───────────────────────────────────────────────────────
+// Auth-gated HTML routes are noindexed at the middleware (the belt) —
+// public/_headers covers the static-asset layer the middleware never sees
+// (the braces). App routes carry no SEO value and leak board/workspace
+// titles into SERPs if indexed.
+const NOINDEX_PREFIXES = [
+  '/b/',
+  '/w/',
+  '/u/',
+  '/profile',
+  '/search',
+  '/invite/',
+  '/connection/',
+  '/mcp/authorize',
+  '/playground',
+] as const;
+
+const noindexAppRoutes: StartMiddleware = (event, next) => {
+  const path = new URL(event.request.url).pathname;
+  if (NOINDEX_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix))) {
+    event.response.headers.append('X-Robots-Tag', 'noindex, nofollow');
+  }
+  return next();
+};
+
+export default [
+  posthogProxy,
+  noindexAppRoutes,
+  createAPIHandler(routes),
+] satisfies StartMiddleware[];

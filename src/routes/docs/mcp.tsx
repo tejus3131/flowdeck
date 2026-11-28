@@ -1,12 +1,11 @@
 // The MCP connection docs — a hosted reference users read and agents use
 // verbatim: endpoint, auth, client configs, and the full tool list with
 // schemas. Static content (fast, crawlable, no session needed).
-import { Title } from '@solidjs/meta';
-
 import { MembershipWatch } from '../../components/MembershipWatch';
 import { For } from 'solid-js';
 import { env } from 'virtual:solid-env/client';
 import { brand } from '../../lib/brand';
+import { SeoHead } from '../../lib/seo';
 
 // The advertised MCP endpoint derives from the deployment's own base URL
 // (baked at build from VITE_APP_URL) so a preview build shows the preview
@@ -256,7 +255,11 @@ export default function McpDocsPage() {
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
       <MembershipWatch />
-      <Title>MCP — {brand.name}</Title>
+      <SeoHead
+        title={`MCP — ${brand.name}`}
+        description={`Connect AI agents to ${brand.name} over the Model Context Protocol — boards, cards, chat, workspaces, under your permissions.`}
+        path="/docs/mcp"
+      />
       <p class="text-xs font-semibold uppercase tracking-wider text-indigo-500">
         {brand.name} docs
       </p>

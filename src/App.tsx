@@ -15,6 +15,9 @@ import { cachePersist, cacheSetUser } from './lib/cache';
 import { appName } from './lib/brand';
 import { EntityContext, createEntityStore } from './lib/entity-store';
 // The frozen type token's face (docs/design-system.md — one family).
+// The self-hosted @font-face in app.css serves the latin subset from
+// /fonts (preloaded in Document.tsx); the fontsource import keeps the
+// other subsets (cyrillic, greek) available for non-latin content.
 import '@fontsource-variable/inter';
 import './app.css';
 
