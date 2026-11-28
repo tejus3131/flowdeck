@@ -18,6 +18,9 @@ import { useEntities } from '../../lib/entity-store';
 import { planDrop } from '../../lib/card-drop';
 import { trackRecentBoard, warmBoardActive } from '../../lib/prefetch';
 import { brand } from '../../lib/brand';
+import { markBoardSynced } from '../../lib/offline-state';
+import { noteEngagementEdit } from '../../components/InstallCard';
+import { SyncWatermark } from '../../components/SyncWatermark';
 import { createBoardPresence, presenceColor } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
 import {
@@ -171,6 +174,23 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const view = engine.view;
   const me = createMemo(() => getMe());
   const navigate = useNavigate();
+
+  // The per-board last-synced watermark (offline UX): every durable
+  // snapshot the engine merges stamps the board's freshness. Reads the
+  // view's revision — the merged cursor, not the raw wire's.
+  createEffect(
+    () => ({ boardId: props.params.boardId, revision: view().revision }),
+    ({ boardId, revision }) => markBoardSynced(boardId, revision),
+  );
+
+  // The install affordance's engagement signal: edits are the moment a
+  // user benefits from installing. Counted per session, never blocking.
+  createEffect(
+    () => engine.ops().filter((op) => !op.remote).length,
+    (count, prev) => {
+      if (count > (prev ?? 0)) noteEngagementEdit();
+    },
+  );
 
   // Prefetch bookkeeping (docs/performance.md, layer 3): this board is
   // the user's most-recently-opened (the dashboard warms from that
@@ -1329,6 +1349,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   Offline
                 </span>
               </Show>
+              <SyncWatermark boardId={props.params.boardId} />
               <Show when={view().lists.length > 0 || view().cards.length > 0}>
                 <span>
                   {view().lists.length} lists · {view().cards.filter((c) => !c.resolved_at).length}{' '}
@@ -1374,6 +1395,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   }
                   isTemp={engine.isTemp(list.id)}
                   canEdit={canEdit()}
+                  isSaving={(cardId) => engine.isSaving(cardId)}
                   onDragStart={(cardId, height) => {
                     setDragHeight(height);
                     // Broadcast the card's home slot immediately — peers see

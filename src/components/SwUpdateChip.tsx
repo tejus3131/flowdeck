@@ -21,7 +21,7 @@ export function SwUpdateChip() {
 
   return (
     <Show when={waiting()}>
-      <div class="fixed bottom-4 right-4 z-[60] flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
+      <div class="fixed bottom-16 right-4 z-[60] flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
         <span class="font-medium text-neutral-700 dark:text-neutral-200">Update ready</span>
         <button
           type="button"
