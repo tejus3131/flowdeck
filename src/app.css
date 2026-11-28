@@ -97,7 +97,7 @@
   --text-fd-xl--line-height: var(--fd-text-xl-lh);
 }
 
-/* Flowdeck design tokens & base. Native form controls and scrollbars match
+/* Orbit design tokens & base. Native form controls and scrollbars match
    the active theme; every interactive element gets explicit colors (the
    original black-on-black input bug was missing text colors in dark mode). */
 
