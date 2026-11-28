@@ -12,6 +12,8 @@ import { NotificationFeed } from './components/NotificationFeed';
 import { NotificationBell } from './components/NotificationBell';
 import { PushSetup } from './components/PushSetup';
 import { SwUpdateChip } from './components/SwUpdateChip';
+import { ConnectionBanner } from './components/ConnectionBanner';
+import { InstallCard } from './components/InstallCard';
 import { PerfPanel } from './components/PerfPanel';
 import { perfActive } from './lib/perf';
 import { cachePersist, cacheSetUser } from './lib/cache';
@@ -117,6 +119,10 @@ export default function App() {
               {/* The SW update chip — app-wide, not auth-gated (the update
                   applies whenever it's safe, signed in or not). */}
               <SwUpdateChip />
+              {/* The offline banner — passive, never blocks editing. */}
+              <ConnectionBanner />
+              {/* The install affordance — engagement-gated, dismissible. */}
+              <InstallCard />
               {/* The perf debug panel (?perf=1) — a devtool, mounted app-wide. */}
               <Show when={perfOn()}>
                 <PerfPanel />
