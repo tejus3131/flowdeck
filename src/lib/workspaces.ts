@@ -11,13 +11,14 @@ import { friendlyError } from '../server/friendly';
 import { filterInaccessible, insertNotifications } from '../server/notify';
 import { recapTokensForUsers } from './tokens';
 import { env } from 'virtual:solid-env/server';
+import { brand } from './brand';
 import { live } from '@solidjs/web/server-functions';
 import { producerControls } from './boards';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'member';
 export type InviteRole = 'admin' | 'member';
 
-export const WORKSPACE_COOKIE = 'fd_ws';
+export const WORKSPACE_COOKIE = 'ob_ws';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,7 +26,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function readWorkspaceCookie(): string | null {
   const header = getRequestEvent()?.request.headers.get('cookie') ?? '';
-  const match = header.match(/(?:^|;\s*)fd_ws=([0-9a-f-]{36})/);
+  const match = header.match(/(?:^|;\s*)ob_ws=([0-9a-f-]{36})/);
   return match?.[1] ?? null;
 }
 
@@ -613,7 +614,7 @@ let reservationToken = 0;
 let switchChain: Promise<unknown> = Promise.resolve();
 
 /** Run `slot` after every earlier cookie write has settled — the
- *  serialization point for ALL fd_ws writers on this device. The slot's
+ *  serialization point for ALL ob_ws writers on this device. The slot's
  *  result (or error) is delivered to its caller; the chain itself never
  *  rejects, so one failure can't starve whatever queues behind it. */
 function enqueueCookieWrite<T>(slot: () => Promise<T>): Promise<T> {
@@ -632,7 +633,7 @@ export function reserveSwitchIntent(): number {
   return ++reservationToken;
 }
 
-/** The fd_ws cookie as this device last received it — read synchronously
+/** The ob_ws cookie as this device last received it — read synchronously
  *  INSIDE the coordinator's serialized slot, where no other switch can be
  *  writing it. A fresh read here settles "already active" where a cached
  *  getMyWorkspaces snapshot can be stale mid-switch. Not httpOnly by
@@ -684,7 +685,7 @@ export function switchWorkspaceOrdered(
 }
 
 /** Serialize a workspace-ENTERING operation (create workspace, accept
- *  invite) whose response writes fd_ws server-side — the cookie writers
+ *  invite) whose response writes ob_ws server-side — the cookie writers
  *  that only learn their target workspace from their own result. Same
  *  ordering as switches: queued behind any in-flight cookie write, and
  *  like any explicit choice it cancels pending automatic intents.
@@ -697,7 +698,7 @@ export function enterWorkspaceOrdered<T>(enter: () => Promise<T>): Promise<T | '
     if (token !== switchToken) return 'superseded';
     const value = await enter();
     if (token !== switchToken) {
-      // The enter operation ran and wrote fd_ws, but a newer intent
+      // The enter operation ran and wrote ob_ws, but a newer intent
       // owns the outcome — reconcile the cache since the newer intent
       // may yet fail.
       revalidate('workspaces');
@@ -931,11 +932,11 @@ async function sendInviteEmail(to: string, workspaceName: string, acceptUrl: str
       body: JSON.stringify({
         from: env.RESEND_FROM,
         to: [to],
-        subject: `You're invited to "${workspaceName}" on Flowdeck`,
+        subject: `You're invited to "${workspaceName}" on ${brand.name}`,
         html: [
           '<div style="font-family:ui-sans-serif,system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px">',
-          `<h2 style="margin:0 0 8px">You've been invited to <b>${escapeHtml(workspaceName)}</b> on Flowdeck</h2>`,
-          '<p style="color:#555;margin:0 0 20px">Flowdeck is a realtime kanban board your team can work on together.</p>',
+          `<h2 style="margin:0 0 8px">You've been invited to <b>${escapeHtml(workspaceName)}</b> on ${brand.name}</h2>`,
+          `<p style="color:#555;margin:0 0 20px">${brand.description}</p>`,
           `<a href="${acceptUrl}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">Accept invitation</a>`,
           `<p style="color:#999;font-size:12px;margin-top:20px">Or paste this link: ${acceptUrl}</p>`,
           '</div>',

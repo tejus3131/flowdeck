@@ -2,12 +2,14 @@
 // notification permission once (a small chip — the browser's own prompt
 // does the asking), and keeps this browser's push subscription saved.
 // With permission granted, notifications reach this machine even when
-// Flowdeck isn't open.
+// Orbit isn't open.
 import { Show, createSignal, onSettled } from 'solid-js';
 
 import { getVapidPublicKey, savePushSubscription } from '../lib/push';
+import { appName } from '../lib/brand';
+import { wireSwUpdates } from '../lib/sw-update';
 
-const PROMPT_KEY = 'flowdeck:push-prompt';
+const PROMPT_KEY = 'orbit:push-prompt';
 
 /** applicationServerKey: the VAPID public key as bytes. */
 function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
@@ -67,12 +69,15 @@ export function PushSetup() {
 
   onSettled(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    // The update lifecycle (waiting worker → chip → guarded reload) wires
+    // once per app load, alongside the registration this component owns.
+    wireSwUpdates();
     // The worker reports endpoint rotation — re-subscribe and re-save.
     // Registered synchronously so onSettled can own the cleanup (the
     // async registration below can't use onCleanup).
     const onMessage = (event: MessageEvent) => {
       const data = event.data as { type?: string };
-      if (data?.type === 'fd-resubscribe') {
+      if (data?.type === 'orbit-resubscribe') {
         void navigator.serviceWorker
           .getRegistration()
           .then((registration) => (registration ? syncSubscription(registration) : undefined))
@@ -103,7 +108,8 @@ export function PushSetup() {
         <p class="font-semibold">🔔 Stay in the loop</p>
         <p class="text-neutral-500 dark:text-neutral-400">
           Turn on notifications — mentions, assignments, and access requests find you even when
-          Flowdeck is closed.
+          {appName}
+          is closed.
         </p>
         <div class="flex gap-2">
           <button

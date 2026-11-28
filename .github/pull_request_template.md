@@ -1,4 +1,4 @@
-<!-- The structure every Flowdeck PR follows. The `pr-prep` skill
+<!-- The structure every Orbit PR follows. The `pr-prep` skill
      (.agents/skills/pr-prep/SKILL.md) is the routine that fills this in. -->
 
 ## What & why

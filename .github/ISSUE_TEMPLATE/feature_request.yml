@@ -21,7 +21,7 @@ body:
     attributes:
       label: Architecture fit
       description: |
-        Flowdeck has a locked architecture (see docs/architecture.md) and decision
+        Orbit has a locked architecture (see docs/architecture.md) and decision
         records (docs/adr.md). If you know your idea touches one — e.g. it would
         need a new realtime channel or a denormalized copy — say so here. Ideas
         that contradict a locked decision will likely be declined unless the ADR

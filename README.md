@@ -1,6 +1,6 @@
-# Flowdeck
+# Orbit
 
-Flowdeck is a team workspace: kanban boards, cards, realtime chat, and an
+Orbit is a team workspace: kanban boards, cards, realtime chat, and an
 MCP server that lets AI agents work _as team members_ — every agent action
 runs under the acting user's permissions and lands in the same timelines
 and notifications a human's would.
@@ -32,11 +32,20 @@ to **Cloudflare Workers**.
   what it costs, what it rules out).
 - [`docs/layers/`](docs/layers/) — the per-layer contracts (L0 database →
   L5 views): what each layer owns and may not do.
+- [`docs/design-system.md`](docs/design-system.md) — the frozen design
+  tokens (ADR-16): color, type, spacing, motion. UI changes read these
+  values, never hardcode them; the sourced research
+  ([`docs/research/`](docs/research/)) and the adopt/adapt/skip filter
+  ([`docs/design-findings.md`](docs/design-findings.md)) trace every
+  number, and [`docs/design-playground.md`](docs/design-playground.md)
+  defines how the still-open axes resolve.
 - [`docs/ci-cd.md`](docs/ci-cd.md) — the branch model, environments,
   workflows, and deploy matrix.
 - [`docs/observability.md`](docs/observability.md) — the event taxonomy,
   dashboards, and the free-tier budget for analytics, flags, and MCP
-  profiling.
+  profiling. The behavioral layer — what humans do with the product, and
+  how a number becomes a decision — lives in
+  [`docs/data-playbook.md`](docs/data-playbook.md).
 - [`docs/dev-setup.md`](docs/dev-setup.md) — local development: the
   Supabase stack, preview MCP via environment-variable headers, local
   MCP serving.
@@ -60,6 +69,9 @@ hooks format and lint staged files automatically.
 
 Branches: `main` = production, `preview` = integration. PRs target
 `preview`; the release PR `preview` → `main` ships to production.
+Pull requests are limited to the maintainer and invited collaborators —
+outside contributions go through issues; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Deployment
 

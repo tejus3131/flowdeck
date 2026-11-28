@@ -25,7 +25,7 @@ const admin = createClient(URL, secretKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const email = `consent-probe-${Date.now().toString(36)}@flowdeck.test`;
+const email = `consent-probe-${Date.now().toString(36)}@orbit.test`;
 const password = `probe-${Date.now().toString(36)}!Aa1`;
 const { data: created, error: createErr } = await admin.auth.admin.createUser({
   email,

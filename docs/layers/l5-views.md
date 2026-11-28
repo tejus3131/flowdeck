@@ -7,7 +7,9 @@ lives in — this contract is what makes the redesign safe.
 
 - Components and panels (each its own module; heavy ones lazy chunks)
 - Routes as composition: a route wires panels together, nothing more
-- Design tokens (`tokens.ts`, `theme.ts`) and Tailwind classes
+- Design tokens ([`design-system.md`](../design-system.md), the ADR-16
+  frozen layer — CSS custom properties that Tailwind 4 reads via `@theme`)
+  and Tailwind classes
 - Local UI state only: which tab is open, panel width, hover, composer
   drafts
 - Perf marks on open paths (`perfStart`/`perfEnd` with budgets)
@@ -20,8 +22,7 @@ lives in — this contract is what makes the redesign safe.
 - Hold server state. Duplicated entity copies in component signals are
   the bug class this layer exists to end.
 - Append to routes. New UI becomes its own module (performance-rules 9).
-  The 6,495-line board route is the debt Phase 6 pays down; nothing
-  adds to it.
+  A route is a wiring file, not a place for panels; nothing adds to one.
 - Show a spinner on a warm open (performance-rules 6). Skeletons only on
   the genuine cold path.
 
@@ -36,14 +37,17 @@ lives in — this contract is what makes the redesign safe.
 3. **Unbounded lists virtualize** (performance-rules 10).
 4. **Every panel gets a perf mark and a budget**; PRs that touch a view's
    loading include before/after numbers (performance-rules 7).
-5. **Feature flags gate redesign surfaces** (ADR-8): new UI ships dark
-   behind a PostHog flag, flips per-user or per-percent, and the old
-   surface stays until the flag reaches 100%.
+5. **Feature flags gate redesign surfaces** (ADR-8, ADR-17): components
+   read typed decisions from the request/client flag context; they never
+   evaluate PostHog directly. New UI defaults to the existing surface.
+   The evaluation, SSR, rollback, and developer-playground contract is in
+   [`feature-flags-and-ui-playground.md`](../feature-flags-and-ui-playground.md).
 6. **A route is a wiring file.** If a route grows a component, the
    component moves out. Target: no route file over ~300 lines.
 
-## Worked example — the tag chip, after
+## Worked example — a tag chip, after
 
-`TagChip(props)` reads `tagById(props.tagId)` — one line. The rename
-lands in the store; the chip re-renders because its selector changed.
-The chip has no idea how the name arrived. That is the whole point.
+A chip component receives a tag id and reads `tagById(props.tagId)` — one
+line. The rename lands in the store; the chip re-renders because its
+selector changed. The chip has no idea how the name arrived. That is the
+whole point.

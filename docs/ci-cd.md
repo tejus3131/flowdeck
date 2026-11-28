@@ -8,7 +8,7 @@ are locked in [ADR-11..14](./adr.md); this is the operating manual.
 |           | Local                                | Preview                             | Prod             |
 | --------- | ------------------------------------ | ----------------------------------- | ---------------- |
 | Supabase  | CLI stack (`supabase start`, :54321) | free project #2                     | free project #1  |
-| Worker    | `pnpm dev:node` (:3000)              | `flowdeck-preview` + Access domain  | `flowdeck`       |
+| Worker    | `pnpm dev:node` (:3000)              | `orbit-preview` + Access domain     | `orbit`          |
 | MCP       | `supabase functions serve mcp`       | deployed to preview project         | deployed to prod |
 | Data      | disposable (`db reset`)              | CI-owned test data                  | real             |
 | Auth gate | none                                 | Cloudflare Access (email allowlist) | public           |
@@ -101,11 +101,11 @@ Deploy matrix, **in order**, environment `preview` — the table
 classifies **paths**; the diff window is "since the last successful
 deploy":
 
-| Changed paths (since last successful deploy)                                                          | Action                                                    |
-| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --remote=<db url> --yes` (preview)      |
-| `supabase/functions/**`                                                                               | `supabase functions deploy mcp --no-verify-jwt` (preview) |
-| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && wrangler deploy`    |
+| Changed paths (since last successful deploy)                                                          | Action                                                           |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `supabase/migrations/**`, `supabase/config.toml`                                                      | `supabase db push --remote=<db url> --yes` (preview)             |
+| `supabase/functions/**`                                                                               | `supabase functions deploy mcp --no-verify-jwt --yes` (preview)  |
+| `src/**`, `public/**`, `env.ts`, `vite.config.ts`, `wrangler.jsonc`, `package.json`, `pnpm-lock.yaml` | `CLOUDFLARE_ENV=preview vite build && pnpm exec wrangler deploy` |
 
 `concurrency: deploy-preview` queues deploys (never cancels a
 mid-deploy). A queued run may compute its base before the in-flight run
@@ -127,7 +127,7 @@ run must never tag, or it would poison the next run's base.
 
 Same tag-based diffing against **`release-r*`** (never `preview-r*`),
 against prod refs, gated on the `production` environment approval.
-`wrangler deploy` (no `--env` — top level IS production).
+`pnpm exec wrangler deploy` (no `--env` — top level IS production).
 
 ### Releases (both deploy workflows)
 
@@ -162,14 +162,14 @@ so the free tier never pauses either project.
 
 ## Wrangler environments
 
-`wrangler.jsonc`: top level IS production (worker `flowdeck`, prod
-Supabase URL in `vars`); `env.preview` deploys as `flowdeck-preview`
+`wrangler.jsonc`: top level IS production (worker `orbit`, prod
+Supabase URL in `vars`); `env.preview` deploys as `orbit-preview`
 with the preview project's URL. **The environment is selected at BUILD
 time** (`CLOUDFLARE_ENV=preview vite build`): the Vite plugin flattens
 the generated `dist/server/wrangler.json` for that environment, and
 `--env` at `wrangler deploy` time has no effect on a flattened config —
 the first preview deploy shipped to prod because of exactly that
-(caught in the run log: `Uploaded flowdeck`, prod URL in bindings).
+(caught in the run log: `Uploaded orbit`, prod URL in bindings).
 Custom domains are attached in the dashboard (they survive deploys;
 `routes` stays out of the config so deploys never fight the dashboard).
 **Disable each worker's `*.workers.dev` route** — the preview custom
@@ -194,7 +194,7 @@ workflow code.
 
 The CF Access pair is for probe scripts hitting human-gated preview paths
 (UI smoke tests) — the MCP surface itself is Access-bypassed (see the
-preview access map below); MCP clients connect with Flowdeck's own OAuth,
+preview access map below); MCP clients connect with Orbit's own OAuth,
 identical to prod.
 | `CLOUDFLARE_ACCOUNT_ID` | Variable | same | same |
 | `SUPABASE_PROJECT_REF` | Variable | preview ref | prod ref |
@@ -206,6 +206,15 @@ Repo-level **variables** (scheduled workflows run outside environments):
 `PREVIEW_SUPABASE_URL`, `PREVIEW_SUPABASE_PUBLISHABLE_KEY`,
 `PROD_SUPABASE_URL`, `PROD_SUPABASE_PUBLISHABLE_KEY` — public-by-design
 values for the keep-alive pings.
+
+**PostHog (one project, both environments — [posthog.md](./posthog.md)):**
+`VITE_POSTHOG_KEY` + `VITE_APP_ENV` as environment variables on
+`preview` and `production` (the deploy workflows pass them to the build;
+the SDK talks to our own origin — the worker's /ingest proxy forwards to
+PostHog); `POSTHOG_HOST` rides `wrangler.jsonc` vars, `POSTHOG_KEY` is a
+wrangler secret per env (public-by-design value, kept out of the repo);
+the MCP edge function reads `POSTHOG_HOST`/`POSTHOG_KEY`/`APP_ENV` from
+Supabase function secrets.
 
 Supabase token scope (least privilege): Migrations + Edge Functions
 read-write on both projects; everything else None. Function secrets
@@ -232,6 +241,23 @@ not GitHub.
 - **Workflow changes update this file in the same commit** — the docs
   are the contract; behavior that outlives its documentation is a bug.
   (This rule exists because the drift bit three reviews in a row.)
+
+### CLI inventory & policy (every external CLI in CI)
+
+Every CLI any workflow invokes, its pin, and its CI-safety requirement.
+Adding a CLI to any workflow means adding its row here in the same
+commit — the #84 merge shipped the first-ever `functions` deploy leg and
+it died on a missing `--yes` the migrations leg had already learned.
+
+| CLI          | Pin                                        | Where invoked                                       | CI-safety rule                                                                                                                           |
+| ------------ | ------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm`       | `packageManager: pnpm@11.14.0` + action    | every job                                           | `--frozen-lockfile` on install — never resolve deps live                                                                                 |
+| `node`       | `node-version: 24` (setup-node)            | every job                                           | major pinned; patch floats with the distro — acceptable                                                                                  |
+| `supabase`   | `version: 3.4.0` (setup-cli action)        | quality (local stack), deploy-preview/prod (remote) | **every remote-mutating command carries `--yes`** — `db push` and `functions deploy` both; CI has no terminal to answer prompts          |
+| `deno`       | `deno-version: v2.9.8` (setup-deno action) | quality `functions` job (`deno check`)              | read-only typecheck — no flags needed                                                                                                    |
+| `wrangler`   | devDependency, lockfile-pinned (^4.165.0)  | deploy-preview/prod (`pnpm exec wrangler deploy`)   | invoked via `pnpm exec`, **never `npx`** — npx silently downloads latest on resolution failure, floating the deploy version              |
+| `gh`         | preinstalled on ubuntu-latest (floats)     | deploy-preview/prod release steps                   | `GH_TOKEN` set explicitly; every command fully-argued (no interactive paths) — floats are acceptable, gh's release/API surface is stable |
+| `curl`/`git` | runner image                               | keep-alive, pr-intel                                | read-only usage — no pin needed                                                                                                          |
 
 ## Preview access setup (one-time)
 

@@ -17,6 +17,10 @@ import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
 import { useEntities } from '../../lib/entity-store';
 import { planDrop } from '../../lib/card-drop';
 import { trackRecentBoard, warmBoardActive } from '../../lib/prefetch';
+import { brand } from '../../lib/brand';
+import { markBoardSynced } from '../../lib/offline-state';
+import { noteEngagementEdit } from '../../components/InstallCard';
+import { SyncWatermark } from '../../components/SyncWatermark';
 import { createBoardPresence, presenceColor } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
 import {
@@ -39,6 +43,7 @@ import {
   type BoardOpPayload,
 } from '../../lib/board-ops';
 import { getMe } from '../../lib/auth';
+import { captureCardCompleted, captureCardCreated } from '../../lib/telemetry';
 import {
   boardChatStamp,
   stampBoardChatSeen,
@@ -170,6 +175,23 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   const me = createMemo(() => getMe());
   const navigate = useNavigate();
 
+  // The per-board last-synced watermark (offline UX): every durable
+  // snapshot the engine merges stamps the board's freshness. Reads the
+  // view's revision — the merged cursor, not the raw wire's.
+  createEffect(
+    () => ({ boardId: props.params.boardId, revision: view().revision }),
+    ({ boardId, revision }) => markBoardSynced(boardId, revision),
+  );
+
+  // The install affordance's engagement signal: edits are the moment a
+  // user benefits from installing. Counted per session, never blocking.
+  createEffect(
+    () => engine.ops().filter((op) => !op.remote).length,
+    (count, prev) => {
+      if (count > (prev ?? 0)) noteEngagementEdit();
+    },
+  );
+
   // Prefetch bookkeeping (docs/performance.md, layer 3): this board is
   // the user's most-recently-opened (the dashboard warms from that
   // list), and while it is open its live channel owns the cache — a
@@ -218,8 +240,10 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
   // guards hold intermediate snapshots off, and the author's failure
   // relay (or the TTL) drops a prediction that never landed.
 
-  /** Author path: outbox op + relay to the other viewers. */
-  const runOp = (payload: BoardOpPayload, send: () => Promise<unknown>) => {
+  /** Author path: outbox op + relay to the other viewers. The optional
+   *  telemetry closure is the behavior event for the op — the engine
+   *  fires it when the echo retires (the write is durable). */
+  const runOp = (payload: BoardOpPayload, send: () => Promise<unknown>, telemetry?: () => void) => {
     const opId = crypto.randomUUID();
     engine.mutate({
       kind: payload.kind,
@@ -233,6 +257,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
           throw error;
         }),
       echo: (durable) => echoBoardOp(durable, payload),
+      telemetry,
     });
     presence.broadcastOp({ opId, payload });
   };
@@ -710,9 +735,17 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         .cards.filter((c) => c.list_id === listId)
         .reduce((max, c) => Math.max(max, c.position), 0) || 0) + 1;
     const clientOp = crypto.randomUUID();
+    // Captured as a plain local: the telemetry closure fires at echo
+    // retirement (outside any tracked scope) and the board is stable
+    // for the life of the op.
+    const boardId = props.params.boardId;
     runOp(
       { kind: 'create-card', tempId: crypto.randomUUID(), listId, title, position, clientOp },
       () => createCard(listId, title, clientOp),
+      // The cardCreated behavior event: quick-add creates bare cards —
+      // description and due date arrive later via update-card, so both
+      // ship false at creation today.
+      () => captureCardCreated({ boardId, hasDescription: false, hasDueDate: false }),
     );
   };
 
@@ -742,6 +775,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
    *  the board's lists; unresolve brings it back to its frozen list (the
    *  RPC heals position and logs the trail). */
   const toggleResolve = (cardId: string, resolved: boolean) => {
+    // Same capture rule as addCard above — the closure fires untracked.
+    const boardId = props.params.boardId;
     runOp(
       {
         kind: 'resolve-card',
@@ -751,6 +786,8 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
         by: me()?.id ?? null,
       },
       () => (resolved ? resolveCardServer(cardId) : unresolveCardServer(cardId)),
+      // Completion only — an unresolve is not a task success.
+      resolved ? () => captureCardCompleted({ boardId }) : undefined,
     );
   };
 
@@ -1160,7 +1197,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
 
   return (
     <>
-      <Title>{view().board.name || 'Board'} - Flowdeck</Title>
+      <Title>
+        {view().board.name || 'Board'} - {brand.name}
+      </Title>
       <Show
         when={!view().denied}
         fallback={
@@ -1310,6 +1349,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   Offline
                 </span>
               </Show>
+              <SyncWatermark boardId={props.params.boardId} />
               <Show when={view().lists.length > 0 || view().cards.length > 0}>
                 <span>
                   {view().lists.length} lists · {view().cards.filter((c) => !c.resolved_at).length}{' '}
@@ -1355,6 +1395,7 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
                   }
                   isTemp={engine.isTemp(list.id)}
                   canEdit={canEdit()}
+                  isSaving={(cardId) => engine.isSaving(cardId)}
                   onDragStart={(cardId, height) => {
                     setDragHeight(height);
                     // Broadcast the card's home slot immediately — peers see

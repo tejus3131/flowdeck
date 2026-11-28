@@ -25,6 +25,7 @@ import {
 import { errorMessage } from '../../../../lib/error-message';
 import { cachedStream, cachePut } from '../../../../lib/cache';
 import { perfFirstValue } from '../../../../lib/perf';
+import { brand } from '../../../../lib/brand';
 
 const EMPTY_DETAIL: WorkspaceDetail = {
   workspace: { id: '', name: '', invite_domains: [], board_creation: 'team_admins' },
@@ -197,7 +198,7 @@ export default function TeamPage(props: RouteProps<'/w/:workspaceId/t/:teamId'>)
 
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
-      <Title>Team - Flowdeck</Title>
+      <Title>Team - {brand.name}</Title>
       <Show
         when={exists()}
         fallback={

@@ -3,6 +3,9 @@ packages:
   - 'packages/*'
 
 allowBuilds:
+  # core-js rides posthog-js (ES5 fallback polyfills); its postinstall is
+  # the standard funding banner — nothing native, safe to run.
+  core-js: true
   esbuild: true
   simple-git-hooks: true
   workerd: true

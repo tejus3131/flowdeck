@@ -12,7 +12,7 @@ import { createSignal } from 'solid-js';
 
 import { createSupabaseRequestClient } from '../server/supabase';
 
-const KEY = (boardId: string) => `flowdeck:board-chat-seen:${boardId}`;
+const KEY = (boardId: string) => `orbit:board-chat-seen:${boardId}`;
 
 // Reactive version: every stamp advance bumps it, so consumers reading
 // boardChatStamp() re-run — a mark from the bell panel clears the board

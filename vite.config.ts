@@ -1,10 +1,13 @@
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { fileRoutes } from 'filesystem-routing/vite';
 import { routePathFromFile } from 'filesystem-routing';
 import { defineConfig } from 'vitest/config';
 import solid from '@solidjs/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
+
+import { manifestPlugin } from './vite-manifest-plugin';
 
 // The Cloudflare plugin runs the ssr environment in workerd during dev.
 // Outbound websockets to loopback addresses are blocked in local workerd
@@ -13,6 +16,17 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 // the plugin regardless: `vite build` always emits the Workers artifact.
 const edgeDev = process.env.DEV_EDGE !== '0' && !process.env.VITEST;
 
+// The service worker is a classic script at a fixed URL (/sw.js), outside
+// the app graph: it must not be hashed (the browser re-checks the same
+// URL), must not import the app's modules, and must know the build's
+// hashed asset list to precache. It is emitted AFTER the build by
+// scripts/emit-sw.mjs (the 'build' script chains it) — not by a Vite
+// plugin, because the Cloudflare plugin's buildApp override owns the
+// build lifecycle and shared-plugin closeBundle hooks fire in the client
+// environment only, before dist/server/server.js exists (the shell
+// prerender needs the built handler). Dev serves public/sw.js as today
+// (no precache — dev assets are unhashed and change constantly).
+
 export default defineConfig({
   // Turnkey streaming SSR: no index.html and no entry files — the plugin
   // generates the entries around src/App.tsx, wrapped in src/Document.tsx.
@@ -20,6 +34,9 @@ export default defineConfig({
   // to dist/server, plus the Node server (dist/server/node.js) `npm start` runs.
   plugins: [
     tailwindcss(),
+    // The PWA manifest is emitted at build time from src/lib/brand.ts —
+    // one source, no public/ copy to drift.
+    manifestPlugin(),
     // Cloudflare's plugin adopts Solid's `ssr` environment before solid()
     // claims it: dev runs the server build in workerd, and `vite build`
     // emits the Worker + assets wrangler deploys. No adapter layer.
@@ -77,6 +94,21 @@ export default defineConfig({
           name: 'client',
           environment: 'jsdom',
           include: ['src/**/*.test.tsx'],
+          alias: [
+            // The plugin's env modules validate the WHOLE schema at module
+            // load — including the required server vars, which a PR CI run
+            // must never have (ADR-15). Client-project tests import both
+            // halves (the flags runtime's snapshot reads the server module),
+            // so both are stubbed with the same contract (live reads).
+            {
+              find: 'virtual:solid-env/client',
+              replacement: fileURLToPath(new URL('./vitest-env-client-stub.ts', import.meta.url)),
+            },
+            {
+              find: 'virtual:solid-env/server',
+              replacement: fileURLToPath(new URL('./vitest-env-server-stub.ts', import.meta.url)),
+            },
+          ],
         },
       },
       {
@@ -86,7 +118,12 @@ export default defineConfig({
           // environment:'node' projects get the server posture from the
           // plugin automatically (server conditions, framework inlined).
           environment: 'node',
-          include: ['src/server/**/*.test.ts', 'src/lib/mcp-permissions.test.ts'],
+          include: [
+            'src/server/**/*.test.ts',
+            'src/lib/mcp-permissions.test.ts',
+            'src/lib/brand.test.ts',
+            'src/routes/api/**/*.test.ts',
+          ],
           alias: [
             // Tests run outside the turnkey server: the plugin's env module
             // is stubbed with the same contract (live process.env reads).

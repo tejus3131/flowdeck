@@ -1,0 +1,138 @@
+/* The Orbit token layer — docs/design-system.md (ADR-16) implemented.
+   Every value here traces to that doc; nothing ships that invents a new
+   value. Raw `--fd-*` custom properties carry the semantics; app.css
+   maps them into Tailwind's theme so utilities (bg-fd-bg, text-fd-text,
+   rounded-fd-md…) read the SAME variables — one source of truth.
+
+   The still-open axes (gray, accent, elevation, spring, type density)
+   are the design-playground's P1–P4 experiments: the warm gray set is
+   the default and the cool set rides `[data-gray="cool"]` so the
+   playground can render both without a second token file. Whichever
+   wins becomes the default and the other stays as a one-token swap. */
+
+:root {
+  /* text — warm gray (P1-A, Notion's calm near-black) */
+  --fd-text: oklch(0.22 0.01 80);
+  --fd-text-2: oklch(0.45 0.01 80);
+  --fd-text-3: oklch(0.62 0.01 80);
+
+  /* surfaces — light */
+  --fd-bg: oklch(1 0 0);
+  --fd-bg-1: oklch(0.975 0.002 80);
+  --fd-bg-2: oklch(0.95 0.003 80);
+  --fd-line: oklch(0.91 0.003 80);
+
+  /* accent — indigo (P2 tests indigo vs violet) */
+  --fd-accent: oklch(0.55 0.21 275);
+  --fd-accent-hover: oklch(0.6 0.21 275);
+  --fd-accent-tint: oklch(0.96 0.03 275);
+
+  /* semantic — rationed */
+  --fd-danger: oklch(0.62 0.22 25);
+  --fd-success: oklch(0.65 0.17 150);
+
+  /* tag chips — 8 hues at fixed L/C, perceptually even */
+  --fd-tag-1: oklch(0.75 0.14 25);
+  --fd-tag-2: oklch(0.75 0.14 80);
+  --fd-tag-3: oklch(0.75 0.14 145);
+  --fd-tag-4: oklch(0.75 0.14 195);
+  --fd-tag-5: oklch(0.75 0.14 250);
+  --fd-tag-6: oklch(0.75 0.14 300);
+  --fd-tag-7: oklch(0.75 0.14 340);
+  --fd-tag-8: oklch(0.75 0.14 60);
+
+  /* typography — one family (Inter variable), one measure */
+  --fd-font: 'Inter Variable', Inter, -apple-system, sans-serif;
+  --fd-mono: ui-monospace, SFMono-Regular, monospace;
+  --fd-measure: 708px;
+  --fd-text-xs-size: 11px;
+  --fd-text-xs-lh: 1.45;
+  --fd-text-sm-size: 13px;
+  --fd-text-sm-lh: 1.5;
+  --fd-text-base-size: 14px;
+  --fd-text-base-lh: 1.5;
+  --fd-text-lg-size: 16px;
+  --fd-text-lg-lh: 1.4;
+  --fd-text-xl-size: 20px;
+  --fd-text-xl-lh: 1.3;
+
+  /* spacing & radius — Canva's 8px grid, Notion's semantic aliases */
+  --fd-space-1: 4px;
+  --fd-space-2: 8px;
+  --fd-space-3: 12px;
+  --fd-space-4: 16px;
+  --fd-space-5: 24px;
+  --fd-space-6: 32px;
+  --fd-radius-sm: 6px;
+  --fd-radius-md: 10px;
+  --fd-radius-lg: 14px;
+  --fd-radius-full: 999px;
+
+  /* motion — the frozen budget (enter 300 / exit 200, never equal) */
+  --fd-dur-1: 100ms;
+  --fd-dur-2: 200ms;
+  --fd-dur-3: 300ms;
+  --fd-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --fd-ease-panel: cubic-bezier(0.32, 0.72, 0, 1);
+  --fd-ease-move: cubic-bezier(0.2, 0, 0, 1);
+  --fd-ease-drop: cubic-bezier(0.2, 1, 0.1, 1);
+  --fd-ease-spring: cubic-bezier(0.45, 1.45, 0.8, 1);
+
+  /* elevation — two levels only ("felt not seen") */
+  --fd-shadow-1: 0 1px 2px oklch(0 0 0 / 0.06);
+  --fd-shadow-2: 0 8px 24px oklch(0 0 0 / 0.14);
+}
+
+/* P1-B: the cool gray set — same lightness, hue 250. The playground
+   swaps the whole set with one data attribute; a win here becomes the
+   :root default and the loser stays as this swap. */
+[data-gray='cool'] {
+  --fd-text: oklch(0.22 0.007 250);
+  --fd-text-2: oklch(0.45 0.008 250);
+  --fd-text-3: oklch(0.62 0.005 250);
+  --fd-bg-1: oklch(0.975 0.002 250);
+  --fd-bg-2: oklch(0.95 0.002 250);
+  --fd-line: oklch(0.91 0.002 250);
+}
+
+.dark {
+  /* dark surfaces follow Linear's ladder: 0.11 → 0.14 → 0.17 → 0.20 L */
+  --fd-bg: oklch(0.145 0.004 260);
+  --fd-bg-1: oklch(0.17 0.004 260);
+  --fd-bg-2: oklch(0.2 0.005 260);
+  --fd-line: oklch(0.24 0.005 260);
+  --fd-text: oklch(0.95 0.004 260);
+  --fd-text-2: oklch(0.72 0.005 260);
+  --fd-text-3: oklch(0.56 0.005 260);
+  --fd-accent: oklch(0.68 0.19 275);
+  --fd-accent-hover: oklch(0.72 0.19 275);
+  --fd-accent-tint: oklch(0.3 0.06 275);
+  --fd-danger: oklch(0.7 0.19 25);
+  --fd-success: oklch(0.72 0.15 150);
+
+  /* tag chips — one lightness step down so they hold contrast on dark */
+  --fd-tag-1: oklch(0.7 0.13 25);
+  --fd-tag-2: oklch(0.7 0.13 80);
+  --fd-tag-3: oklch(0.7 0.13 145);
+  --fd-tag-4: oklch(0.7 0.13 195);
+  --fd-tag-5: oklch(0.7 0.13 250);
+  --fd-tag-6: oklch(0.7 0.13 300);
+  --fd-tag-7: oklch(0.7 0.13 340);
+  --fd-tag-8: oklch(0.7 0.13 60);
+
+  --fd-shadow-1: 0 1px 2px oklch(0 0 0 / 0.3);
+  --fd-shadow-2: 0 8px 24px oklch(0 0 0 / 0.5);
+}
+
+/* The motion rule with no exceptions: reduced motion turns ALL
+   animation and transition off, globally. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

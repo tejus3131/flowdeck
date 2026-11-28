@@ -1,15 +1,15 @@
-// Flowdeck MCP server — Supabase Edge Function.
+// Orbit MCP server — Supabase Edge Function.
 //
 // Speaks the Model Context Protocol over the streamable HTTP transport:
 // every request is a JSON-RPC 2.0 message POSTed to this endpoint, and
 // every response is plain JSON (no server-initiated streams needed, so the
 // SSE half of the transport stays unused). Any MCP client — Claude Desktop,
 // Cursor, a custom harness — connects with the URL plus a personal access
-// token created on the Flowdeck profile page:
+// token created on the Orbit profile page:
 //
-//   { "mcpServers": { "flowdeck": {
+//   { "mcpServers": { "orbit": {
 //     "url": "https://<project>.supabase.co/functions/v1/mcp",
-//     "headers": { "Authorization": "Bearer fd_..." } } } }
+//     "headers": { "Authorization": "Bearer orb_..." } } } }
 //
 // Auth: Bearer PAT → sha256 → api_tokens.token_hash (the plaintext is
 // never stored). Every operation runs through public.mcp_exec, which
@@ -17,10 +17,16 @@
 // client can do exactly what the web app could, and nothing more.
 //
 // Deploy: supabase functions deploy mcp --no-verify-jwt
+//
+// Brand strings: this bundle cannot import `src/`, so the user-facing
+// brand facts live in ./brand.json next to this file (deployed with it)
+// and a parity test (src/lib/brand.test.ts) pins it to src/lib/brand.ts.
+// A rebrand edits both files — the test fails if they drift.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.119.2';
+import brand from './brand.json' with { type: 'json' };
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-const SERVER_INFO = { name: 'flowdeck', version: '1.0.0' };
+const SERVER_INFO = { name: 'orbit', version: '1.0.0' };
 
 type ToolDef = {
   name: string;
@@ -810,7 +816,7 @@ async function sha256Hex(value: string): Promise<string> {
 // at <app>/api/mcp, so the PUBLIC resource URL — what discovery documents
 // and 401 challenges advertise — is that proxy path, not this direct
 // Supabase URL. The direct URL keeps working as a fallback entry point.
-const APP_ORIGIN = Deno.env.get('APP_ORIGIN') ?? 'https://flowdeck.tejusgupta.dev';
+const APP_ORIGIN = Deno.env.get('APP_ORIGIN') ?? 'https://orbit.tejusgupta.dev';
 const RESOURCE_URL = `${new URL(Deno.env.get('SUPABASE_URL') ?? 'https://supabase.co').origin}/functions/v1/mcp`;
 const MCP_PUBLIC_URL = Deno.env.get('MCP_PUBLIC_URL') ?? `${APP_ORIGIN}/api/mcp`;
 
@@ -843,7 +849,7 @@ function safeRedirectUri(uri: string): boolean {
  *
  * VS Code (and other MCP harnesses) auto-register before the browser
  * flow: they POST their redirect URIs and expect a client_id back.
- * Flowdeck treats the client_id as a presentation-consistency label,
+ * Orbit treats the client_id as a presentation-consistency label,
  * not a credential — the authorize and /token steps only require that
  * the SAME client_id and redirect_uri come back, and PKCE (S256) is
  * the real client authentication. So there is nothing to persist: the
@@ -958,6 +964,24 @@ function oauthDiscovery(pathname: string): Response | null {
   return null;
 }
 
+/** The consent-code row. The edge function's client is untyped (no
+ *  generated database types on Deno), so the row shape is declared here
+ *  — it mirrors the mcp_auth_codes migration and is asserted at the
+ *  single read below. */
+type McpAuthCode = {
+  id: string;
+  user_id: string;
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  expires_at: string;
+  used_at: string | null;
+  workspace_scope: string[] | null;
+  allowed_ops: string[] | null;
+  workspace_ops: Record<string, string[]> | null;
+  connection_name: string | null;
+};
+
 /** POST /token — the authorization_code + PKCE exchange. Single-use
  * codes, 10-minute TTL, redirect_uri and client_id must match, and the
  * minted credential is a normal api_tokens PAT (shared revocation and
@@ -988,11 +1012,12 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_request', 'code, code_verifier, client_id and redirect_uri are required');
   }
 
-  const { data: stored } = await service
+  const { data: storedData } = await service
     .from('mcp_auth_codes')
     .select('id, user_id, client_id, redirect_uri, code_challenge, expires_at, used_at, workspace_scope, allowed_ops, workspace_ops, connection_name')
     .eq('code_hash', await sha256Hex(code))
     .maybeSingle();
+  const stored = storedData as McpAuthCode | null;
   if (!stored || stored.used_at || new Date(stored.expires_at) < new Date()) {
     return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
   }
@@ -1003,10 +1028,12 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_grant', 'PKCE verification failed');
   }
 
-  // Single-use: claim the code; a racing exchange finds nothing.
+  // Single-use: claim the code; a racing exchange finds nothing. The
+  // payload casts ride the untyped client (its builder types rows as
+  // `never`); the row type above owns the shape.
   const { data: claimed } = await service
     .from('mcp_auth_codes')
-    .update({ used_at: new Date().toISOString() })
+    .update({ used_at: new Date().toISOString() } as never)
     .eq('id', stored.id)
     .is('used_at', null)
     .select('id')
@@ -1015,7 +1042,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
   }
 
-  const token = `fd_${Array.from(crypto.getRandomValues(new Uint8Array(24)))
+  const token = `orb_${Array.from(crypto.getRandomValues(new Uint8Array(24)))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')}`;
   const { error: insertError } = await service.from('api_tokens').insert({
@@ -1027,7 +1054,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     workspace_scope: stored.workspace_scope ?? null,
     allowed_ops: stored.allowed_ops ?? null,
     workspace_ops: stored.workspace_ops ?? null,
-  });
+  } as never);
   if (insertError) {
     return oauthError(500, 'server_error', 'could not mint the token');
   }
@@ -1036,6 +1063,57 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     200,
     { 'Cache-Control': 'no-store' },
   );
+}
+
+// Telemetry: the taxonomy's mcp_tool_call event (docs/observability.md).
+// POSTs to PostHog's public /capture endpoint with the token owner's
+// user UUID as the distinct id; the properties are ids, timings, and
+// counts only — never tool args (no user content leaves the server).
+// Absent env config (local dev, a project without telemetry) skips the
+// capture entirely. A short timeout bounds the latency a tool call can
+// inherit, and a capture failure is swallowed — telemetry must never
+// fail an agent's op.
+const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST');
+const POSTHOG_KEY = Deno.env.get('POSTHOG_KEY');
+const APP_ENV = Deno.env.get('APP_ENV') ?? 'local';
+
+async function captureToolCall(input: {
+  tool: string;
+  op: string;
+  workspaceIds: string[];
+  ms: number;
+  ok: boolean;
+  rows: number | null;
+  distinctId: string;
+}): Promise<void> {
+  if (!POSTHOG_HOST || !POSTHOG_KEY) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1000);
+  try {
+    await fetch(`${POSTHOG_HOST.replace(/\/+$/, '')}/capture/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        api_key: POSTHOG_KEY,
+        event: 'mcp_tool_call',
+        distinct_id: input.distinctId,
+        properties: {
+          tool: input.tool,
+          op: input.op,
+          workspace_id: input.workspaceIds.length === 1 ? input.workspaceIds[0]! : null,
+          ms: input.ms,
+          ok: input.ok,
+          rows: input.rows,
+          app_environment: APP_ENV,
+        },
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    // Swallowed by design — see above.
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 Deno.serve(async (request) => {
@@ -1073,7 +1151,10 @@ Deno.serve(async (request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } },
     );
-    return oauthTokenExchange(request, service);
+    // The cast aligns the inferred client instantiation with the
+    // declaration's ReturnType (the pinned supabase-js types infer
+    // different generics at the two sites).
+    return oauthTokenExchange(request, service as ReturnType<typeof createClient>);
   }
   // Streamable HTTP: this server only answers client POSTs.
   if (request.method !== 'POST') {
@@ -1093,9 +1174,9 @@ Deno.serve(async (request) => {
   }
   const auth = request.headers.get('authorization') ?? '';
   const presented = auth.replace(/^Bearer\s+/i, '').trim();
-  if (!presented.startsWith('fd_')) {
+  if (!presented.startsWith('orb_')) {
     return json(
-      { jsonrpc: '2.0', error: { code: -32001, message: 'Missing or malformed token. Pass "Authorization: Bearer fd_…"' } },
+      { jsonrpc: '2.0', error: { code: -32001, message: 'Missing or malformed token. Pass "Authorization: Bearer orb_…"' } },
       401,
       // RFC 9728 challenge: OAuth-capable clients start the browser flow
       // from this header alone.
@@ -1162,8 +1243,7 @@ Deno.serve(async (request) => {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER_INFO,
-        instructions:
-          'Flowdeck boards, cards and chat. Start with get_me and list_workspaces; every list tool pages with next_cursor. Mentions use [Name](user:UUID) links — call check_mention_access first for people who may not see the board. This server is stateless: no sessions, no DELETE (the spec allows a stateless streamable-HTTP server); every call carries its own Bearer token. Every mutating tool returns the result of the change: the entity after the edit (ids, positions, names), counts (e.g. cards_moved, askers_notified), or flags (edited/deleted/seen) — never a silent null.',
+        instructions: `${brand.name} boards, cards and chat. Start with get_me and list_workspaces; every list tool pages with next_cursor. Mentions use [Name](user:UUID) links — call check_mention_access first for people who may not see the board. This server is stateless: no sessions, no DELETE (the spec allows a stateless streamable-HTTP server); every call carries its own Bearer token. Every mutating tool returns the result of the change: the entity after the edit (ids, positions, names), counts (e.g. cards_moved, askers_notified), or flags (edited/deleted/seen) — never a silent null.`,
       });
     }
     case 'notifications/initialized':
@@ -1200,12 +1280,13 @@ Deno.serve(async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error: this connection is not permitted to run ${name}. The owner can grant it on Flowdeck's consent page (re-connect) or from the profile page's API tokens.`,
+              text: `Error: this connection is not permitted to run ${name}. The owner can grant it on ${brand.name}'s consent page (re-connect) or from the profile page's API tokens.`,
             },
           ],
           isError: true,
         });
       }
+      const toolStartedAt = Date.now();
       const { data, error } = await service.rpc('mcp_exec', {
         p_user_id: tokenRow.user_id,
         p_op: tool.op,
@@ -1213,6 +1294,23 @@ Deno.serve(async (request) => {
         // The connection's workspace boundary (null = account-wide).
         p_workspace_ids: scopeOf(tokenRow.workspace_ops, tokenRow.workspace_scope),
         p_ws_ops: tokenRow.workspace_ops ?? null,
+      });
+      // The taxonomy's mcp_tool_call — agent actions are part of the
+      // North Star. Absent env values simply skip the capture; the
+      // short internal timeout bounds what a tool call can inherit.
+      // Fire-and-forget: a slow or failed capture must never add
+      // latency to the agent's op (the internal timeout only bounds the
+      // fetch, not the await — void drops the promise entirely).
+      void captureToolCall({
+        tool: name,
+        op: tool.op,
+        workspaceIds: tokenRow.workspace_ops ? Object.keys(tokenRow.workspace_ops) : [],
+        ms: Date.now() - toolStartedAt,
+        ok: !error && (data as { ok?: boolean } | null)?.ok === true,
+        rows: Array.isArray((data as { data?: unknown } | null)?.data)
+          ? ((data as { data: unknown[] }).data.length as number)
+          : null,
+        distinctId: tokenRow.user_id,
       });
       const result = (data ?? {}) as { ok?: boolean; data?: unknown };
       if (error || result.ok !== true) {

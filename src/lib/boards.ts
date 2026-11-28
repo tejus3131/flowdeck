@@ -1,4 +1,4 @@
-// Flowdeck board data layer: server functions the UI calls directly.
+// Orbit board data layer: server functions the UI calls directly.
 //
 // Reads run through the request-scoped Supabase client, so RLS decides
 // what each caller sees (boards: only memberships; cards: only member
@@ -15,6 +15,7 @@ import { live } from '@solidjs/web/server-functions';
 import { applyFold, planFold, type FoldEvent, type TagRow } from './board-fold';
 import { createSupabaseRequestClient } from '../server/supabase';
 import { friendlyError } from '../server/friendly';
+import { captureSyncResync } from './telemetry';
 import {
   filterInaccessible,
   mentionedTeams,
@@ -433,17 +434,17 @@ export const boardStream = live(async function* (
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'board_access', filter: `board_id=eq.${id}` },
-      () => push({ kind: 'resync' }),
+      () => push({ kind: 'resync', trigger: 'access' }),
     )
     // Team grants reach this board the same way (a team this viewer is in
     // gains access → the page flips live).
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'board_team_access', filter: `board_id=eq.${id}` },
-      () => push({ kind: 'resync' }),
+      () => push({ kind: 'resync', trigger: 'access' }),
     )
     .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () =>
-      push({ kind: 'resync' }),
+      push({ kind: 'resync', trigger: 'access' }),
     )
     .on(
       'postgres_changes',
@@ -454,7 +455,7 @@ export const boardStream = live(async function* (
         // this the page sits on a vanished board until the 20s poll
         // flips it to denied. A full re-snapshot answers in ~80ms.
         if (!payload.new) {
-          push({ kind: 'resync' });
+          push({ kind: 'resync', trigger: 'board-delete' });
           return;
         }
         push({ kind: 'board-row', row: payload.new as BoardSummary });
@@ -519,7 +520,7 @@ export const boardStream = live(async function* (
     );
   } else {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'tags' }, () =>
-      push({ kind: 'resync' }),
+      push({ kind: 'resync', trigger: 'vocabulary' }),
     );
   }
   /** The burst's touched comment cards (its pages re-fetch). */
@@ -763,6 +764,11 @@ export const boardStream = live(async function* (
           console.log(
             `[boardStream ${id.slice(0, 8)}] ${plan.resync ? 'visibility change' : 'periodic re-sync'} — re-snapshotting`,
           );
+          // The taxonomy's sync_resync sample: rare by definition, so
+          // one event per resync is inside the event budget — and a spike
+          // (by trigger) is the canonical test failing in prod.
+          const resyncStartedAt = Date.now();
+          const resyncTrigger = plan.resync ? (plan.resyncTrigger ?? 'access') : 'periodic';
           // A full re-snapshot flushes the digest with it. The fresh truth
           // is the BOARD slice — the drawer's per-card pages are NOT part
           // of it, so any rows the batched digests would have carried
@@ -779,6 +785,7 @@ export const boardStream = live(async function* (
             newEvents: [],
           };
           seedVocabulary(current);
+          captureSyncResync({ trigger: resyncTrigger, ms: Date.now() - resyncStartedAt });
         } else {
           const views = await fetchCardViews(supabase, id, plan.cardTouches);
           const next: BoardTopicSnapshot = {
@@ -2320,7 +2327,7 @@ async function currentWorkspaceId(
 ): Promise<string | null> {
   const event = getRequestEvent();
   const header = event?.request.headers.get('cookie') ?? '';
-  const match = header.match(/(?:^|;\s*)fd_ws=([0-9a-f-]{36})/);
+  const match = header.match(/(?:^|;\s*)ob_ws=([0-9a-f-]{36})/);
   const candidate = match?.[1];
   if (!candidate) return null;
   const {

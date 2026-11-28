@@ -1,19 +1,19 @@
 // The MCP connection docs — a hosted reference users read and agents use
 // verbatim: endpoint, auth, client configs, and the full tool list with
 // schemas. Static content (fast, crawlable, no session needed).
-import { Title } from '@solidjs/meta';
-
 import { MembershipWatch } from '../../components/MembershipWatch';
 import { For } from 'solid-js';
 import { env } from 'virtual:solid-env/client';
+import { brand } from '../../lib/brand';
+import { SeoHead } from '../../lib/seo';
 
 // The advertised MCP endpoint derives from the deployment's own base URL
 // (baked at build from VITE_APP_URL) so a preview build shows the preview
-// endpoint and a prod build shows prod. Falls back to the prod URL only
+// endpoint and a prod build shows prod. Falls back to the brand URL only
 // for builds that don't advertise a base (local dev).
 const MCP_URL = env.VITE_APP_URL
   ? `${env.VITE_APP_URL.replace(/\/+$/, '')}/api/mcp`
-  : 'https://flowdeck.tejusgupta.dev/api/mcp';
+  : `${brand.url.replace(/\/+$/, '')}/api/mcp`;
 
 const TOOLS: { name: string; args: string; returns: string; note?: string }[] = [
   {
@@ -255,11 +255,17 @@ export default function McpDocsPage() {
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
       <MembershipWatch />
-      <Title>MCP — Flowdeck</Title>
-      <p class="text-xs font-semibold uppercase tracking-wider text-indigo-500">Flowdeck docs</p>
+      <SeoHead
+        title={`MCP — ${brand.name}`}
+        description={`Connect AI agents to ${brand.name} over the Model Context Protocol — boards, cards, chat, workspaces, under your permissions.`}
+        path="/docs/mcp"
+      />
+      <p class="text-xs font-semibold uppercase tracking-wider text-indigo-500">
+        {brand.name} docs
+      </p>
       <h1 class="mt-1 text-2xl font-bold tracking-tight">Connect your AI agents (MCP)</h1>
       <p class="mt-3 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        Flowdeck speaks the{' '}
+        {brand.name} speaks the{' '}
         <a
           href="https://modelcontextprotocol.io"
           class="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
@@ -275,8 +281,9 @@ export default function McpDocsPage() {
       <h2 class="mt-8 text-lg font-semibold tracking-tight">1. Connect</h2>
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
         OAuth-supporting clients (Claude Desktop, Cursor, …) connect with no setup: they open
-        Flowdeck's consent page in your browser, you pick the which workspaces it may act in and,
-        per entity, exactly which actions (read, create, update, delete) it may take, and the client
+        {brand.name}
+        's consent page in your browser, you pick the which workspaces it may act in and, per
+        entity, exactly which actions (read, create, update, delete) it may take, and the client
         receives its token. If your client wants a manual token instead, mint one on your{' '}
         <a href="/profile" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
           Profile → MCP connections
@@ -294,7 +301,9 @@ export default function McpDocsPage() {
         again.
       </p>
 
-      <h2 class="mt-8 text-lg font-semibold tracking-tight">2. Point your client at Flowdeck</h2>
+      <h2 class="mt-8 text-lg font-semibold tracking-tight">
+        2. Point your client at {brand.name}
+      </h2>
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
         The endpoint is{' '}
         <code class="break-all rounded bg-neutral-100 px-1 py-0.5 text-xs dark:bg-neutral-800">
@@ -305,9 +314,9 @@ export default function McpDocsPage() {
       <pre class="mt-1 overflow-x-auto rounded-xl bg-neutral-950 p-4 text-xs leading-relaxed text-neutral-100">
         <code>{`{
   "mcpServers": {
-    "flowdeck": {
+    "orbit": {
       "url": "${MCP_URL}",
-      "headers": { "Authorization": "Bearer fd_YOUR_TOKEN" }
+      "headers": { "Authorization": "Bearer orb_YOUR_TOKEN" }
     }
   }
 }`}</code>
@@ -362,8 +371,8 @@ export default function McpDocsPage() {
 
       <h2 class="mt-8 text-lg font-semibold tracking-tight">A skill for deep context</h2>
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
-        Tool descriptions carry the essentials, but the <code>skills/flowdeck/SKILL.md</code> file
-        in the repository is the full operating manual for agents — workflows, mention etiquette,
+        Tool descriptions carry the essentials, but the <code>skills/orbit/SKILL.md</code> file in
+        the repository is the full operating manual for agents — workflows, mention etiquette,
         pagination, error meanings, and limits. Install it alongside the connection.
       </p>
 

@@ -1,6 +1,6 @@
 ---
 name: pr-prep
-description: The pre-PR routine for Flowdeck — commit hygiene, self-review against the docs, evidence per area, and the checks that must be green before a PR is opened. Run it before opening or updating any pull request.
+description: The pre-PR routine for Orbit — commit hygiene, self-review against the docs, evidence per area, and the checks that must be green before a PR is opened. Run it before opening or updating any pull request.
 ---
 
 # PR prep — the routine before every pull request
@@ -54,17 +54,33 @@ Read your own diff as if you were the maintainer, with these open:
   copies, new `resync` triggers, or new realtime channels fail this.
 - `docs/performance-rules.md` — budgets, unbounded stores, refetch storms.
 - `docs/observability.md` — new events follow the taxonomy and budget.
+- `docs/ui-data.md` — any UI change: run the two grep guards (snapshot-copy
+  reads of `props.workspaceTags` / `props.members` / `props.teams` /
+  `detail().tags…`) and review every hit; the only acceptable ones are
+  event handlers and the rule-4 snapshot fallbacks. Then run the canonical
+  test by hand: change one row, confirm every surface updates in one frame.
+- `docs/design-system.md` — any UI change: run the hardcoded-value grep
+  (`rg -n '#[0-9a-fA-F]{3,8}\b' src/ --glob '!**/*.css'`) and review every
+  hit; colors come from `--fd-*` tokens, spacing from the 8px scale, motion
+  from the budget. A value that doesn't exist is added to the
+  design-system doc first, never inlined. Drop-settle (330–550ms,
+  distance-scaled) is the one budget exception.
+- Brand strings — any UI change: run the brand grep
+  (`rg -n 'Orbit' src/routes/ src/components/`) and review every hit;
+  user-facing brand text comes from `src/lib/brand.ts` (`brand.name` /
+  `appName`), never a literal. The edge function, docs, tests, and
+  `ob_*`/`orbit_*` internals legitimately contain the name.
 
 ## 5. Evidence per area (goes in the PR description)
 
-| Area           | Required evidence                                                                         |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| UI             | Screen recording or before→after screenshots, **light + dark**                            |
-| Server / data  | Data-path explanation + tests added/updated; `db reset` passes                            |
-| MCP tools      | Tested against local stack; `src/routes/docs/mcp.tsx` updated for schema/behavior changes |
-| Migrations     | Guard note in the PR                                                                      |
-| CI / workflows | `docs/ci-cd.md` diff in the same commit + validated YAML                                  |
-| Docs           | The doc diffs are part of the PR, not a follow-up                                         |
+| Area           | Required evidence                                                                 |
+| -------------- | --------------------------------------------------------------------------------- |
+| UI             | Screen recording or before→after screenshots, **light + dark**                    |
+| Server / data  | Data-path explanation + tests added/updated; `db reset` passes                    |
+| MCP tools      | Tested against local stack; the MCP docs page updated for schema/behavior changes |
+| Migrations     | Guard note in the PR                                                              |
+| CI / workflows | `docs/ci-cd.md` diff in the same commit + validated YAML                          |
+| Docs           | The doc diffs are part of the PR, not a follow-up                                 |
 
 UI recording tip: a phone/screen recording of the two states is fine — it
 doesn't need production polish, it needs to show the behavior.

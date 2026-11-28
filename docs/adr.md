@@ -182,7 +182,7 @@ need a paid plan or the local stack.
 
 ## ADR-13: Preview is private — Cloudflare Access
 
-**Decision.** The preview worker gets a custom domain on the Flowdeck
+**Decision.** The preview worker gets a custom domain on the Orbit
 zone; Cloudflare Access (free ≤50 users) gates it with an email allowlist.
 Preview Supabase: invite-only signups, redirect URLs pinned to the preview
 domain. Preview MCP tokens live in the preview DB only.
@@ -253,3 +253,89 @@ A leaked deploy token is IP-bound, time-bound, minimally scoped, and
 rotates. The residual risk — a compromised runner during a deploy run —
 is bounded by TTL + scope + rotation. When (if) Cloudflare or Supabase
 ship OIDC federation, this ADR is superseded by a new one.
+
+## ADR-16: Frozen design token layer
+
+**Context.** The UI redesign (phase 6) needs its visual decisions made
+_before_ component code moves, or every contributor re-derives taste per
+PR. Two sourced research reports (`docs/research/`) were filtered into
+adopt/adapt/skip findings (`docs/design-findings.md`), and the adopted
+numbers were frozen as tokens (`docs/design-system.md`).
+
+**Decision.** `docs/design-system.md` is the single source of truth for
+visual values: color (OKLCH; warm/cool gray and indigo/violet accent as
+named experiment axes until the playground picks), typography (Inter,
+1.5 line-height, 708px measure, no 700 weight), spacing (8px grid),
+radius (semantic aliases), motion (the 100/200/300ms budget; rbd +
+Notion + Linear curves; spring easing reserved for completion moments;
+`prefers-reduced-motion` globally), and elevation (two levels).
+Components read tokens; they never hardcode. A value that doesn't exist
+gets added to the token file first.
+
+**Consequences.** Token changes reopen this decision and require a new
+ADR (or an explicit amendment line here) in the same PR. The experiment
+axes (gray, accent) resolve by feel in the playground, and their
+resolution is recorded as an amendment to this ADR — not a silent edit.
+The token layer is CSS-first (custom properties); Tailwind 4 reads the
+same values via `@theme`, so there is exactly one place a color lives.
+
+## ADR-17: Typed flag boundary and server-gated developer playground
+
+**Context.** ADR-8 selected PostHog for flags, and the redesign docs require
+flagged surfaces, but did not define flag ownership, defaults, SSR behavior,
+or how developers compare variants. A client-only check can flash a surface
+before hydration and cannot protect a route. PostHog's edge guidance also
+means a process-local SDK cache cannot be assumed on Cloudflare Workers.
+
+**Decision.** Define and consume flags through a Orbit-owned typed
+registry and provider boundary. Every flag declares its purpose, finite
+value set, safe fallback, evaluation scope, owner, expiry/review date, and
+rollback behavior. Release flags fall back to the existing UI; playground
+access falls back to deny; operational flags declare their safe/degraded
+behavior individually. Evaluate the values needed for a request before SSR,
+keep them request-scoped, and bootstrap only the matching client values with
+the same distinct ID. Validate the PostHog evaluation and billing strategy
+on the actual Worker before choosing remote evaluation or shared caching.
+Never use a browser flag as authorization or as a replacement for RLS.
+Keep PostHog on its no-card Free tier: usage stops at free limits. Measure
+flag request volume and preserve safe fallbacks for quota exhaustion.
+Person targeting is the default for developer access and personal UI. For
+workspace-specific UI, evaluate as the authenticated person while passing
+the verified active workspace UUID as a transient person-property override.
+Exact workspace conditions use 100% rollout; PostHog percentage rollouts
+remain person-bucketed and cannot ensure one variant per workspace. PostHog
+Group Analytics is paid and excluded by ADR-8's strict $0 rule. If
+workspace-randomized experiments become necessary, assignment and analysis
+must use a separately designed Orbit-owned mechanism rather than a
+PostHog group experiment.
+
+The developer playground is a server-gated `/playground/*` route family.
+It returns the normal 404 before rendering or loading data for unauthorized
+accounts. Access comes from a server-verifiable developer permission;
+an authenticated account's server-evaluated PostHog permission flag may
+manage the preview cohort, but client-side flags are never trusted and flags
+do not protect confidential data or bundled code. The gallery compares
+production components and variants using synthetic fixtures. Gallery
+selection is separate from production rollout and experiment assignment.
+
+**Consequences.** SSR and browser render the same decision without a
+variant flash. Flag evaluation failures remain on each flag's declared safe
+path. Server functions and database policies continue enforcing access
+independently. The component gallery can grow by component/surface page
+without a parallel implementation or additional hosting product. Temporary
+flags carry cleanup work; experiments remain off until separately justified
+by the data-playbook criteria.
+
+**Amendment (2026-11-27).** The playground's access mechanism changed:
+instead of a server-evaluated PostHog permission flag, access is
+**environment-gated** — the preview deployment is already Cloudflare
+Access-gated to the maintainer, so it IS the developer cohort, and
+production always returns the normal 404 (`VITE_APP_ENV` is baked at
+build time; a runtime failure cannot open the gate). The check stays
+server-side in every route's preload and fails closed. The typed flag
+boundary itself is unchanged — permission flags remain a supported kind
+for future per-account cohorts; the registry simply holds no flags until
+the first redesign release flag registers with the PR that consumes it.
+Net effect: one less PostHog dependency and no flag-metadata setup for a
+one-person cohort, at zero security cost (the flag was never the security
+boundary; Cloudflare Access and RLS are).

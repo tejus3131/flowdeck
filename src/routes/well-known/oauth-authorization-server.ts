@@ -5,7 +5,7 @@
 // `src/routes/well-known/`; vite.config.ts's `toPath` maps it to the real
 // `/.well-known/oauth-authorization-server` route path.
 //
-// Flowdeck's MCP endpoint lives on the Supabase edge
+// Orbit's MCP endpoint lives on the Supabase edge
 // (…supabase.co/functions/v1/mcp), but that origin's root well-known
 // paths are not routable to an edge function, so strict RFC 8414 clients
 // could never fetch authorization-server metadata there. The edge

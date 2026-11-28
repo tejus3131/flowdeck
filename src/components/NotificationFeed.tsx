@@ -25,6 +25,7 @@ import { resolveAccessRequest } from '../lib/access';
 import { getMe } from '../lib/auth';
 import { warmNotificationTarget } from '../lib/prefetch';
 import { dndActive, insideWorkHours, refreshMyStatus } from '../lib/status';
+import { appName } from '../lib/brand';
 
 /** A short Slack-style chime via WebAudio (no assets, no network). */
 function chime(): void {
@@ -64,7 +65,7 @@ async function systemNotification(row: NotificationRow, text: string): Promise<v
   try {
     const registration = await navigator.serviceWorker?.getRegistration();
     if (registration) {
-      await registration.showNotification('Flowdeck', options);
+      await registration.showNotification(appName, options);
       return;
     }
   } catch {
@@ -72,7 +73,7 @@ async function systemNotification(row: NotificationRow, text: string): Promise<v
   }
   try {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      const note = new Notification('Flowdeck', options);
+      const note = new Notification(appName, options);
       note.onclick = () => {
         window.focus();
         note.close();
@@ -132,7 +133,7 @@ export function NotificationFeed() {
     if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
       const onMessage = (event: MessageEvent) => {
         const data = event.data as { type?: string; url?: string };
-        if (data?.type === 'fd-navigate' && data.url) navigate(hrefToPath(data.url));
+        if (data?.type === 'orbit-navigate' && data.url) navigate(hrefToPath(data.url));
       };
       navigator.serviceWorker.addEventListener('message', onMessage);
       // onCleanup is forbidden inside onSettled — the return value is the

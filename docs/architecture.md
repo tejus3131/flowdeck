@@ -1,4 +1,4 @@
-# Flowdeck architecture
+# Orbit architecture
 
 The locked architecture. This document is the contract every change is
 reviewed against — the UI redesign, new features, and bug fixes all follow
@@ -6,7 +6,9 @@ it. Companion docs: the layer contracts in [`layers/`](./layers/), the
 decisions with rationale in [`adr.md`](./adr.md), the pipeline in
 [`ci-cd.md`](./ci-cd.md), the telemetry contract in
 [`observability.md`](./observability.md), and the speed checklist
-[`performance-rules.md`](./performance-rules.md).
+[`performance-rules.md`](./performance-rules.md). The redesign's flag and
+developer-playground contract is in
+[`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
 
 ## The philosophy (five principles)
 
@@ -96,6 +98,9 @@ Summarized here, full context/decision/consequences in [`adr.md`](./adr.md):
 | 12  | Two Supabase projects (free tier); migrations are the only schema path                                     |
 | 13  | Preview is private: Cloudflare Access on the preview domain                                                |
 | 14  | Deploys are path-based, diffed since the last successful deploy: migrations → functions → worker, in order |
+| 15  | CI credentials policy                                                                                      |
+| 16  | Frozen design token layer                                                                                  |
+| 17  | Typed flag boundary; server-gated developer playground                                                     |
 
 ## The canonical feature walkthrough
 
@@ -129,3 +134,9 @@ redesign follows this exact path:
 | 6     | Route decomposition (panels out of the board route)              | redesign can start                  |
 
 Each phase ships fully working. No phase requires a big-bang migration.
+
+Before the first redesign surface ships, implement and verify the flag
+foundation and developer-playground access contract in
+[`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
+This is a prerequisite, not a change to the six completed architecture
+phases above.

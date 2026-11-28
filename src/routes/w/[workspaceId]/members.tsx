@@ -43,8 +43,10 @@ import {
   setTeamMemberRole,
 } from '../../../lib/teams';
 import { errorMessage } from '../../../lib/error-message';
+import { captureTeammateInvited } from '../../../lib/telemetry';
 import { cachedStream, cachePut } from '../../../lib/cache';
 import { perfFirstValue } from '../../../lib/perf';
+import { brand } from '../../../lib/brand';
 
 const ROLE_STYLE: Record<WorkspaceRole, string> = {
   owner: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
@@ -229,6 +231,9 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
         role,
       });
       setInviteEmail('');
+      // The invite is server-confirmed here (the aha-candidate event):
+      // teammate_invited, with the channel that actually delivered it.
+      captureTeammateInvited({ channel: result.emailed ? 'email' : 'link' });
       // Relay-after-ack: the server minted the invite's id + token, so
       // the payload can only exist post-response. Everyone (self
       // included) applies it as a provisional the echo retires.
@@ -529,7 +534,7 @@ export default function MembersPage(props: RouteProps<'/w/:workspaceId/members'>
 
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
-      <Title>Members - Flowdeck</Title>
+      <Title>Members - {brand.name}</Title>
       <Show when={detail()} fallback={<p class="mt-8 text-sm text-neutral-400">Loading…</p>}>
         {(data) => (
           <>

@@ -1,9 +1,22 @@
-# Contributing to Flowdeck
+# Contributing to Orbit
 
-Thanks for your interest in contributing. Flowdeck is a solo-maintained
+Thanks for your interest in contributing. Orbit is a solo-maintained
 project with a locked architecture — the fastest way to help is to read
 the docs below before writing code, so your change fits the system
 instead of fighting it.
+
+## How contributing works
+
+**Issues are the contribution path.** The branch ruleset locks `preview`
+and `main`, so pull requests are limited to the maintainer and invited
+collaborators — outside PRs cannot be merged. Open an issue instead; the
+maintainer takes it from there.
+
+Issues are not a formality: a well-researched issue — clear reproduction,
+root-cause analysis, a proposed solution that fits the architecture — is
+the way in. Someone who consistently shows up in issue discussions with
+good analysis can be invited as a collaborator, at which point the PR
+workflow below applies to them too.
 
 ## Project license
 
@@ -34,6 +47,9 @@ way local schema changes.
 6. [`docs/observability.md`](docs/observability.md) — event taxonomy.
 
 ## Branch flow
+
+This section is for the maintainer and invited collaborators — the only
+people who can push branches and open mergeable PRs.
 
 - Branches are `feat/*` or `fix/*` → PR → `preview` (CI + preview
   deploy) → release PR `preview` → `main` (production deploy).
@@ -72,3 +88,7 @@ Things that will get a PR sent back:
   public issue.
 - Bugs and feature requests: use the issue templates.
 - Usage questions: open a discussion or a question issue.
+
+For everyone outside the collaborator team, this section is the whole
+workflow — report through issues and discussions; the maintainer handles
+the code change.

@@ -22,6 +22,7 @@ import { errorMessage } from '../../../../lib/error-message';
 import { cachedStream, cachePut } from '../../../../lib/cache';
 import { useEntities } from '../../../../lib/entity-store';
 import { perfFirstValue } from '../../../../lib/perf';
+import { brand } from '../../../../lib/brand';
 
 const EMPTY_DETAIL: WorkspaceDetail = {
   workspace: { id: '', name: '', invite_domains: [], board_creation: 'team_admins' },
@@ -315,7 +316,7 @@ export default function TagPage(props: RouteProps<'/w/:workspaceId/tags/:tagId'>
 
   return (
     <main class="mx-auto max-w-3xl px-4 py-10">
-      <Title>{tag() ? `#${tag()?.name} - Flowdeck` : 'Tag - Flowdeck'}</Title>
+      <Title>{tag() ? `#${tag()?.name} - ${brand.name}` : `Tag - ${brand.name}`}</Title>
       <Show when={detail()} fallback={<p class="mt-8 text-sm text-neutral-400">Loading…</p>}>
         {(data) => (
           <>

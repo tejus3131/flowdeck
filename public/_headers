@@ -1,0 +1,27 @@
+# Cloudflare's asset layer serves static files (robots.txt, sitemap.xml,
+# sw.js, manifest, icons, JS) without ever passing through the Worker's
+# middleware — so the headers below are the ONLY way to reach those
+# responses. HTML routes go through the Worker (src/middleware.ts sets
+# X-Robots-Tag there); this file is the belt-and-braces for everything
+# else, and the authoritative source for /sw.js's cache lifetime.
+#
+# NO WILDCARD ROBOTS RULE HERE: a `/*  X-Robots-Tag: noindex` would ship
+# to production too (same asset layer) and noindex every page the
+# sitemap advertises. App routes are noindexed by the middleware
+# (src/middleware.ts), which only runs on HTML — exactly the split we
+# want. Preview-only noindex would need an env-scoped _headers, which
+# the deploy pipeline doesn't have; the preview domains are
+# unlisted-and-fine (no private data renders signed-out).
+
+# /sw.js must never be cached: the browser re-fetches it on every page
+# load to discover new workers (developer.chrome.com/blog/fresher-sw).
+# A cached sw.js would freeze updates until the CDN entry expired.
+/sw.js
+  Cache-Control: max-age=0, must-revalidate
+
+# The manifest and offline fallback are versioned by content — cache them
+# hard, the deploy swaps the bytes atomically.
+/manifest.webmanifest
+  Cache-Control: public, max-age=3600
+/offline.html
+  Cache-Control: public, max-age=3600

@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 
 const URL = 'https://ylarhvcbpppujpjnpxkq.supabase.co';
 // Probe the PUBLIC endpoint (the app proxy), like a real user config.
-const MCP = 'https://flowdeck.tejusgupta.dev/api/mcp';
+const MCP = 'https://orbit.tejusgupta.dev/api/mcp';
 const TOKEN = `fd_probe_${Date.now().toString(36)}_token`;
 
 // 1. Keys (never printed) + a probe user.
@@ -21,7 +21,7 @@ const secretKey = list.find((k) => k.name === 'service_role').api_key;
 const admin = createClient(URL, secretKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
-const email = `mcp-probe-${Date.now().toString(36)}@flowdeck.test`;
+const email = `mcp-probe-${Date.now().toString(36)}@orbit.test`;
 const { data: created, error: createErr } = await admin.auth.admin.createUser({ email });
 if (createErr || !created.user) {
   console.error('probe user failed:', createErr?.message);

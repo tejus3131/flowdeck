@@ -22,7 +22,7 @@ export async function addPasskey(): Promise<{ ok: boolean; error?: string }> {
  * "Maybe later" means exactly that — not "never ask again" — so the
  * dismissal persists in localStorage for 24 hours, surviving refreshes
  * and new tabs; after that the prompt comes back. */
-const DISMISS_KEY = 'flowdeck:passkey-prompt-dismissed-at';
+const DISMISS_KEY = 'orbit:passkey-prompt-dismissed-at';
 const DISMISS_MS = 24 * 60 * 60 * 1000;
 
 export function passkeyPromptDismissed(): boolean {

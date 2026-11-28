@@ -6,6 +6,7 @@ import { Avatar } from '../components/Avatar';
 import { FilterDropdown } from '../components/FilterDropdown';
 import { MembershipWatch } from '../components/MembershipWatch';
 import { searchCards, type SearchHit } from '../lib/boards';
+import { brand } from '../lib/brand';
 import { PriorityPill } from '../components/PriorityPill';
 import {
   getMyWorkspaces,
@@ -198,7 +199,7 @@ export default function SearchPage() {
   return (
     <main class="mx-auto max-w-4xl px-4 py-8">
       <MembershipWatch />
-      <Title>Search - Flowdeck</Title>
+      <Title>Search - {brand.name}</Title>
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-semibold tracking-tight">Search cards</h1>

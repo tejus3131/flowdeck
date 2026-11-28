@@ -1,11 +1,11 @@
 ---
 name: prod-release
-description: The production release routine for Flowdeck — open the release PR (base main, head preview), enumerate every merged PR and what it ships, verify deploy legs and migrations, watch checks, and complete the production deployment approval. Run it when asked to cut a prod release.
+description: The production release routine for Orbit — open the release PR (base main, head preview), enumerate every merged PR and what it ships, verify deploy legs and migrations, watch checks, and complete the production deployment approval. Run it when asked to cut a prod release.
 ---
 
 # Prod release — the routine
 
-Flowdeck deploys continuously from `preview` (auto) and from `main`
+Orbit deploys continuously from `preview` (auto) and from `main`
 (release click). A prod release = one PR from `preview` into `main`
 (merged with a **merge commit** — main's ruleset allows merge commits;
 preview's stays squash-only), then the `production` environment

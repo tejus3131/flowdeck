@@ -15,6 +15,7 @@ import { getMyTokens } from '../lib/tokens';
 import { parseTheme } from '../lib/theme';
 import { getMyStatus, setWorkHours } from '../lib/status';
 import { errorMessage } from '../lib/error-message';
+import { brand } from '../lib/brand';
 
 function Section(props: { title: string; children: JSX.Element }) {
   return (
@@ -239,7 +240,7 @@ export default function ProfilePage() {
   return (
     <main class="mx-auto max-w-2xl px-4 py-10">
       <MembershipWatch />
-      <Title>Profile - Flowdeck</Title>
+      <Title>Profile - {brand.name}</Title>
       <h1 class="text-2xl font-semibold tracking-tight">Your profile</h1>
 
       <Show
@@ -364,8 +365,8 @@ export default function ProfilePage() {
                 when={tokens().length > 0}
                 fallback={
                   <p class="text-sm text-neutral-400">
-                    No connections yet. Add Flowdeck's MCP server to your agent and sign in — the
-                    connection appears here.
+                    No connections yet. Add {brand.name}
+                    's MCP server to your agent and sign in — the connection appears here.
                   </p>
                 }
               >
@@ -430,11 +431,25 @@ export default function ProfilePage() {
             {/* ── work hours + agents ────────────────────────────── */}
             <WorkHoursSection />
 
+            <Section title="Your data">
+              <p class="-mt-1 mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+                Download a machine-readable copy of your account and content — profile, workspaces,
+                boards, lists, and cards (JSON). Deleting your account is in the danger zone below.
+              </p>
+              <a
+                href="/api/account/export"
+                download
+                class="w-fit rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                Export my data
+              </a>
+            </Section>
+
             <Section title="Agents &amp; docs">
               <p class="text-sm text-neutral-500 dark:text-neutral-400">
-                Connect AI agents (Claude, Cursor, your own) to your Flowdeck — they see and manage
-                exactly what your account can, under the same permissions. Create a token above,
-                then follow the guides.
+                Connect AI agents (Claude, Cursor, your own) to your {brand.name} — they see and
+                manage exactly what your account can, under the same permissions. Create a token
+                above, then follow the guides.
               </p>
               <div class="mt-3 flex flex-wrap gap-2">
                 <a

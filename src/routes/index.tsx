@@ -1,10 +1,10 @@
-import { Title } from '@solidjs/meta';
 import { liveQuery, revalidate } from '@solidjs/router';
 import { For, Show, createEffect, createMemo, onSettled, createSignal } from 'solid-js';
 
 import { PasskeyPrompt } from '../components/PasskeyPrompt';
 import { Avatar } from '../components/Avatar';
 import { getMe } from '../lib/auth';
+import { brand } from '../lib/brand';
 import {
   boardsStream,
   createBoard,
@@ -18,6 +18,8 @@ import {
 import { createEngine } from '../lib/sync';
 import { warmRecentBoards } from '../lib/prefetch';
 import { cacheGet, cachePut } from '../lib/cache';
+import { SeoHead } from '../lib/seo';
+import { landingJsonLd } from '../lib/json-ld';
 import type { WorkspaceDetail } from '../lib/workspaces';
 import {
   getMyWorkspaces,
@@ -266,7 +268,7 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
     );
   };
   // Dev-only introspection hook (e2e suites + browser debugging).
-  (globalThis as Record<string, unknown>).__flowdeck = { engine, boardsLive, boards };
+  (globalThis as Record<string, unknown>).__orbit = { engine, boardsLive, boards };
 
   return (
     <div class="mt-8 space-y-10">
@@ -710,11 +712,13 @@ export default function Home() {
 
   return (
     <main class="mx-auto max-w-4xl px-4 py-10">
-      <Title>Flowdeck</Title>
-      <h1 class="text-2xl font-semibold tracking-tight">Flowdeck</h1>
-      <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        Realtime kanban boards for you, your team — and your agents.
-      </p>
+      <SeoHead title={brand.name} description={brand.tagline} path="/" />
+      {/* A compile-time constant, not user input — the lint rule targets
+          unsanitized data. */}
+      {/* eslint-disable-next-line solid/no-innerhtml */}
+      <script type="application/ld+json" innerHTML={landingJsonLd()} />
+      <h1 class="text-2xl font-semibold tracking-tight">{brand.name}</h1>
+      <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{brand.tagline}</p>
 
       <Show
         when={me()}

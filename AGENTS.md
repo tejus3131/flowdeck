@@ -1,9 +1,9 @@
 # AGENTS.md
 
-Grounding for AI agents working on Flowdeck. Read this fully before your
+Grounding for AI agents working on Orbit. Read this fully before your
 first change; on later sessions, skim the sections relevant to your task.
 
-Flowdeck is a team workspace — boards, cards, chats, and an MCP server for
+Orbit is a team workspace — boards, cards, chats, and an MCP server for
 AI agents. Solo-maintained, free-tier resources, deliberate over clever.
 
 ## Stack
@@ -48,16 +48,29 @@ staged files automatically; preflight is the full check.
 2. `docs/layers/` — per-layer contracts (L0 database → L5 views). Each says
    what the layer Owns / May not / Rules. Your change belongs to a layer;
    obey its contract.
-3. `docs/adr.md` — decision records. **Before proposing anything already
+3. `docs/ui-data.md` — the how-to for any UI work: components read the
+   store by id (selectors), never snapshot slices threaded as props;
+   markdown contexts, flow-callback gotchas, and the per-entity checklist
+   for adding entities to the store. **A view built against this doc shows
+   every entity change in one frame; a view built without it shows the
+   change only when its own snapshot re-fetches — the staleness bug class
+   this repo treats as a layering violation.**
+4. `docs/design-system.md` — the frozen visual layer (ADR-16): UI changes
+   read `--fd-*` tokens from it, never hardcode values; the still-open
+   axes (gray, accent, elevation, spring, type density) resolve through
+   `docs/design-playground.md`.
+5. `docs/adr.md` — decision records. **Before proposing anything already
    decided** (no CRDTs, no bought sync engines, RLS-only, outbox…), read
    this. New decisions get a new ADR number in the same PR.
-4. `docs/ci-cd.md` — branch model, environments, deploy matrix. **Rule:
+6. `docs/ci-cd.md` — branch model, environments, deploy matrix. **Rule:
    any change to `.github/workflows/*` updates this file in the same
    commit.** No exceptions.
-5. `docs/performance-rules.md` — the 13 rules; check your change against
+7. `docs/performance-rules.md` — the 13 rules; check your change against
    them (budgets, no unbounded stores, no refetch storms).
-6. `docs/observability.md` — event taxonomy; new events follow the
-   taxonomy and the free-tier budget.
+8. `docs/observability.md` — event taxonomy; new events follow the
+   taxonomy and the free-tier budget. The behavioral layer — what humans
+   do with the product, and how a number becomes a decision — lives in
+   `docs/data-playbook.md`.
 
 ## The canonical test
 

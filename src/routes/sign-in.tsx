@@ -1,9 +1,10 @@
-import { Title } from '@solidjs/meta';
 import { useNavigate, useSearchParams } from '@solidjs/router';
 import { revalidate } from '@solidjs/router';
 import { Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
 
 import { checkEmail, getMe, signIn } from '../lib/auth';
+import { brand } from '../lib/brand';
+import { SeoHead } from '../lib/seo';
 import { browserClient } from '../lib/supabase-client';
 
 /**
@@ -119,9 +120,13 @@ export default function SignIn() {
 
   return (
     <main class="mx-auto flex min-h-[80vh] max-w-sm flex-col justify-center px-4">
-      <Title>Sign in - Flowdeck</Title>
+      <SeoHead
+        title={`Sign in - ${brand.name}`}
+        description={`Sign in to ${brand.name} — ${brand.description}`}
+        path="/sign-in"
+      />
       <div class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <h1 class="text-xl font-semibold tracking-tight">Welcome to Flowdeck</h1>
+        <h1 class="text-xl font-semibold tracking-tight">Welcome to {brand.name}</h1>
 
         <Show
           when={!search.sent}
@@ -215,7 +220,18 @@ export default function SignIn() {
         </Show>
       </div>
       <p class="mt-4 text-center text-xs text-neutral-400">
-        Sessions persist — you won't need a new link every visit.
+        Sessions persist — you won't need a new link every visit. By continuing you accept the{' '}
+        <a href="/legal/terms" class="underline hover:text-neutral-600 dark:hover:text-neutral-300">
+          Terms
+        </a>{' '}
+        and{' '}
+        <a
+          href="/legal/privacy"
+          class="underline hover:text-neutral-600 dark:hover:text-neutral-300"
+        >
+          Privacy Policy
+        </a>
+        .
       </p>
     </main>
   );

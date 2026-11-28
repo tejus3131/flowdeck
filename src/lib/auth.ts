@@ -80,7 +80,7 @@ export const signIn = formAction(async (formData: FormData) => {
     getRequestEvent()?.response.headers.append(
       'set-cookie',
       stringifySetCookie({
-        name: 'fd_next',
+        name: 'ob_next',
         value: next,
         path: '/',
         sameSite: 'lax',
@@ -186,7 +186,7 @@ export async function deleteAccount(): Promise<boolean> {
     }
     event.response.headers.append(
       'set-cookie',
-      stringifySetCookie({ name: 'fd_ws', value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
+      stringifySetCookie({ name: 'ob_ws', value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
     );
   }
   return true;
