@@ -2,14 +2,14 @@
 // notification permission once (a small chip — the browser's own prompt
 // does the asking), and keeps this browser's push subscription saved.
 // With permission granted, notifications reach this machine even when
-// Flowdeck isn't open.
+// Orbit isn't open.
 import { Show, createSignal, onSettled } from 'solid-js';
 
 import { getVapidPublicKey, savePushSubscription } from '../lib/push';
 import { appName } from '../lib/brand';
 import { wireSwUpdates } from '../lib/sw-update';
 
-const PROMPT_KEY = 'flowdeck:push-prompt';
+const PROMPT_KEY = 'orbit:push-prompt';
 
 /** applicationServerKey: the VAPID public key as bytes. */
 function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {

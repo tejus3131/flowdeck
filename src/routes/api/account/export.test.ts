@@ -68,7 +68,7 @@ describe('GET /api/account/export', () => {
     expect(response.headers.get('content-disposition')).toContain('attachment');
     expect(response.headers.get('cache-control')).toBe('no-store');
     const body = JSON.parse(await response.text());
-    expect(body.format).toBe('flowdeck-export/1');
+    expect(body.format).toBe('orbit-export/1');
     expect(body.account.id).toBe('u-1');
     expect(body.workspaces).toHaveLength(1);
     expect(body.memberships).toHaveLength(1);

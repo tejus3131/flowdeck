@@ -70,7 +70,7 @@ export function syncFlagClient(prev: FlagSyncState | undefined, next: FlagSyncSt
   const workspaceChanged = userChanged || prev.workspaceId !== next.workspaceId;
   if (!workspaceChanged) return;
   if (next.workspaceId) {
-    client.setPersonPropertiesForFlags({ flowdeck_workspace_id: next.workspaceId });
+    client.setPersonPropertiesForFlags({ orbit_workspace_id: next.workspaceId });
   } else {
     client.resetPersonPropertiesForFlags();
     client.reloadFeatureFlags();

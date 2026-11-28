@@ -1,4 +1,4 @@
-// The PostHog adapter — the only module that knows how Flowdeck talks to
+// The PostHog adapter — the only module that knows how Orbit talks to
 // PostHog's flag API on the server. It calls the public POST /flags
 // endpoint (project token only — no secret on the evaluation path; the
 // endpoint returns evaluated values and nothing sensitive). Deliberately
@@ -13,7 +13,7 @@ export type FlagEvaluationRequest = {
   host: string;
   /** The public project token (publishable by design). */
   token: string;
-  /** Flowdeck's authenticated user UUID — the PostHog distinct ID.
+  /** Orbit's authenticated user UUID — the PostHog distinct ID.
    *  Never an email, name, or any other PII. */
   distinctId: string;
   /** The VERIFIED active workspace UUID, sent as a transient person-
@@ -48,9 +48,7 @@ export async function posthogEvaluateFlags(
           // The workspace override rides ONLY when a workspace is active
           // — an empty object means "evaluate as this person, no workspace
           // context", which is the declared state for user-scoped flags.
-          person_properties: request.workspaceId
-            ? { flowdeck_workspace_id: request.workspaceId }
-            : {},
+          person_properties: request.workspaceId ? { orbit_workspace_id: request.workspaceId } : {},
         }),
         signal: controller.signal,
       },

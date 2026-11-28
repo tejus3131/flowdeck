@@ -268,7 +268,7 @@ function BoardsDashboard(props: { profile: () => import('../lib/auth').MeProfile
     );
   };
   // Dev-only introspection hook (e2e suites + browser debugging).
-  (globalThis as Record<string, unknown>).__flowdeck = { engine, boardsLive, boards };
+  (globalThis as Record<string, unknown>).__orbit = { engine, boardsLive, boards };
 
   return (
     <div class="mt-8 space-y-10">

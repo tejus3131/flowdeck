@@ -169,7 +169,7 @@ describe('posthogEvaluateFlags', () => {
     expect(requests[0]!.body).toEqual({
       token: 'phc-test-token',
       distinct_id: '11111111-1111-1111-1111-111111111111',
-      person_properties: { flowdeck_workspace_id: '22222222-2222-2222-2222-222222222222' },
+      person_properties: { orbit_workspace_id: '22222222-2222-2222-2222-222222222222' },
     });
   });
 
@@ -279,7 +279,7 @@ describe('syncFlagClient — the override lifecycle', () => {
     syncFlagClient(state({ workspaceId: 'ws-1' }), state({ workspaceId: 'ws-2' }));
     // Only the override changes: no re-identify for the same user.
     expect(names(calls)).toEqual(['set']);
-    expect(calls[0]!.calls[1][0]).toEqual({ flowdeck_workspace_id: 'ws-2' });
+    expect(calls[0]!.calls[1][0]).toEqual({ orbit_workspace_id: 'ws-2' });
   });
 
   it('clears the override and explicitly reloads when the workspace goes away', () => {

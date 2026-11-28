@@ -1,4 +1,4 @@
-// Flowdeck board data layer: server functions the UI calls directly.
+// Orbit board data layer: server functions the UI calls directly.
 //
 // Reads run through the request-scoped Supabase client, so RLS decides
 // what each caller sees (boards: only memberships; cards: only member

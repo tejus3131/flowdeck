@@ -57,7 +57,7 @@ export function isAppRoute(path: string): boolean {
 }
 
 // ── the applied-version guard (one reload per version, per tab) ──────────
-const APPLIED_KEY = 'flowdeck:sw-applied-version';
+const APPLIED_KEY = 'orbit:sw-applied-version';
 
 function appliedVersion(): string | null {
   try {

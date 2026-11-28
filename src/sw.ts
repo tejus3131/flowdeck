@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-/* Flowdeck service worker — the offline shell + the notification half of
+/* Orbit service worker — the offline shell + the notification half of
  * the PWA. *
  * Five jobs:
  *  1. `install`: precache this build's hashed assets (cache-first later —
@@ -40,8 +40,8 @@ const PRECACHE_URLS = JSON.parse('__FD_PRECACHE_MANIFEST__') as string[];
 // ── caches ───────────────────────────────────────────────────────────────
 // Version-scoped: a new build gets a new shell cache; activate deletes
 // every cache outside the allowlist (the old shell cache goes with it).
-const SHELL_CACHE = `flowdeck-shell-${CACHE_VERSION}`;
-const IMAGE_CACHE = 'flowdeck-images-v1';
+const SHELL_CACHE = `orbit-shell-${CACHE_VERSION}`;
+const IMAGE_CACHE = 'orbit-images-v1';
 const EXPECTED_CACHES = [SHELL_CACHE, IMAGE_CACHE];
 
 /** The cached-shell fallback answers ONLY these navigations. Everything
@@ -322,9 +322,9 @@ self.addEventListener('push', (event) => {
     payload = {};
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'Flowdeck', {
+    self.registration.showNotification(payload.title || 'Orbit', {
       body: payload.body || '',
-      tag: payload.tag || 'flowdeck',
+      tag: payload.tag || 'orbit',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       data: { url: payload.url || '/' },

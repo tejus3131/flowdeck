@@ -19,7 +19,7 @@ import { isServer } from '@solidjs/web';
 import { perfCancel, perfEnd, perfStart } from './perf';
 import { telemetryCacheAccess } from './telemetry';
 
-const DB_NAME = 'flowdeck-cache';
+const DB_NAME = 'orbit-cache';
 const STORE = 'entries';
 /** Bump to wipe every cached entry on upgrade (shapes change with it). */
 const VERSION = 1;

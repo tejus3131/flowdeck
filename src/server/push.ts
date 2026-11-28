@@ -75,7 +75,7 @@ export async function vapidJwt(endpoint: string): Promise<string> {
       JSON.stringify({
         aud: new URL(endpoint).origin,
         exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60,
-        sub: env.VAPID_SUBJECT ?? 'mailto:notifications@flowdeck.local',
+        sub: env.VAPID_SUBJECT ?? 'mailto:notifications@orbit.local',
       }),
     ),
   );
