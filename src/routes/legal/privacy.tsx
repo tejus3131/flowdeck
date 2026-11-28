@@ -111,7 +111,9 @@ export default function PrivacyPolicy() {
         <ul class="list-disc space-y-1 pl-5">
           <li>
             <strong>Export</strong> — Profile → "Export my data" downloads a machine-readable copy
-            of your account and content (JSON/CSV).
+            of your account and the content you can access (JSON/CSV) — your profile, your
+            memberships, and the boards, lists and cards visible to you under your workspaces'
+            permissions.
           </li>
           <li>
             <strong>Erasure</strong> — Profile → "Delete account" removes the account and its
