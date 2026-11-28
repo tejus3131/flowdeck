@@ -30,6 +30,8 @@ export function BoardColumn(props: {
   remoteDragCard: CardView | null;
   isTemp: boolean;
   canEdit: boolean;
+  /** Cards with an in-flight outbox op (the pending badge resolves on ack). */
+  isSaving: (cardId: string) => boolean;
   adding: boolean;
   onDragStart: (cardId: string, height: number) => void;
   onDragEnd: () => void;
@@ -360,6 +362,17 @@ export function BoardColumn(props: {
                     members={props.members}
                     onOpenDetails={() => props.onOpenCard(card.id, card.client_op)}
                   />
+                  {/* The pending badge: this card has an outbox op in
+                      flight — it resolves (disappears) on the ack. */}
+                  <Show when={props.isSaving(card.id)}>
+                    <span
+                      title="Syncing — will save when you're back online"
+                      class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
+                    >
+                      <span class="h-1 w-1 animate-pulse rounded-full bg-indigo-500" />
+                      Syncing
+                    </span>
+                  </Show>
                   <Show when={props.canEdit}>
                     <button
                       type="button"
