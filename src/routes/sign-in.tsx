@@ -220,7 +220,18 @@ export default function SignIn() {
         </Show>
       </div>
       <p class="mt-4 text-center text-xs text-neutral-400">
-        Sessions persist — you won't need a new link every visit.
+        Sessions persist — you won't need a new link every visit. By continuing you accept the{' '}
+        <a href="/legal/terms" class="underline hover:text-neutral-600 dark:hover:text-neutral-300">
+          Terms
+        </a>{' '}
+        and{' '}
+        <a
+          href="/legal/privacy"
+          class="underline hover:text-neutral-600 dark:hover:text-neutral-300"
+        >
+          Privacy Policy
+        </a>
+        .
       </p>
     </main>
   );

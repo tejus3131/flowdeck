@@ -84,6 +84,12 @@ declare module "virtual:file-routes" {
       $$route?: undefined;
     },
     {
+      path: "/contact";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/contact"), Extract<"default", keyof typeof import("./src/routes/contact")>>>;
+      $$route?: undefined;
+    },
+    {
       path: "/docs/mcp";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/docs/mcp"), Extract<"default", keyof typeof import("./src/routes/docs/mcp")>>>;
@@ -99,6 +105,18 @@ declare module "virtual:file-routes" {
       path: "/invite/:token";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/invite/[token]"), Extract<"default", keyof typeof import("./src/routes/invite/[token]")>>>;
+      $$route?: undefined;
+    },
+    {
+      path: "/legal/privacy";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/legal/privacy"), Extract<"default", keyof typeof import("./src/routes/legal/privacy")>>>;
+      $$route?: undefined;
+    },
+    {
+      path: "/legal/terms";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/legal/terms"), Extract<"default", keyof typeof import("./src/routes/legal/terms")>>>;
       $$route?: undefined;
     },
     {
@@ -216,6 +234,14 @@ declare module "virtual:file-routes" {
       children?: undefined;
     },
     {
+      path: "/contact";
+      id: "/contact";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/contact"), Extract<"default", keyof typeof import("./src/routes/contact")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
       path: "/profile";
       id: "/profile";
       page: true;
@@ -256,6 +282,14 @@ declare module "virtual:file-routes" {
       children?: undefined;
     },
     {
+      path: "/legal/terms";
+      id: "/legal/terms";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/legal/terms"), Extract<"default", keyof typeof import("./src/routes/legal/terms")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
       path: "/playground/";
       id: "/playground/";
       page: true;
@@ -268,6 +302,14 @@ declare module "virtual:file-routes" {
       id: "/invite/:token";
       page: true;
       $component: FileRouteLazyRef<Pick<typeof import("./src/routes/invite/[token]"), Extract<"default", keyof typeof import("./src/routes/invite/[token]")>>>;
+      $$route?: undefined;
+      children?: undefined;
+    },
+    {
+      path: "/legal/privacy";
+      id: "/legal/privacy";
+      page: true;
+      $component: FileRouteLazyRef<Pick<typeof import("./src/routes/legal/privacy"), Extract<"default", keyof typeof import("./src/routes/legal/privacy")>>>;
       $$route?: undefined;
       children?: undefined;
     },
