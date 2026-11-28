@@ -148,6 +148,14 @@ forwarding is free. Server-side evaluation does NOT ride the proxy
 
 ## Runtime wiring (where the values live)
 
+The browser SDK runs **cookieless** (`cookieless_mode: 'always'` in
+`src/lib/telemetry.ts`): no `ph_*` cookies, no localStorage identity —
+the distinct ID is a per-session random UUID. Analytics can never
+re-identify a person across sessions, which is what the privacy policy
+claims; the config is the enforcement, not the prose. The project's
+PostHog setting must match (Settings → Data management → cookieless
+"always") so server-side ingestion agrees with the client.
+
 | Variable                                 | Where                                                                                                                   | Visibility                          |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | `VITE_POSTHOG_KEY`                       | GitHub environment variable (`preview` and `production` — same value, one project)                                      | public by design                    |
