@@ -110,6 +110,7 @@ export default defineConfig({
             'src/server/**/*.test.ts',
             'src/lib/mcp-permissions.test.ts',
             'src/lib/brand.test.ts',
+            'src/routes/api/**/*.test.ts',
           ],
           alias: [
             // Tests run outside the turnkey server: the plugin's env module

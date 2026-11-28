@@ -431,6 +431,20 @@ export default function ProfilePage() {
             {/* ── work hours + agents ────────────────────────────── */}
             <WorkHoursSection />
 
+            <Section title="Your data">
+              <p class="-mt-1 mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+                Download a machine-readable copy of your account and content — profile, workspaces,
+                boards, lists, and cards (JSON). Deleting your account is in the danger zone below.
+              </p>
+              <a
+                href="/api/account/export"
+                download
+                class="w-fit rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                Export my data
+              </a>
+            </Section>
+
             <Section title="Agents &amp; docs">
               <p class="text-sm text-neutral-500 dark:text-neutral-400">
                 Connect AI agents (Claude, Cursor, your own) to your {brand.name} — they see and
