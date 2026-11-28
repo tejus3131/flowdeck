@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Flowdeck deploys continuously from `main`; there are no versioned
+Orbit deploys continuously from `main`; there are no versioned
 releases. Security fixes apply to the latest `main` only.
 
 | Version | Supported |
@@ -26,7 +26,7 @@ infrastructure, response times depend on my availability.
 
 ## Scope notes
 
-- **RLS is the security gate.** Flowdeck treats Postgres Row Level
+- **RLS is the security gate.** Orbit treats Postgres Row Level
   Security as the only authorization boundary (see
   [`docs/architecture.md`](docs/architecture.md) and
   [`docs/adr.md`](docs/adr.md)). Missing client-side checks are not

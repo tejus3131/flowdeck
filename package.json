@@ -1,5 +1,5 @@
 {
-  "name": "flowdeck",
+  "name": "orbit",
   "version": "0.0.0",
   "description": "Team workspace: boards, cards, chats, and an MCP server for AI agents",
   "type": "module",

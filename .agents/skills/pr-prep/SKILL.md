@@ -1,6 +1,6 @@
 ---
 name: pr-prep
-description: The pre-PR routine for Flowdeck — commit hygiene, self-review against the docs, evidence per area, and the checks that must be green before a PR is opened. Run it before opening or updating any pull request.
+description: The pre-PR routine for Orbit — commit hygiene, self-review against the docs, evidence per area, and the checks that must be green before a PR is opened. Run it before opening or updating any pull request.
 ---
 
 # PR prep — the routine before every pull request
@@ -66,10 +66,10 @@ Read your own diff as if you were the maintainer, with these open:
   design-system doc first, never inlined. Drop-settle (330–550ms,
   distance-scaled) is the one budget exception.
 - Brand strings — any UI change: run the brand grep
-  (`rg -n 'Flowdeck' src/routes/ src/components/`) and review every hit;
+  (`rg -n 'Orbit' src/routes/ src/components/`) and review every hit;
   user-facing brand text comes from `src/lib/brand.ts` (`brand.name` /
   `appName`), never a literal. The edge function, docs, tests, and
-  `fd_*`/`flowdeck_*` internals legitimately contain the name.
+  `ob_*`/`orbit_*` internals legitimately contain the name.
 
 ## 5. Evidence per area (goes in the PR description)
 

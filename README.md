@@ -1,6 +1,6 @@
-# Flowdeck
+# Orbit
 
-Flowdeck is a team workspace: kanban boards, cards, realtime chat, and an
+Orbit is a team workspace: kanban boards, cards, realtime chat, and an
 MCP server that lets AI agents work _as team members_ — every agent action
 runs under the acting user's permissions and lands in the same timelines
 and notifications a human's would.

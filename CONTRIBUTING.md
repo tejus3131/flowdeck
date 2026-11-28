@@ -1,6 +1,6 @@
-# Contributing to Flowdeck
+# Contributing to Orbit
 
-Thanks for your interest in contributing. Flowdeck is a solo-maintained
+Thanks for your interest in contributing. Orbit is a solo-maintained
 project with a locked architecture — the fastest way to help is to read
 the docs below before writing code, so your change fits the system
 instead of fighting it.

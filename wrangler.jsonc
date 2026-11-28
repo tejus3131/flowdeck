@@ -6,14 +6,14 @@
   // Solid handler.
   //
   // Environments (docs/ci-cd.md): the top level IS production (worker
-  // `flowdeck`, prod Supabase); `env.preview` deploys as
-  // `flowdeck-preview` with the preview project's URL. Client env
+  // `orbit`, prod Supabase); `env.preview` deploys as
+  // `orbit-preview` with the preview project's URL. Client env
   // (VITE_*) is baked at build time — CI feeds the right values per
   // environment; nothing here holds secrets. Custom domains are attached
   // in the dashboard and survive deploys (deliberately not `routes`, so
   // deploys never fight the dashboard).
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "flowdeck",
+  "name": "orbit",
   "main": "virtual:solid-ssr-handler",
   "compatibility_date": "2026-07-22",
   "compatibility_flags": ["nodejs_compat"],
@@ -34,7 +34,7 @@
   },
   "env": {
     "preview": {
-      "name": "flowdeck-preview",
+      "name": "orbit-preview",
       "vars": {
         "SUPABASE_URL": "https://nopozruoekakakvwfpmh.supabase.co",
         "POSTHOG_HOST": "https://us.i.posthog.com",

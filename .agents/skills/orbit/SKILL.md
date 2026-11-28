@@ -1,11 +1,11 @@
 ---
-name: flowdeck
-description: Operate Flowdeck boards through its MCP server — where things live, how to page, mention syntax, tagging, the mention-access flow, and the etiquette that keeps a team board tidy. Load this before driving Flowdeck for the first time or when a Flowdeck call fails.
+name: orbit
+description: Operate Orbit boards through its MCP server — where things live, how to page, mention syntax, tagging, the mention-access flow, and the etiquette that keeps a team board tidy. Load this before driving Orbit for the first time or when an Orbit call fails.
 ---
 
-# Flowdeck for agents
+# Orbit for agents
 
-Flowdeck is a kanban + chat product (boards → lists → cards; card comments
+Orbit is a kanban + chat product (boards → lists → cards; card comments
 and per-board chat). Everything you can do goes through MCP tools that run
 **as the connected user**, under the same permissions they have in the web
 app. Nothing you do is invisible to the team — every mutation lands in
@@ -40,7 +40,7 @@ real reference:
   `get_user`, or `list_teams` members)
 - `[Design](team:<uuid>)` — a team
 - `[Fix login](card:<uuid>)` — a card (renders "Board › Card" across boards)
-- `[Flowdeck changes](board:<uuid>)` — a board by itself (the chip routes to it)
+- `[Orbit changes](board:<uuid>)` — a board by itself (the chip routes to it)
 
 They work in board chat, card comments, and card descriptions.
 
