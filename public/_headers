@@ -5,12 +5,13 @@
 # X-Robots-Tag there); this file is the belt-and-braces for everything
 # else, and the authoritative source for /sw.js's cache lifetime.
 #
-# Preview-wide noindex: preview deployments must never be indexed.
-# Production inherits it too — the prod domain is single-tenant and
-# public pages carry their own directives; app routes are noindexed by
-# the middleware either way.
-/*
-  X-Robots-Tag: noindex, nofollow
+# NO WILDCARD ROBOTS RULE HERE: a `/*  X-Robots-Tag: noindex` would ship
+# to production too (same asset layer) and noindex every page the
+# sitemap advertises. App routes are noindexed by the middleware
+# (src/middleware.ts), which only runs on HTML — exactly the split we
+# want. Preview-only noindex would need an env-scoped _headers, which
+# the deploy pipeline doesn't have; the preview domains are
+# unlisted-and-fine (no private data renders signed-out).
 
 # The service worker must revalidate on every load — a cached sw.js
 # would pin users to an old worker for up to 24h (the browser default).
