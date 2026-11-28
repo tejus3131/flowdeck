@@ -10,6 +10,7 @@ import { Show, createEffect, createSignal } from 'solid-js';
 import { MembershipWatch } from '../../components/MembershipWatch';
 import { PermissionPicker } from '../../components/PermissionPicker';
 import { approveMcpClient, listMyWorkspaceChoices, mcpAuthSignedIn } from '../../lib/mcp-auth';
+import { brand } from '../../lib/brand';
 import {
   ACCOUNT_ENTITIES,
   WORKSPACE_ENTITIES,
@@ -202,7 +203,7 @@ export default function McpAuthorizePage() {
   return (
     <main class="mx-auto max-w-xl px-4 py-10">
       <MembershipWatch />
-      <Title>Authorize agent — Flowdeck</Title>
+      <Title>Authorize agent — {brand.name}</Title>
       <p class="text-xs font-semibold uppercase tracking-wider text-indigo-500">
         Connect your AI agent
       </p>
@@ -242,9 +243,9 @@ export default function McpAuthorizePage() {
       >
         <div class="mt-6 space-y-3 rounded-2xl border border-neutral-200 p-5 text-sm dark:border-neutral-800">
           <p class="leading-relaxed text-neutral-600 dark:text-neutral-300">
-            This agent will be able to act <strong>as you</strong> in Flowdeck: read and edit your
-            boards, cards, comments and chats, manage your teams and notifications — everything you
-            can do, under the same permissions. You can revoke it any time on your{' '}
+            This agent will be able to act <strong>as you</strong> in {brand.name}: read and edit
+            your boards, cards, comments and chats, manage your teams and notifications — everything
+            you can do, under the same permissions. You can revoke it any time on your{' '}
             <a
               href="/profile"
               class="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
@@ -306,7 +307,7 @@ export default function McpAuthorizePage() {
 
         <Show when={denied()}>
           <p class="mt-4 rounded-xl bg-neutral-100 p-4 text-sm text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-            Request denied — nothing was shared. Taking you back to Flowdeck…
+            Request denied — nothing was shared. Taking you back to {brand.name}…
           </p>
         </Show>
 
@@ -349,9 +350,9 @@ export default function McpAuthorizePage() {
       </Show>
 
       <p class="mt-8 text-xs text-neutral-400">
-        Flowdeck authorizes MCP clients with the OAuth flow (PKCE S256): the code this page issues
-        only works once, and the token it becomes is stored hashed, exactly like a personal access
-        token.
+        {brand.name} authorizes MCP clients with the OAuth flow (PKCE S256): the code this page
+        issues only works once, and the token it becomes is stored hashed, exactly like a personal
+        access token.
       </p>
     </main>
   );

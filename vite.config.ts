@@ -6,6 +6,8 @@ import solid from '@solidjs/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 
+import { manifestPlugin } from './vite-manifest-plugin';
+
 // The Cloudflare plugin runs the ssr environment in workerd during dev.
 // Outbound websockets to loopback addresses are blocked in local workerd
 // (miniflare), which Supabase Realtime needs — so `pnpm dev:node` drops
@@ -20,6 +22,9 @@ export default defineConfig({
   // to dist/server, plus the Node server (dist/server/node.js) `npm start` runs.
   plugins: [
     tailwindcss(),
+    // The PWA manifest is emitted at build time from src/lib/brand.ts —
+    // one source, no public/ copy to drift.
+    manifestPlugin(),
     // Cloudflare's plugin adopts Solid's `ssr` environment before solid()
     // claims it: dev runs the server build in workerd, and `vite build`
     // emits the Worker + assets wrangler deploys. No adapter layer.
@@ -101,7 +106,11 @@ export default defineConfig({
           // environment:'node' projects get the server posture from the
           // plugin automatically (server conditions, framework inlined).
           environment: 'node',
-          include: ['src/server/**/*.test.ts', 'src/lib/mcp-permissions.test.ts'],
+          include: [
+            'src/server/**/*.test.ts',
+            'src/lib/mcp-permissions.test.ts',
+            'src/lib/brand.test.ts',
+          ],
           alias: [
             // Tests run outside the turnkey server: the plugin's env module
             // is stubbed with the same contract (live process.env reads).

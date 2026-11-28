@@ -8,6 +8,10 @@
  *  3. `fetch`: a stale-while-revalidate cache for images (board card #51)
  *     — the same avatar rendered in a dozen places loads once, and a
  *     picture update refreshes the entry in the background.
+ *
+ * The SW is a plain static file (no build step), so the brand name rides
+ * in with the push payload's `title` (src/server/push.ts) — the literal
+ * below is only the fallback for a payload without one.
  */
 self.addEventListener('install', () => {
   self.skipWaiting();

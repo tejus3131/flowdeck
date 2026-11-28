@@ -5,6 +5,7 @@ import { For, Show, createEffect, createMemo, onSettled, createSignal } from 'so
 import { PasskeyPrompt } from '../components/PasskeyPrompt';
 import { Avatar } from '../components/Avatar';
 import { getMe } from '../lib/auth';
+import { brand } from '../lib/brand';
 import {
   boardsStream,
   createBoard,
@@ -710,11 +711,9 @@ export default function Home() {
 
   return (
     <main class="mx-auto max-w-4xl px-4 py-10">
-      <Title>Flowdeck</Title>
-      <h1 class="text-2xl font-semibold tracking-tight">Flowdeck</h1>
-      <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        Realtime kanban boards for you, your team — and your agents.
-      </p>
+      <Title>{brand.name}</Title>
+      <h1 class="text-2xl font-semibold tracking-tight">{brand.name}</h1>
+      <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{brand.tagline}</p>
 
       <Show
         when={me()}

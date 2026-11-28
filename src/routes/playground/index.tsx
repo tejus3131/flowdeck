@@ -3,6 +3,7 @@ import type { RouteDefinition } from '@solidjs/router';
 import { playgroundPreload } from './guard';
 import { PlaygroundHeading, PlaygroundShell, LifecycleTag } from './shell';
 import { ComponentList } from './component-registry';
+import { brand } from '../../lib/brand';
 
 export const route = {
   preload: playgroundPreload,
@@ -12,7 +13,7 @@ export default function PlaygroundIndex() {
   return (
     <PlaygroundShell>
       <PlaygroundHeading
-        title="Flowdeck playground"
+        title={`${brand.name} playground`}
         note="The real production components and tokens, side by side, from synthetic fixtures. Previewing a variant here never changes anyone's production assignment."
       />
       <section>

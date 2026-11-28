@@ -17,6 +17,7 @@ import { cachedStream, cacheGet, cachePut } from '../../lib/cache';
 import { useEntities } from '../../lib/entity-store';
 import { planDrop } from '../../lib/card-drop';
 import { trackRecentBoard, warmBoardActive } from '../../lib/prefetch';
+import { brand } from '../../lib/brand';
 import { createBoardPresence, presenceColor } from '../../lib/presence';
 import { createWorkspaceRelay } from '../../lib/workspace-relay';
 import {
@@ -1176,7 +1177,9 @@ export default function Board(props: RouteProps<'/b/:boardId'>) {
 
   return (
     <>
-      <Title>{view().board.name || 'Board'} - Flowdeck</Title>
+      <Title>
+        {view().board.name || 'Board'} - {brand.name}
+      </Title>
       <Show
         when={!view().denied}
         fallback={

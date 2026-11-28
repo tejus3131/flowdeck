@@ -1,7 +1,5 @@
 import { Title } from '@solidjs/meta';
 import { Loading, Show, createEffect, createMemo, onSettled } from 'solid-js';
-// Typed client env, validated and baked in at build time (see env.ts).
-import { env } from 'virtual:solid-env/client';
 import { paths, Router } from './router';
 import { getMe } from './lib/auth';
 import { ThemeSync } from './components/ThemeSync';
@@ -14,6 +12,7 @@ import { PushSetup } from './components/PushSetup';
 import { PerfPanel } from './components/PerfPanel';
 import { perfActive } from './lib/perf';
 import { cachePersist, cacheSetUser } from './lib/cache';
+import { appName } from './lib/brand';
 import { EntityContext, createEntityStore } from './lib/entity-store';
 // The frozen type token's face (docs/design-system.md — one family).
 import '@fontsource-variable/inter';
@@ -56,7 +55,7 @@ export default function App() {
         return (
           <EntityContext value={entities}>
             <>
-              <Title>{env.VITE_APP_NAME}</Title>
+              <Title>{appName}</Title>
               <ThemeSync me={me} />
               {/* The flag runtime's client half: posthog-js identity +
                   workspace override lifecycle, and snapshot refresh on
@@ -67,7 +66,7 @@ export default function App() {
                   <span class="flex h-5 w-5 items-center justify-center rounded bg-indigo-600 text-[11px] font-bold text-white">
                     F
                   </span>
-                  <span class="text-sm font-semibold tracking-tight">Flowdeck</span>
+                  <span class="text-sm font-semibold tracking-tight">{appName}</span>
                 </a>
                 <WorkspaceSwitcher />
                 {/* The auth area reads getMe() — a pending read — so it sits

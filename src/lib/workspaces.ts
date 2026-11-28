@@ -11,6 +11,7 @@ import { friendlyError } from '../server/friendly';
 import { filterInaccessible, insertNotifications } from '../server/notify';
 import { recapTokensForUsers } from './tokens';
 import { env } from 'virtual:solid-env/server';
+import { brand } from './brand';
 import { live } from '@solidjs/web/server-functions';
 import { producerControls } from './boards';
 
@@ -931,11 +932,11 @@ async function sendInviteEmail(to: string, workspaceName: string, acceptUrl: str
       body: JSON.stringify({
         from: env.RESEND_FROM,
         to: [to],
-        subject: `You're invited to "${workspaceName}" on Flowdeck`,
+        subject: `You're invited to "${workspaceName}" on ${brand.name}`,
         html: [
           '<div style="font-family:ui-sans-serif,system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px">',
-          `<h2 style="margin:0 0 8px">You've been invited to <b>${escapeHtml(workspaceName)}</b> on Flowdeck</h2>`,
-          '<p style="color:#555;margin:0 0 20px">Flowdeck is a realtime kanban board your team can work on together.</p>',
+          `<h2 style="margin:0 0 8px">You've been invited to <b>${escapeHtml(workspaceName)}</b> on ${brand.name}</h2>`,
+          `<p style="color:#555;margin:0 0 20px">${brand.description}</p>`,
           `<a href="${acceptUrl}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">Accept invitation</a>`,
           `<p style="color:#999;font-size:12px;margin-top:20px">Or paste this link: ${acceptUrl}</p>`,
           '</div>',

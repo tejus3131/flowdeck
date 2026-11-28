@@ -11,6 +11,7 @@ import { Show, createSignal, onSettled } from 'solid-js';
 import { acceptInvite, enterWorkspaceOrdered, myProfileForRelay } from '../../lib/workspaces';
 import { broadcastMemberJoined } from '../../lib/workspace-relay';
 import { errorMessage } from '../../lib/error-message';
+import { brand } from '../../lib/brand';
 
 export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
   const navigate = useNavigate();
@@ -61,7 +62,7 @@ export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
 
   return (
     <main class="mx-auto flex min-h-[80vh] max-w-sm flex-col justify-center px-4">
-      <Title>Invitation - Flowdeck</Title>
+      <Title>Invitation - {brand.name}</Title>
       <div class="rounded-2xl border border-neutral-200 bg-white p-6 text-center shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
         <Show
           when={!error()}
@@ -78,7 +79,7 @@ export default function AcceptInvite(props: RouteProps<'/invite/:token'>) {
                 href="/"
                 class="mt-5 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
               >
-                Go to Flowdeck
+                Go to {brand.name}
               </a>
             </>
           }

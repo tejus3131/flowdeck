@@ -9,6 +9,7 @@ import { Show, type ParentProps } from 'solid-js';
 
 import { NotFound } from '../../components/NotFound';
 import { playgroundEnabled } from './guard';
+import { brand } from '../../lib/brand';
 
 // Lifecycle statuses ride the tag-hue tokens (the same fixed-L/C hues
 // the Badge primitive uses — they hold contrast in both themes, so no
@@ -37,7 +38,7 @@ export function PlaygroundShell(props: ParentProps) {
   return (
     <Show when={playgroundEnabled()} fallback={<NotFound />}>
       <main class="mx-auto max-w-5xl px-4 py-8">
-        <Title>Playground - Flowdeck</Title>
+        <Title>Playground - {brand.name}</Title>
         <header class="mb-6">
           <p class="text-fd-xs font-semibold uppercase tracking-wider text-fd-text-3">
             Developer playground — synthetic data only
