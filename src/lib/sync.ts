@@ -1,4 +1,4 @@
-// The Flowdeck sync engine — the outbox pattern the realtime-collaboration
+// The Orbit sync engine — the outbox pattern the realtime-collaboration
 // products use (Figma's local-first write path; the classic pending-queue
 // reconciliation lifecycle), adapted to Solid 2's live sources.
 //
