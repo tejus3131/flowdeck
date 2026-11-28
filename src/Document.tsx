@@ -1,6 +1,8 @@
 import type { ParentProps } from 'solid-js';
 import { HydrationScript, getRequestEvent } from '@solidjs/web';
 
+import { brand } from './lib/brand';
+
 // The document shell (the index.html replacement), picked up by the
 // src/Document.* convention; it must render the full <html> and ships no
 // client JS. <HydrationScript /> is stripped from the prerendered shell in
@@ -32,8 +34,20 @@ export default function Document(props: ParentProps) {
         <link rel="icon" href="/favicon.ico" />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-        <meta name="theme-color" content="#4f46e5" />
-        <title>Solid App</title>
+        <meta name="theme-color" content={brand.themeColor} />
+        {/* Self-hosted Inter Variable (latin subset): preloaded so the
+            first paint has the real face, with font-display: swap in the
+            @font-face so text never blocks on it. */}
+        <link
+          rel="preload"
+          href="/fonts/inter-latin-wght-normal.woff2"
+          as="font"
+          type="font/woff2"
+          crossorigin="anonymous"
+        />
+        {/* The registry's fallback title: routes own their <Title>, this
+            only covers a render that never mounted one. */}
+        <title>{brand.name}</title>
         {/* A compile-time constant, not user input — the lint rule targets
             unsanitized data, and inline is required to beat first paint. */}
         {/* eslint-disable-next-line solid/no-innerhtml */}

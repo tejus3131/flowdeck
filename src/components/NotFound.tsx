@@ -8,7 +8,7 @@ import { Title } from '@solidjs/meta';
 export function NotFound() {
   return (
     <main>
-      <Title>Not Found - Solid App</Title>
+      <Title>Page Not Found</Title>
       <h1>Page Not Found</h1>
       <p>
         Visit{' '}

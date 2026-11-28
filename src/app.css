@@ -1,5 +1,20 @@
 @import 'tailwindcss';
 
+/* Self-hosted Inter Variable (latin subset, public/fonts/): the same
+   family @fontsource-variable/inter shipped, now preloaded from our own
+   origin (Document.tsx) so the first paint has the real face. The
+   size-adjust fallback metrics keep the swap from reflowing — the
+   fallback stack renders at Inter's proportions while the real face
+   loads. */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  size-adjust: 100%;
+}
+
 /* The frozen token layer (ADR-16) — raw --fd-* semantics; the @theme
    inline block below maps them into Tailwind utilities. */
 @import './styles/tokens.css';

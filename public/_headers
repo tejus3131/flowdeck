@@ -1,0 +1,18 @@
+# Cloudflare's asset layer serves static files (robots.txt, sitemap.xml,
+# sw.js, manifest, icons, JS) without ever passing through the Worker's
+# middleware — so the headers below are the ONLY way to reach those
+# responses. HTML routes go through the Worker (src/middleware.ts sets
+# X-Robots-Tag there); this file is the belt-and-braces for everything
+# else, and the authoritative source for /sw.js's cache lifetime.
+#
+# Preview-wide noindex: preview deployments must never be indexed.
+# Production inherits it too — the prod domain is single-tenant and
+# public pages carry their own directives; app routes are noindexed by
+# the middleware either way.
+/*
+  X-Robots-Tag: noindex, nofollow
+
+# The service worker must revalidate on every load — a cached sw.js
+# would pin users to an old worker for up to 24h (the browser default).
+/sw.js
+  Cache-Control: max-age=0, must-revalidate
