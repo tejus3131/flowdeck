@@ -17,6 +17,7 @@ import {
   type PermissionSelection,
 } from '../../lib/mcp-permissions';
 import { myMembershipWatch } from '../../lib/workspaces';
+import { brand } from '../../lib/brand';
 import {
   getConnection,
   renameConnection,
@@ -212,7 +213,7 @@ export default function ConnectionPage(props: RouteProps<'/connection/:tokenId'>
 
   return (
     <main class="mx-auto max-w-2xl px-4 py-10">
-      <Title>Connection — Flowdeck</Title>
+      <Title>Connection — {brand.name}</Title>
       <p class="text-xs font-semibold uppercase tracking-wider text-indigo-500">MCP connection</p>
       <h1 class="mt-1 text-2xl font-bold tracking-tight">{name() || 'Connection'}</h1>
       <Show when={connection()}>

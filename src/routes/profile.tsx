@@ -15,6 +15,7 @@ import { getMyTokens } from '../lib/tokens';
 import { parseTheme } from '../lib/theme';
 import { getMyStatus, setWorkHours } from '../lib/status';
 import { errorMessage } from '../lib/error-message';
+import { brand } from '../lib/brand';
 
 function Section(props: { title: string; children: JSX.Element }) {
   return (
@@ -239,7 +240,7 @@ export default function ProfilePage() {
   return (
     <main class="mx-auto max-w-2xl px-4 py-10">
       <MembershipWatch />
-      <Title>Profile - Flowdeck</Title>
+      <Title>Profile - {brand.name}</Title>
       <h1 class="text-2xl font-semibold tracking-tight">Your profile</h1>
 
       <Show
@@ -364,8 +365,8 @@ export default function ProfilePage() {
                 when={tokens().length > 0}
                 fallback={
                   <p class="text-sm text-neutral-400">
-                    No connections yet. Add Flowdeck's MCP server to your agent and sign in — the
-                    connection appears here.
+                    No connections yet. Add {brand.name}
+                    's MCP server to your agent and sign in — the connection appears here.
                   </p>
                 }
               >
@@ -432,9 +433,9 @@ export default function ProfilePage() {
 
             <Section title="Agents &amp; docs">
               <p class="text-sm text-neutral-500 dark:text-neutral-400">
-                Connect AI agents (Claude, Cursor, your own) to your Flowdeck — they see and manage
-                exactly what your account can, under the same permissions. Create a token above,
-                then follow the guides.
+                Connect AI agents (Claude, Cursor, your own) to your {brand.name} — they see and
+                manage exactly what your account can, under the same permissions. Create a token
+                above, then follow the guides.
               </p>
               <div class="mt-3 flex flex-wrap gap-2">
                 <a

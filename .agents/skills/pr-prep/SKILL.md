@@ -65,6 +65,11 @@ Read your own diff as if you were the maintainer, with these open:
   from the budget. A value that doesn't exist is added to the
   design-system doc first, never inlined. Drop-settle (330–550ms,
   distance-scaled) is the one budget exception.
+- Brand strings — any UI change: run the brand grep
+  (`rg -n 'Flowdeck' src/routes/ src/components/`) and review every hit;
+  user-facing brand text comes from `src/lib/brand.ts` (`brand.name` /
+  `appName`), never a literal. The edge function, docs, tests, and
+  `fd_*`/`flowdeck_*` internals legitimately contain the name.
 
 ## 5. Evidence per area (goes in the PR description)
 

@@ -1,0 +1,13 @@
+{
+  "name": "Flowdeck",
+  "shortName": "Flowdeck",
+  "tagline": "Realtime kanban boards for you, your team — and your agents",
+  "description": "A realtime kanban board your team can work on together.",
+  "legalName": "Flowdeck",
+  "contactEmail": "flowdeck@tejusgupta.dev",
+  "url": "https://flowdeck.tejusgupta.dev",
+  "themeColor": "#4f46e5",
+  "ogImage": "/og.png",
+  "social": [],
+  "senderEmail": "flowdeck@tejusgupta.dev"
+}

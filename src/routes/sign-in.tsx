@@ -4,6 +4,7 @@ import { revalidate } from '@solidjs/router';
 import { Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
 
 import { checkEmail, getMe, signIn } from '../lib/auth';
+import { brand } from '../lib/brand';
 import { browserClient } from '../lib/supabase-client';
 
 /**
@@ -119,9 +120,9 @@ export default function SignIn() {
 
   return (
     <main class="mx-auto flex min-h-[80vh] max-w-sm flex-col justify-center px-4">
-      <Title>Sign in - Flowdeck</Title>
+      <Title>Sign in - {brand.name}</Title>
       <div class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <h1 class="text-xl font-semibold tracking-tight">Welcome to Flowdeck</h1>
+        <h1 class="text-xl font-semibold tracking-tight">Welcome to {brand.name}</h1>
 
         <Show
           when={!search.sent}

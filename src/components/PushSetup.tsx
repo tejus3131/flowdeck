@@ -6,6 +6,7 @@
 import { Show, createSignal, onSettled } from 'solid-js';
 
 import { getVapidPublicKey, savePushSubscription } from '../lib/push';
+import { appName } from '../lib/brand';
 
 const PROMPT_KEY = 'flowdeck:push-prompt';
 
@@ -103,7 +104,8 @@ export function PushSetup() {
         <p class="font-semibold">🔔 Stay in the loop</p>
         <p class="text-neutral-500 dark:text-neutral-400">
           Turn on notifications — mentions, assignments, and access requests find you even when
-          Flowdeck is closed.
+          {appName}
+          is closed.
         </p>
         <div class="flex gap-2">
           <button

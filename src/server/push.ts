@@ -7,6 +7,7 @@ import 'server-only';
 import { env } from 'virtual:solid-env/server';
 
 import { createSupabaseServiceClient } from './supabase';
+import { brand } from '../lib/brand';
 
 /** What the service worker needs to raise a notification: it shows
  *  `title`/`body` and navigates to `url` when clicked. */
@@ -151,7 +152,10 @@ export async function encryptPayload(
 
 /** Send one push. Returns false when the endpoint is gone (410/404). */
 async function sendOne(sub: SubRow, payload: PushPayload): Promise<boolean> {
-  const { body, dh } = await encryptPayload(sub, encoder.encode(JSON.stringify(payload)));
+  // The SW is a static file with no build step — the brand name rides in
+  // the payload's title (the SW's literal is only a fallback).
+  const withTitle = { ...payload, title: payload.title || brand.name };
+  const { body, dh } = await encryptPayload(sub, encoder.encode(JSON.stringify(withTitle)));
   const { publicKey } = await vapidKeys();
   const jwt = await vapidJwt(sub.endpoint);
   const response = await fetch(sub.endpoint, {

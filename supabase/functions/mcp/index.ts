@@ -17,7 +17,13 @@
 // client can do exactly what the web app could, and nothing more.
 //
 // Deploy: supabase functions deploy mcp --no-verify-jwt
+//
+// Brand strings: this bundle cannot import `src/`, so the user-facing
+// brand facts live in ./brand.json next to this file (deployed with it)
+// and a parity test (src/lib/brand.test.ts) pins it to src/lib/brand.ts.
+// A rebrand edits both files — the test fails if they drift.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.119.2';
+import brand from './brand.json' with { type: 'json' };
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const SERVER_INFO = { name: 'flowdeck', version: '1.0.0' };
@@ -1237,8 +1243,7 @@ Deno.serve(async (request) => {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVER_INFO,
-        instructions:
-          'Flowdeck boards, cards and chat. Start with get_me and list_workspaces; every list tool pages with next_cursor. Mentions use [Name](user:UUID) links — call check_mention_access first for people who may not see the board. This server is stateless: no sessions, no DELETE (the spec allows a stateless streamable-HTTP server); every call carries its own Bearer token. Every mutating tool returns the result of the change: the entity after the edit (ids, positions, names), counts (e.g. cards_moved, askers_notified), or flags (edited/deleted/seen) — never a silent null.',
+        instructions: `${brand.name} boards, cards and chat. Start with get_me and list_workspaces; every list tool pages with next_cursor. Mentions use [Name](user:UUID) links — call check_mention_access first for people who may not see the board. This server is stateless: no sessions, no DELETE (the spec allows a stateless streamable-HTTP server); every call carries its own Bearer token. Every mutating tool returns the result of the change: the entity after the edit (ids, positions, names), counts (e.g. cards_moved, askers_notified), or flags (edited/deleted/seen) — never a silent null.`,
       });
     }
     case 'notifications/initialized':
@@ -1275,7 +1280,7 @@ Deno.serve(async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error: this connection is not permitted to run ${name}. The owner can grant it on Flowdeck's consent page (re-connect) or from the profile page's API tokens.`,
+              text: `Error: this connection is not permitted to run ${name}. The owner can grant it on ${brand.name}'s consent page (re-connect) or from the profile page's API tokens.`,
             },
           ],
           isError: true,

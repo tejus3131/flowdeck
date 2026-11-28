@@ -7,6 +7,7 @@ import { For, Show, createSignal, onSettled } from 'solid-js';
 import { Avatar } from '../../components/Avatar';
 import { MembershipWatch } from '../../components/MembershipWatch';
 import { userProfile, type PublicProfile } from '../../lib/profile-view';
+import { brand } from '../../lib/brand';
 
 const TEAM_ROLE_STYLE: Record<string, string> = {
   admin: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
@@ -26,7 +27,7 @@ export default function UserProfilePage(props: RouteProps<'/u/:userId'>) {
   return (
     <main class="mx-auto max-w-2xl px-4 py-10">
       <MembershipWatch />
-      <Title>Profile — Flowdeck</Title>
+      <Title>Profile — {brand.name}</Title>
       <Show
         when={profile()}
         fallback={
