@@ -170,8 +170,11 @@ async function handleNavigation(request: Request): Promise<Response> {
     if (isAppRoute) {
       // The precached shell: user-agnostic markup; the entity store
       // (IndexedDB) rehydrates the board, the outbox replays edits.
+      // The document is stored under its literal URL (/index.html —
+      // Cache API keys are exact), so the '/' lookup must use the
+      // stored key, not the request path.
       const shell =
-        (await cache.match('/')) ??
+        (await cache.match('/index.html')) ??
         (await cache.match(OFFLINE_URL)) ??
         (await cache.match(request));
       if (shell) return shell;
