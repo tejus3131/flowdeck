@@ -36,7 +36,7 @@ export function FlagSync(props: { me: () => MeProfile | null }) {
     (next, prev) => {
       syncFlagClient(prev, next);
       // After the context changed, re-evaluate the snapshot on the
-      // server (same identity + the new fd_ws cookie) so `flag()` reads
+      // server (same identity + the new ob_ws cookie) so `flag()` reads
       // fresh values. Skipped on the hydration run — the SSR render
       // already resolved this exact state.
       if (

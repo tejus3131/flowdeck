@@ -218,14 +218,14 @@ describe('posthogEvaluateFlags', () => {
 // ── the workspace cookie candidate (snapshot.ts pure half) ────────────────
 
 describe('readWorkspaceCandidate', () => {
-  it('extracts the fd_ws cookie value only when it is a UUID', () => {
-    expect(readWorkspaceCandidate('fd_ws=22222222-2222-2222-2222-222222222222')).toBe(
+  it('extracts the ob_ws cookie value only when it is a UUID', () => {
+    expect(readWorkspaceCandidate('ob_ws=22222222-2222-2222-2222-222222222222')).toBe(
       '22222222-2222-2222-2222-222222222222',
     );
-    expect(readWorkspaceCandidate('a=1; fd_ws=22222222-2222-2222-2222-222222222222; b=2')).toBe(
+    expect(readWorkspaceCandidate('a=1; ob_ws=22222222-2222-2222-2222-222222222222; b=2')).toBe(
       '22222222-2222-2222-2222-222222222222',
     );
-    expect(readWorkspaceCandidate('fd_ws=not-a-uuid')).toBeNull();
+    expect(readWorkspaceCandidate('ob_ws=not-a-uuid')).toBeNull();
     expect(readWorkspaceCandidate('')).toBeNull();
   });
 });

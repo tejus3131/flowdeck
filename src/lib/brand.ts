@@ -6,10 +6,11 @@
 // exists so the rename, when it happens, is a one-file change plus the
 // edge function's JSON (see supabase/functions/mcp/brand.json).
 //
-// What NOT to rename even at rebrand: internal identifiers — the `fd_`
-// CSS token prefix, `flowdeck_workspace_id` PostHog property, cache
-// names (`flowdeck-cache`), env var names, DB/schema identifiers.
-// Brand rename ≠ identifier rename.
+// Renamed with the brand (pre-launch, sole user): wire-protocol strings
+// (`orb_` token prefix, `orbit-card-ref:`, `ob_*` cookies), storage keys,
+// the PostHog property (`orbit_workspace_id`) and DB identifiers. The one
+// deliberate holdout is the `--fd-*` CSS token prefix — the design system
+// is frozen (ADR-16) and the prefix carries no brand meaning.
 //
 // Server code imports this module directly (it is dependency-free and
 // isomorphic); the edge function cannot import `src/`, so its strings
@@ -20,20 +21,20 @@
  *  deployment can carry a different display name without a fork. */
 export const brand = {
   /** The product name (manifest `name`, titles, headings). */
-  name: import.meta.env?.VITE_APP_NAME ?? 'Flowdeck',
+  name: import.meta.env?.VITE_APP_NAME ?? 'Orbit',
   /** The short name (manifest `short_name`; ≤ 12 chars). */
-  shortName: import.meta.env?.VITE_APP_NAME ?? 'Flowdeck',
+  shortName: import.meta.env?.VITE_APP_NAME ?? 'Orbit',
   /** The landing <h1> area / OG description. */
   tagline: 'Realtime kanban boards for you, your team — and your agents',
   /** The manifest + meta description seed. */
   description: 'A realtime kanban board your team can work on together.',
   /** The legal identity (privacy policy's data controller). */
-  legalName: 'Flowdeck',
+  legalName: 'Orbit',
   /** The policy + support contact. */
-  contactEmail: 'flowdeck@tejusgupta.dev',
+  contactEmail: 'orbit@tejusgupta.dev',
   /** The canonical/OG base URL — the deployment's own origin when
    *  advertised (VITE_APP_URL), the prod URL otherwise. */
-  url: import.meta.env?.VITE_APP_URL ?? 'https://flowdeck.tejusgupta.dev',
+  url: import.meta.env?.VITE_APP_URL ?? 'https://orbit.tejusgupta.dev',
   /** Manifest + <meta name="theme-color">. */
   themeColor: '#4f46e5',
   /** The OG/Twitter card image (1200×630), site-absolute. */
@@ -41,7 +42,7 @@ export const brand = {
   /** Organization JSON-LD `sameAs` (empty until real profiles exist). */
   social: [] as string[],
   /** The invite-email sender — the RESEND_FROM default. */
-  senderEmail: 'flowdeck@tejusgupta.dev',
+  senderEmail: 'orbit@tejusgupta.dev',
 } as const;
 
 /** The app's display name — the one accessor most call sites want. */

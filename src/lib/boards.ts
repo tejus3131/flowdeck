@@ -2327,7 +2327,7 @@ async function currentWorkspaceId(
 ): Promise<string | null> {
   const event = getRequestEvent();
   const header = event?.request.headers.get('cookie') ?? '';
-  const match = header.match(/(?:^|;\s*)fd_ws=([0-9a-f-]{36})/);
+  const match = header.match(/(?:^|;\s*)ob_ws=([0-9a-f-]{36})/);
   const candidate = match?.[1];
   if (!candidate) return null;
   const {

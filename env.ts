@@ -42,7 +42,7 @@ export default {
     POSTHOG_KEY: v.optional(v.pipe(v.string(), v.minLength(20))),
   },
   client: {
-    VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Flowdeck'),
+    VITE_APP_NAME: v.optional(v.pipe(v.string(), v.minLength(1)), 'Orbit'),
     // The deployment's public base URL (e.g. https://flowdeck.tejusgupta.dev).
     // Baked per environment by CI (preview / production GitHub env vars);
     // pages that advertise environment-specific endpoints (docs/mcp) derive

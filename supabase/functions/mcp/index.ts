@@ -9,7 +9,7 @@
 //
 //   { "mcpServers": { "flowdeck": {
 //     "url": "https://<project>.supabase.co/functions/v1/mcp",
-//     "headers": { "Authorization": "Bearer fd_..." } } } }
+//     "headers": { "Authorization": "Bearer orb_..." } } } }
 //
 // Auth: Bearer PAT → sha256 → api_tokens.token_hash (the plaintext is
 // never stored). Every operation runs through public.mcp_exec, which
@@ -1042,7 +1042,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
   }
 
-  const token = `fd_${Array.from(crypto.getRandomValues(new Uint8Array(24)))
+  const token = `orb_${Array.from(crypto.getRandomValues(new Uint8Array(24)))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')}`;
   const { error: insertError } = await service.from('api_tokens').insert({
@@ -1174,9 +1174,9 @@ Deno.serve(async (request) => {
   }
   const auth = request.headers.get('authorization') ?? '';
   const presented = auth.replace(/^Bearer\s+/i, '').trim();
-  if (!presented.startsWith('fd_')) {
+  if (!presented.startsWith('orb_')) {
     return json(
-      { jsonrpc: '2.0', error: { code: -32001, message: 'Missing or malformed token. Pass "Authorization: Bearer fd_…"' } },
+      { jsonrpc: '2.0', error: { code: -32001, message: 'Missing or malformed token. Pass "Authorization: Bearer orb_…"' } },
       401,
       // RFC 9728 challenge: OAuth-capable clients start the browser flow
       // from this header alone.

@@ -63,7 +63,7 @@ function withReferences(markdown: string, cardNumbers?: number[]): string {
     /(^|[^/\w&])#(\d+)\b/g,
     (all, lead: string, num: string) => {
       if (known && !known.has(Number(num))) return all;
-      return `${lead}[#${num}](flowdeck-card-ref:${num})`;
+      return `${lead}[#${num}](orbit-card-ref:${num})`;
     },
   );
   return converted.replace(
@@ -84,8 +84,8 @@ interface ImageToken {
 
 const renderer = {
   link({ href, title, tokens }: LinkToken) {
-    if (href.startsWith('flowdeck-card-ref:')) {
-      const num = href.replace('flowdeck-card-ref:', '');
+    if (href.startsWith('orbit-card-ref:')) {
+      const num = href.replace('orbit-card-ref:', '');
       return `<a href="#card-${num}" data-card-ref="${num}" title="Card #${num}">#${num}</a>`;
     }
     // Mentions travel as user:<uuid> links — the label is a snapshot of

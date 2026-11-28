@@ -316,7 +316,7 @@ export default function McpDocsPage() {
   "mcpServers": {
     "flowdeck": {
       "url": "${MCP_URL}",
-      "headers": { "Authorization": "Bearer fd_YOUR_TOKEN" }
+      "headers": { "Authorization": "Bearer orb_YOUR_TOKEN" }
     }
   }
 }`}</code>
