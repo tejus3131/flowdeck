@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/router.ts", "src/server-config.ts"],
+  "entry": ["src/router.ts", "src/server-config.ts", "scripts/emit-sw.mjs", "src/sw.ts"],
   "project": ["src/**/*.{ts,tsx}", "env.ts", "vite.config.ts"],
   "ignore": ["src/types/database.generated.ts", "src/vite-env.d.ts"],
   "ignoreBinaries": ["supabase", "psql"],
