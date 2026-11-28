@@ -1,4 +1,4 @@
--- 0085_rebrand_orbit.sql — the full rebrand's DB half: every "flowdeck"
+-- 0085_rebrand_orbit.sql — the full rebrand's DB half: every legacy
 -- identifier in the live schema becomes "orbit". Old migrations are
 -- frozen; this one redefines the LIVE functions (the last definition of
 -- each wins) with the new GUC namespace and function name. No table,
