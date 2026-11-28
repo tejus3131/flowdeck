@@ -7,6 +7,7 @@ import { Show, createSignal, onSettled } from 'solid-js';
 
 import { getVapidPublicKey, savePushSubscription } from '../lib/push';
 import { appName } from '../lib/brand';
+import { wireSwUpdates } from '../lib/sw-update';
 
 const PROMPT_KEY = 'flowdeck:push-prompt';
 
@@ -68,6 +69,9 @@ export function PushSetup() {
 
   onSettled(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    // The update lifecycle (waiting worker → chip → guarded reload) wires
+    // once per app load, alongside the registration this component owns.
+    wireSwUpdates();
     // The worker reports endpoint rotation — re-subscribe and re-save.
     // Registered synchronously so onSettled can own the cleanup (the
     // async registration below can't use onCleanup).

@@ -36,6 +36,7 @@ import { getRequestEvent, isServer } from '@solidjs/web';
 
 import type { BoardSnapshot } from './boards';
 import { errorMessage } from './error-message';
+import { swOutboxChanged } from './sw-update';
 import { captureMutationEcho } from './telemetry';
 
 export type SyncStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
@@ -412,6 +413,15 @@ function createEngineBody<S extends object>(
   // into the next (stale board flash before the first merge).
   const [view, setView] = createStore<S>(clone(empty) as never);
   const [ops, setOps] = createStore<{ list: PendingOp[] }>({ list: [] });
+  // The SW update flow watches the outbox: while an update waits, the
+  // moment this count hits 0 (every queued edit acked) is the safe moment
+  // to apply it. Client-only; a no-op on the server and when nothing waits.
+  if (!isServer) {
+    createEffect(
+      () => ops.list.filter((op) => op.status === 'inFlight' && !op.remote).length,
+      (count) => swOutboxChanged(count),
+    );
+  }
   // Async continuations request a re-merge through this signal, carrying
   // the guard set to release (reads lag writes, so a re-merge can never
   // re-read the ops store to learn which guards just dropped); the merge
