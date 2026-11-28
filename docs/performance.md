@@ -1,6 +1,6 @@
 # Performance architecture
 
-Why Flowdeck feels slow, what we're building to fix it, and the order we're
+Why Orbit feels slow, what we're building to fix it, and the order we're
 building it in. Companion doc: [`performance-rules.md`](./performance-rules.md) —
 the checklist every change must pass so we never drift back into the bad state.
 
@@ -9,7 +9,7 @@ optimised."**
 
 ## The diagnosis
 
-Flowdeck already has the hard half of a fast architecture. The **write path**
+Orbit already has the hard half of a fast architecture. The **write path**
 (`src/lib/sync.ts`) is the same outbox design Linear uses: a user action
 applies to the local view instantly, the server call's resolution is the ACK,
 live-stream echoes retire the op, failures surface with the exact error. No
@@ -53,7 +53,7 @@ The same design keeps showing up in every fast collaboration product:
 - **Slack / Superhuman** — persistent push connection plus local stores; the
   client almost never fetches on open.
 
-Flowdeck's plan is the same shape, built **around the sync engine we already
+Orbit's plan is the same shape, built **around the sync engine we already
 have** rather than adopting an off-the-shelf sync engine (Zero, PowerSync,
 ElectricSQL, Triplit). Buying one would mean throwing away the custom write
 path (outbox, guards, `client_op` temp ids) that already works, and bending

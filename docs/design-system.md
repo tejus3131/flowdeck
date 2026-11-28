@@ -1,4 +1,4 @@
-# Flowdeck design system — the frozen token layer
+# Orbit design system — the frozen token layer
 
 The playground experiments _within_ these tokens; nothing ships that
 invents a new value. Every number traces to [`design-findings.md`](./design-findings.md)

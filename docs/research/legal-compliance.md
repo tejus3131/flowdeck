@@ -35,7 +35,7 @@ consent, given clear info + a simple means of objecting) and
 [exceptions](https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-the-use-of-storage-and-access-technologies/what-are-the-exceptions/).
 The EU has no statistical exception — consent is still required there.
 
-**Flowdeck's `fd_theme` cookie:** strictly necessary? No. UK: covered by
+**Orbit's `fd_theme` cookie:** strictly necessary? No. UK: covered by
 the appearance exception (no banner, provide info + objection). EU:
 technically needs consent under strict reading (older WP29 04/2012 said
 UI-customisation cookies likely exempt — conflicting source; current EU

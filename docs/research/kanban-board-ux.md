@@ -1,10 +1,10 @@
 ***
 
-# Kanban/Project Tool Design Research — Flowdeck Redesign
+# Kanban/Project Tool Design Research — Orbit Redesign
 
 ## Summary
 
-I researched primary sources: Atlassian's `react-beautiful-dnd` design docs (the physics model behind Trello-class dragging, with exact curves and timings), Atlassian support docs for Trello and Jira (card anatomy, WIP limits, collapse, templates), Linear's design blog and docs (drawer hierarchy, visual-weight principles), Figma's multiplayer engineering post + help center (presence limits, cursor chat), Notion's comments docs (side-panel comment patterns), and Monday's Zendesk help API (item card field grouping, updates-as-chat). Asana and Height were inaccessible (JS-walled / site sunset) — noted as gaps. I also grounded findings against Flowdeck's current implementation (`src/routes/b/[boardId].tsx`, `src/lib/panel-width.ts`).
+I researched primary sources: Atlassian's `react-beautiful-dnd` design docs (the physics model behind Trello-class dragging, with exact curves and timings), Atlassian support docs for Trello and Jira (card anatomy, WIP limits, collapse, templates), Linear's design blog and docs (drawer hierarchy, visual-weight principles), Figma's multiplayer engineering post + help center (presence limits, cursor chat), Notion's comments docs (side-panel comment patterns), and Monday's Zendesk help API (item card field grouping, updates-as-chat). Asana and Height were inaccessible (JS-walled / site sunset) — noted as gaps. I also grounded findings against Orbit's current implementation (`src/routes/b/[boardId].tsx`, `src/lib/panel-width.ts`).
 
 ---
 
@@ -26,7 +26,7 @@ I researched primary sources: Atlassian's `react-beautiful-dnd` design docs (the
 - **Monday's answer is admin-curated:** the face shows a chosen subset, and clicking a face field edits inline without opening the item.
 - **Linear's design principle** (from their 2026 refresh): _"Don't compete for attention you haven't earned"_ — elements supporting orientation recede; only task-central elements carry weight. They _reduced_ icon usage and sizes in the refresh ([behind-the-latest-design-refresh](https://linear.app/now/behind-the-latest-design-refresh)).
 
-**Flowdeck today** (`src/routes/b/[boardId].tsx:1717-1770`): title, priority pill, ≤3 tag chips, ≤4 avatars + overflow, "Details" button, unseen-comment badge. This is already within consensus; the one addition worth making is a **due-date chip** and **checklist progress** if those fields exist.
+**Orbit today** (`src/routes/b/[boardId].tsx:1717-1770`): title, priority pill, ≤3 tag chips, ≤4 avatars + overflow, "Details" button, unseen-comment badge. This is already within consensus; the one addition worth making is a **due-date chip** and **checklist progress** if those fields exist.
 
 ---
 
@@ -38,7 +38,7 @@ I researched primary sources: Atlassian's `react-beautiful-dnd` design docs (the
 - **Scroll behavior:** Trello columns scroll independently; the board scrolls horizontally. Jira's kanban backlog grows beyond a few items → moves to a **dedicated backlog space** rather than an ever-longer first column.
 - **Capacity numbers:** Trello hard limit 5,000 cards/board, perf degrades >1,000 ([adding-cards](https://support.atlassian.com/trello/docs/adding-cards/)). Jira board/backlog render max 5,000 items, then warn the admin to tighten the filter ([issue-limits](https://support.atlassian.com/jira-software-cloud/docs/issue-limits-in-company-managed-projects/)).
 
-**Flowdeck:** already has per-device collapse (`board-fold.test.tsx`). Add: card count in collapsed header (Trello pattern), optional per-list max with header count badge (Jira pattern).
+**Orbit:** already has per-device collapse (`board-fold.test.tsx`). Add: card count in collapsed header (Trello pattern), optional per-list max with header count badge (Jira pattern).
 
 ---
 
@@ -85,7 +85,7 @@ The **displacement curve is 3-phase** ([animations.md](https://github.com/atlass
 - During drag: `pointer-events: none` on droppables (kills hover-style flicker), `touch-action: manipulation`, `-webkit-touch-callout: none`, `overflow-anchor: none` (prevents post-drop scroll jumps)
 - Drop animation must not be `transition-duration: 0s` (breaks `transitionend`) — use `0.001s` if skipping
 
-**Flowdeck today** (`src/routes/b/[boardId].tsx:586-643`): rAF auto-scroll with fixed `EDGE=90px, SPEED=18px/frame`. **Upgrade path:** switch edge zone to `%` of container (rbd model), add exponential ramp (e.g. `speed = max * (1 - dist/EDGE)^2`), and adopt the 200ms `cubic-bezier(0.2,0,0,1)` displacement curve + 330–550ms distance-scaled drop. The existing FLIP glide (`offsetTop`-measured, per the code comments) already matches the "no snapping" principle.
+**Orbit today** (`src/routes/b/[boardId].tsx:586-643`): rAF auto-scroll with fixed `EDGE=90px, SPEED=18px/frame`. **Upgrade path:** switch edge zone to `%` of container (rbd model), add exponential ramp (e.g. `speed = max * (1 - dist/EDGE)^2`), and adopt the 200ms `cubic-bezier(0.2,0,0,1)` displacement curve + 330–550ms distance-scaled drop. The existing FLIP glide (`offsetTop`-measured, per the code comments) already matches the "no snapping" principle.
 
 ---
 
@@ -101,7 +101,7 @@ The **displacement curve is 3-phase** ([animations.md](https://github.com/atlass
 
 **Consensus for a board app:** right-side **drawer** (Linear/Notion model) for speed + context, with a **deep-linkable URL** (Jira model) so a card is shareable. Modal-only (old Trello) loses board context; page-only (Jira) kills throughput for triage flows.
 
-**Flowdeck:** already drawer-based with one-panel-one-owner semantics and 384–768px resizable width (`src/lib/panel-width.ts`) — matches Linear's model. Keep it; add URL sync for open card.
+**Orbit:** already drawer-based with one-panel-one-owner semantics and 384–768px resizable width (`src/lib/panel-width.ts`) — matches Linear's model. Keep it; add URL sync for open card.
 
 ---
 
@@ -143,7 +143,7 @@ Ranked by observed usage:
 - **Trello:** activity is on the card back, below comments.
 - **Jira:** issue history is a tab/section in the detail view.
 
-**Consensus:** comments and activity are _adjacent but distinct_; activity is never the default landing content. For Flowdeck's card drawer: comments first (primary), activity as a collapsible "history" section or tab — matching Monday's tab split if the timeline grows.
+**Consensus:** comments and activity are _adjacent but distinct_; activity is never the default landing content. For Orbit's card drawer: comments first (primary), activity as a collapsible "history" section or tab — matching Monday's tab split if the timeline grows.
 
 ---
 
@@ -155,7 +155,7 @@ Ranked by observed usage:
 - **Figma:** comments are pins on the canvas object; cursor chat is _ephemeral_ (see §9).
 - **Height:** (gap — site sunset, 2.0 waitlist only; archived blog index confirms the "chat in tasks" positioning but details weren't retrievable.)
 
-**Placement verdict:** **below the content in the same drawer** (Linear/Monday) for task chat; **side-by-side** only for _inline/anchored_ comments (Notion, Figma) where the comment must point at specific content. Flowdeck's board-level chat as a side panel + card-level comments in the drawer matches this split correctly.
+**Placement verdict:** **below the content in the same drawer** (Linear/Monday) for task chat; **side-by-side** only for _inline/anchored_ comments (Notion, Figma) where the comment must point at specific content. Orbit's board-level chat as a side panel + card-level comments in the drawer matches this split correctly.
 
 ---
 
@@ -169,11 +169,11 @@ Ranked by observed usage:
 
 **Cursor chat** ([send messages with cursor chat](https://help.figma.com/hc/en-us/articles/1500004414842)): `/` to enter; message is **live-typed to others in real time**; displays **5 seconds** after you stop typing; no log kept; Esc/click/tool-switch exits; auto-fades after inactivity.
 
-**Architecture** ([multiplayer post](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/)): WebSocket client/server; **one server process per document**; on open, client downloads full copy then syncs deltas; offline edits reapply on reconnect; CRDT-_inspired_ but simplified because the server is the central authority; presence/comments/users sync over a **separate system** from document ops (different perf/security tradeoffs) — a direct endorsement of Flowdeck's split between board ops and chat/presence channels.
+**Architecture** ([multiplayer post](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/)): WebSocket client/server; **one server process per document**; on open, client downloads full copy then syncs deltas; offline edits reapply on reconnect; CRDT-_inspired_ but simplified because the server is the central authority; presence/comments/users sync over a **separate system** from document ops (different perf/security tradeoffs) — a direct endorsement of Orbit's split between board ops and chat/presence channels.
 
 **Avatar stacks:** Figma shows collaborator avatars stacked in the toolbar with follow-on-click; overflow beyond ~5 collapses. (The specific help article on avatar stacks was JS-walled — inferred from product behavior, flagged as unverified.)
 
-**Flowdeck:** remote-drag ghosts + hover-slot hints already exist (`BoardColumn` props `remoteDrag`, `remoteDropHint`). Add: avatar stack in board header with "X is viewing" tooltip; a presence cap with explicit notification (Figma pattern) if boards ever get large.
+**Orbit:** remote-drag ghosts + hover-slot hints already exist (`BoardColumn` props `remoteDrag`, `remoteDropHint`). Add: avatar stack in board header with "X is viewing" tooltip; a presence cap with explicit notification (Figma pattern) if boards ever get large.
 
 ---
 
@@ -213,7 +213,7 @@ Ranked by observed usage:
 | Collapsed list             | name + count; `\` shortcut                                       | Trello collapse          |
 | WIP limit                  | min & max per column; count badge in header when enabled         | Jira configure-columns   |
 | Detail fields              | hide empty ones ("only columns with values")                     | Monday Item Card         |
-| Drawer width               | 384–768px (Flowdeck current = consensus)                         | `src/lib/panel-width.ts` |
+| Drawer width               | 384–768px (Orbit current = consensus)                            | `src/lib/panel-width.ts` |
 | Presence caps              | 200 cursors / 500 participants; notify when hidden               | Figma help               |
 | Cursor-chat TTL            | 5s after typing stops                                            | Figma help               |
 | Activity-log grace         | 3min after creation, no log entries                              | Linear creating-issues   |

@@ -1,6 +1,6 @@
 # The PostHog project — settings, environments, and flag governance
 
-The operational record of Flowdeck's PostHog integration (ADR-8 chose the
+The operational record of Orbit's PostHog integration (ADR-8 chose the
 stack; ADR-17 defines the flag contract; the runtime is
 `src/lib/flags/`). What exists, how it is configured, and who may change
 what — so "why is this set this way" never needs re-deriving.
@@ -64,7 +64,7 @@ split:
   user), watch guardrails on the `preview`-filtered tiles, then broaden.
   A flag change is a production change: treat it with the same review.
 - Server-side evaluation context is identical on both environments:
-  `distinct_id` = the Flowdeck user UUID of that environment's Supabase
+  `distinct_id` = the Orbit user UUID of that environment's Supabase
   project (the same human has different UUIDs on preview and prod —
   exact-ID flag conditions must list both).
 
@@ -102,7 +102,7 @@ and the PostHog flag's description (for dashboard visibility):
    to their declared fallback (with a bounded diagnostic in Workers Logs).
 4. Permission flags fail closed and never replace server authorization
    or RLS ([ADR-17](./adr.md)).
-5. Never send PII to PostHog — the distinct ID is the Flowdeck user
+5. Never send PII to PostHog — the distinct ID is the Orbit user
    UUID. Flag conditions target UUIDs (`distinct_id`), never emails;
    the event property allowlist is the taxonomy.
 

@@ -64,7 +64,7 @@ adds its event — the observability mirror of performance-rules 12).
 ## Feature flags and experiments
 
 - **Flags gate redesign surfaces** (L5 rule 5): new UI ships dark behind a
-  typed Flowdeck flag; the existing surface is its release fallback. The
+  typed Orbit flag; the existing surface is its release fallback. The
   runtime, SSR, kill-switch, and internal-playground contract is in
   [`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).
 - **Experiments need one primary metric, declared up front** — a

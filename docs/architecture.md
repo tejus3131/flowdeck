@@ -1,4 +1,4 @@
-# Flowdeck architecture
+# Orbit architecture
 
 The locked architecture. This document is the contract every change is
 reviewed against — the UI redesign, new features, and bug fixes all follow

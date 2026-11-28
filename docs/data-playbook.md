@@ -1,6 +1,6 @@
 # Data playbook — from telemetry to product decisions
 
-How Flowdeck turns what it measures into what it builds. This is the
+How Orbit turns what it measures into what it builds. This is the
 process layer between the contracts — [`observability.md`](./observability.md)
 defines _what_ we capture and the budget rules; this doc defines _why_,
 _how we read it_, and _how a number becomes a decision_. Everything here is
@@ -109,7 +109,7 @@ too, and often the cheapest honest ones.
 
 For freemium team-based B2B products (Slack, Coda, Airtable, HubSpot),
 the surveyed pattern is an **engagement or customer-growth** North Star —
-not revenue, not signups. Flowdeck's:
+not revenue, not signups. Orbit's:
 
 > **Weekly active users who performed a collaborative action** — created
 > or moved a card, sent a chat message, or acted through the MCP server.
@@ -243,7 +243,7 @@ noise:
    they actually get read
 
 **The PMF survey** (Sean Ellis's original methodology): "How would you
-feel if you could no longer use Flowdeck?" — target only users who
+feel if you could no longer use Orbit?" — target only users who
 _experienced the core, used it at least twice, and used it in the last
 two weeks_. Over 40% "very disappointed" = must-have signal. Then
 Superhuman's engine: build for the very-disappointed (what they'd miss
@@ -287,7 +287,7 @@ So the playbook at our size:
   person-property override and target exact workspace IDs in flag rules
   with 100% rollout. User percentage rollouts still split by person, not
   workspace. If workspace-randomized experiments become necessary, use a
-  Flowdeck-owned deterministic workspace assignment and treat analysis as
+  Orbit-owned deterministic workspace assignment and treat analysis as
   custom, not as a native PostHog group experiment. Details and SDK
   requirements:
   [`feature-flags-and-ui-playground.md`](./feature-flags-and-ui-playground.md).

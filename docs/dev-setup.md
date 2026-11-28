@@ -1,6 +1,6 @@
 # Local development setup
 
-Everything a new machine needs to run Flowdeck locally and connect to
+Everything a new machine needs to run Orbit locally and connect to
 the preview environment's MCP server.
 
 ## Prerequisites
@@ -44,13 +44,13 @@ export FLOWDECK_PREVIEW_CF_ACCESS_CLIENT_SECRET="<client secret>"
 ```
 
 Where the values come from: Cloudflare Zero Trust → Access → Service
-Auth → the `flowdeck-preview-mcp` service token (ask a maintainer).
+Auth → the `orbit-preview-mcp` service token (ask a maintainer).
 The Client Secret is shown once at token creation.
 
-The first connection opens a browser for Flowdeck's OAuth consent
+The first connection opens a browser for Orbit's OAuth consent
 (you're already past Cloudflare Access in that browser); the minted
 PAT authenticates the MCP session. The service token only passes
-Cloudflare's gate — Flowdeck's own auth is the second layer.
+Cloudflare's gate — Orbit's own auth is the second layer.
 
 ## Local MCP
 
