@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-/* Flowdeck service worker — the offline shell + the notification half of
+/* Orbit service worker — the offline shell + the notification half of
  * the PWA. *
  * Five jobs:
  *  1. `install`: precache this build's hashed assets (cache-first later —
@@ -14,7 +14,7 @@
  *     marked `cache-control: no-store` are never cached.
  *  4. `push` / `notificationclick` / `pushsubscriptionchange`: carried
  *     over unchanged from the notification-only worker (push shipped
- *     first) — same payloads, same `fd-navigate` / `fd-resubscribe`
+ *     first) — same payloads, same `orbit-navigate` / `orbit-resubscribe`
  *     postMessage protocol.
  *  5. `message`: the page-driven update protocol — SKIP_WAITING on the
  *     page's explicit request, and an outbox-drained notice so a waiting
@@ -40,8 +40,8 @@ const PRECACHE_URLS = JSON.parse('__FD_PRECACHE_MANIFEST__') as string[];
 // ── caches ───────────────────────────────────────────────────────────────
 // Version-scoped: a new build gets a new shell cache; activate deletes
 // every cache outside the allowlist (the old shell cache goes with it).
-const SHELL_CACHE = `flowdeck-shell-${CACHE_VERSION}`;
-const IMAGE_CACHE = 'flowdeck-images-v1';
+const SHELL_CACHE = `orbit-shell-${CACHE_VERSION}`;
+const IMAGE_CACHE = 'orbit-images-v1';
 const EXPECTED_CACHES = [SHELL_CACHE, IMAGE_CACHE];
 
 /** The cached-shell fallback answers ONLY these navigations. Everything
@@ -90,12 +90,12 @@ self.addEventListener('activate', (event) => {
 // ── the page-driven update protocol ──────────────────────────────────────
 self.addEventListener('message', (event) => {
   const data = event.data as { type?: string } | undefined;
-  if (data?.type === 'fd-skip-waiting') {
+  if (data?.type === 'orbit-skip-waiting') {
     // The page's explicit apply (outbox empty, or the user chose
     // "Update now"). The reload itself happens on the page's
     // controllerchange handler — once, guarded there.
     self.skipWaiting();
-  } else if (data?.type === 'fd-outbox-drained') {
+  } else if (data?.type === 'orbit-outbox-drained') {
     // The outbox just emptied while an update was waiting: the page
     // applies on its next navigation (it owns that decision); nothing
     // to do here beyond acknowledging — kept as a protocol hook so the
@@ -325,9 +325,9 @@ self.addEventListener('push', (event) => {
     payload = {};
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'Flowdeck', {
+    self.registration.showNotification(payload.title || 'Orbit', {
       body: payload.body || '',
-      tag: payload.tag || 'flowdeck',
+      tag: payload.tag || 'orbit',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       data: { url: payload.url || '/' },
@@ -344,7 +344,7 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of windows) {
         if ('focus' in client) {
           await client.focus();
-          client.postMessage({ type: 'fd-navigate', url });
+          client.postMessage({ type: 'orbit-navigate', url });
           return;
         }
       }
@@ -357,6 +357,6 @@ self.addEventListener('notificationclick', (event) => {
 // re-subscribe and re-save the endpoint.
 self.addEventListener('pushsubscriptionchange', () => {
   void self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-    for (const client of windows) client.postMessage({ type: 'fd-resubscribe' });
+    for (const client of windows) client.postMessage({ type: 'orbit-resubscribe' });
   });
 });

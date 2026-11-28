@@ -133,7 +133,7 @@ export function NotificationFeed() {
     if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
       const onMessage = (event: MessageEvent) => {
         const data = event.data as { type?: string; url?: string };
-        if (data?.type === 'fd-navigate' && data.url) navigate(hrefToPath(data.url));
+        if (data?.type === 'orbit-navigate' && data.url) navigate(hrefToPath(data.url));
       };
       navigator.serviceWorker.addEventListener('message', onMessage);
       // onCleanup is forbidden inside onSettled — the return value is the

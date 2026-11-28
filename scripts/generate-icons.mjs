@@ -1,5 +1,5 @@
 // One-shot icon generator for the PWA (no image tooling needed): draws
-// the Flowdeck mark — a rounded indigo square with a white F — and writes
+// the Orbit mark — a rounded indigo square with a white O — and writes
 // plain PNGs via node:zlib. Run: node scripts/generate-icons.mjs
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';

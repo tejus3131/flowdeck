@@ -1,6 +1,6 @@
 # Performance rules
 
-The checklist that keeps Flowdeck fast. The architecture landed once
+The checklist that keeps Orbit fast. The architecture landed once
 ([`performance.md`](./performance.md)); these rules are how it _stays_
 landed. They apply to every change that touches data or UI — bug fixes,
 features, revamps. A PR that breaks one of these is why we're slow again.

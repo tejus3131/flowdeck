@@ -45,7 +45,7 @@ describe('VAPID JWT (RFC 8292)', () => {
     };
     process.env.VAPID_PUBLIC_KEY = b64url(publicRaw);
     process.env.VAPID_PRIVATE_KEY = privateJwk.d ?? '';
-    process.env.VAPID_SUBJECT = 'mailto:test@flowdeck.local';
+    process.env.VAPID_SUBJECT = 'mailto:test@orbit.local';
 
     const endpoint = 'https://fcm.googleapis.com/fcm/send/some-token';
     const token = await vapidJwt(endpoint);
@@ -59,7 +59,7 @@ describe('VAPID JWT (RFC 8292)', () => {
     expect(payload.aud).toBe('https://fcm.googleapis.com');
     expect(typeof payload.exp).toBe('number');
     expect(payload.exp).toBeGreaterThan(Date.now() / 1000);
-    expect(payload.sub).toBe('mailto:test@flowdeck.local');
+    expect(payload.sub).toBe('mailto:test@orbit.local');
 
     const verifyKey = await crypto.subtle.importKey(
       'raw',

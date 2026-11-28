@@ -8,7 +8,7 @@ are locked in [ADR-11..14](./adr.md); this is the operating manual.
 |           | Local                                | Preview                             | Prod             |
 | --------- | ------------------------------------ | ----------------------------------- | ---------------- |
 | Supabase  | CLI stack (`supabase start`, :54321) | free project #2                     | free project #1  |
-| Worker    | `pnpm dev:node` (:3000)              | `flowdeck-preview` + Access domain  | `flowdeck`       |
+| Worker    | `pnpm dev:node` (:3000)              | `orbit-preview` + Access domain     | `orbit`          |
 | MCP       | `supabase functions serve mcp`       | deployed to preview project         | deployed to prod |
 | Data      | disposable (`db reset`)              | CI-owned test data                  | real             |
 | Auth gate | none                                 | Cloudflare Access (email allowlist) | public           |
@@ -162,14 +162,14 @@ so the free tier never pauses either project.
 
 ## Wrangler environments
 
-`wrangler.jsonc`: top level IS production (worker `flowdeck`, prod
-Supabase URL in `vars`); `env.preview` deploys as `flowdeck-preview`
+`wrangler.jsonc`: top level IS production (worker `orbit`, prod
+Supabase URL in `vars`); `env.preview` deploys as `orbit-preview`
 with the preview project's URL. **The environment is selected at BUILD
 time** (`CLOUDFLARE_ENV=preview vite build`): the Vite plugin flattens
 the generated `dist/server/wrangler.json` for that environment, and
 `--env` at `wrangler deploy` time has no effect on a flattened config —
 the first preview deploy shipped to prod because of exactly that
-(caught in the run log: `Uploaded flowdeck`, prod URL in bindings).
+(caught in the run log: `Uploaded orbit`, prod URL in bindings).
 Custom domains are attached in the dashboard (they survive deploys;
 `routes` stays out of the config so deploys never fight the dashboard).
 **Disable each worker's `*.workers.dev` route** — the preview custom
@@ -194,7 +194,7 @@ workflow code.
 
 The CF Access pair is for probe scripts hitting human-gated preview paths
 (UI smoke tests) — the MCP surface itself is Access-bypassed (see the
-preview access map below); MCP clients connect with Flowdeck's own OAuth,
+preview access map below); MCP clients connect with Orbit's own OAuth,
 identical to prod.
 | `CLOUDFLARE_ACCOUNT_ID` | Variable | same | same |
 | `SUPABASE_PROJECT_REF` | Variable | preview ref | prod ref |

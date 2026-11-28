@@ -17,7 +17,7 @@ import { evaluateAllFlags, type FlagValues } from './evaluate';
 import { posthogEvaluateFlags } from './provider';
 import { FLAGS, type FlagDef, type FlagKey, type FlagValue } from './registry';
 
-const WORKSPACE_COOKIE = /(?:^|;\s*)fd_ws=([0-9a-f-]{36})/;
+const WORKSPACE_COOKIE = /(?:^|;\s*)ob_ws=([0-9a-f-]{36})/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The workspace the request's cookie names — a CANDIDATE until the

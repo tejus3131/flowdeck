@@ -1,14 +1,14 @@
 # Design findings — what we adopt, adapt, skip
 
 The filter over [`research/`](./research/): every finding scored against
-Flowdeck's actual product (boards + chat + agents; Solid 2.0 + Tailwind 4;
+Orbit's actual product (boards + chat + agents; Solid 2.0 + Tailwind 4;
 solo-designed, team-used). Verdicts: **adopt** (do it), **adapt** (do a
-Flowdeck-shaped version), **skip** (sounds nice, wrong for us — with the
+Orbit-shaped version), **skip** (sounds nice, wrong for us — with the
 reason).
 
 ## Adopt
 
-| Finding                                                                              | Source                  | Why it fits Flowdeck                                                                                                                                         |
+| Finding                                                                              | Source                  | Why it fits Orbit                                                                                                                                            |
 | ------------------------------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **100ms feedback / 200-300ms panels / 500ms = drag-feel**                            | NN/g                    | Our sync engine already makes writes instant; motion must not undo that. Budgets become tokens.                                                              |
 | **High-frequency actions get zero motion**                                           | Linear (Rauno)          | Card drags, chip hovers, menu opens happen hundreds of times/day. No entrance animations on them.                                                            |

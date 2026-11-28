@@ -1,4 +1,4 @@
-# Brand, Rebrand & Legal Research — Flowdeck → Orbit
+# Brand, Rebrand & Legal Research — Orbit → Orbit
 
 Deep research grounding for the rebrand: the single-source-of-truth brand
 config, the rename practice, and the legal/compliance page set a small SaaS
@@ -8,10 +8,10 @@ grounding behind the page list here). Research + contract, not an
 implementation claim.
 
 **Repo baseline (verified):** `VITE_APP_NAME` exists in `env.ts` (default
-`Flowdeck`) but is consumed once (`App.tsx`); ~36 hardcoded "Flowdeck"
+`Orbit`) but is consumed once (`App.tsx`); ~36 hardcoded "Orbit"
 strings live across routes, invite emails (`workspaces.ts`), the MCP server
 text (`supabase/functions/mcp/index.ts`), the SW notification title, and
-the manifest. `RESEND_FROM` defaults to a Flowdeck sender.
+the manifest. `RESEND_FROM` defaults to a Orbit sender.
 
 ## Single source of truth — the brand config
 
@@ -27,13 +27,13 @@ derives its controller identity and contact from one place
 
 | Field                                             | Value today                                                   | Notes                                           |
 | ------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------- |
-| `name`                                            | Flowdeck → Orbit                                              | from `VITE_APP_NAME` override, constant default |
-| `shortName`                                       | Flowdeck → Orbit                                              | manifest `short_name`; ≤ 12 chars               |
+| `name`                                            | Orbit → Orbit                                                 | from `VITE_APP_NAME` override, constant default |
+| `shortName`                                       | Orbit → Orbit                                                 | manifest `short_name`; ≤ 12 chars               |
 | `tagline`                                         | "Realtime kanban boards for you, your team — and your agents" | landing `<h1>` area, OG description             |
 | `description`                                     | "A realtime kanban board your team can work on together"      | manifest, meta description seed                 |
 | `legalName`                                       | the maintainer's legal identity                               | privacy policy "data controller"                |
 | `contactEmail` / `privacyEmail` / `securityEmail` | to decide                                                     | policy contact + `security.txt`                 |
-| `url`                                             | `VITE_APP_URL` (prod: flowdeck.tejusgupta.dev)                | canonical/OG base                               |
+| `url`                                             | `VITE_APP_URL` (prod: orbit.tejusgupta.dev)                   | canonical/OG base                               |
 | `themeColor`                                      | `#4f46e5`                                                     | manifest + `<meta name="theme-color">`          |
 | `ogImage`                                         | to create (1200×630)                                          | OG/Twitter card                                 |
 | `social` / `sameAs`                               | to decide                                                     | Organization JSON-LD                            |
@@ -48,7 +48,7 @@ notification title, manifest (generate or CI-substitute), OG/meta tags.
 grep guard like the hardcoded-color check in pr-prep.
 
 **What NOT to rename (decide explicitly):** internal identifiers — the
-`fd_` CSS token prefix, `flowdeck_workspace_id` PostHog property, cache
+`fd_` CSS token prefix, `orbit_workspace_id` PostHog property, cache
 names (`flowdeck-images-v1`), env var names, DB/schema identifiers.
 Renaming those is churn with zero user value and breaks PostHog
 continuity. Brand rename ≠ identifier rename.

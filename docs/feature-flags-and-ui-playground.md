@@ -28,7 +28,7 @@ single showcase page:
 These are public design-system references, not evidence that Linear, Figma,
 Notion, or other products use a particular internal gallery. We found no
 publicly documented example establishing a standard "404 unless in a
-feature-flag cohort" pattern. The route and access rules below are Flowdeck's
+feature-flag cohort" pattern. The route and access rules below are Orbit's
 design, grounded in ordinary server-side authorization principles.
 
 Feature-flag guidance converges on separating the **decision** from the
@@ -59,7 +59,7 @@ current docs add constraints important to this deployment:
 
 ### One decision boundary
 
-All application code reads typed decisions through one Flowdeck-owned
+All application code reads typed decisions through one Orbit-owned
 interface. UI components do not import a PostHog SDK or name PostHog flag
 keys directly. The provider adapter translates the remote configuration to
 the app's typed registry; tests inject deterministic values without network
@@ -87,24 +87,24 @@ Within PostHog's free monthly flag-request allowance, person-targeted
 evaluation can receive context-specific person properties. Use that to
 filter by the active workspace without turning on Group Analytics:
 
-| Flowdeck need                      | Evaluation identity and context                                                            | Behavior                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Personal UI (a per-account switch) | `distinct_id = user UUID`; no workspace property                                           | Per-account access and rollout.                                                          |
-| Workspace-specific UI switch       | `distinct_id = user UUID`; person property `flowdeck_workspace_id = active workspace UUID` | An exact workspace-ID condition applies to every member when the rule's rollout is 100%. |
+| Orbit need                         | Evaluation identity and context                                                         | Behavior                                                                                 |
+| ---------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Personal UI (a per-account switch) | `distinct_id = user UUID`; no workspace property                                        | Per-account access and rollout.                                                          |
+| Workspace-specific UI switch       | `distinct_id = user UUID`; person property `orbit_workspace_id = active workspace UUID` | An exact workspace-ID condition applies to every member when the rule's rollout is 100%. |
 
 (The playground is NOT in this table — its access is environment-gated,
 not a flag; see the access policy below.)
 
-A cohort is a set of people, not a workspace. For Flowdeck, send the
+A cohort is a set of people, not a workspace. For Orbit, send the
 verified active workspace as a transient person-property override:
 
-1. Server-side, keep Flowdeck's authenticated user UUID as the PostHog
+1. Server-side, keep Orbit's authenticated user UUID as the PostHog
    distinct ID and evaluate with
-   `personProperties: { flowdeck_workspace_id: verifiedWorkspaceId }`.
+   `personProperties: { orbit_workspace_id: verifiedWorkspaceId }`.
    Derive the workspace from the verified board/workspace relationship,
    never directly from an untrusted URL parameter.
 2. In the browser, call
-   `posthog.setPersonPropertiesForFlags({ flowdeck_workspace_id: workspaceId })`
+   `posthog.setPersonPropertiesForFlags({ orbit_workspace_id: workspaceId })`
    for the active workspace. PostHog documents that this is sent with flag
    requests, is not persisted on the person or emitted as a `$set` event,
    and triggers flag reload by default. The override is stored in the
@@ -124,7 +124,7 @@ PostHog's user-targeted rollout percentage and multivariate assignment hash
 the user's distinct ID. A percentage rollout can therefore split members
 of one workspace even when all of them send the same workspace property.
 For a manual workspace-specific switch or variant, add an exact
-`flowdeck_workspace_id` condition and set its rollout to 100%. For a
+`orbit_workspace_id` condition and set its rollout to 100%. For a
 multivariate flag, assign 100% of that condition's variant allocation to
 the chosen variant. Do not use a percentage-based user rollout for
 collaborative surfaces. Verify that two different users in the same
@@ -140,7 +140,7 @@ supported workspace filter for explicitly targeted workspaces; it does not
 provide native percentage rollout or randomization by workspace.
 
 If workspace-randomized experiments become necessary under the $0 limit,
-use a Flowdeck-owned deterministic assignment keyed by
+use a Orbit-owned deterministic assignment keyed by
 `(experiment key, workspace UUID)` and emit exposure/outcome events with
 both the person identity and workspace ID as ordinary event properties.
 That is not a native PostHog group experiment: PostHog's experiment
@@ -174,7 +174,7 @@ security, data integrity, or a time-critical operational incident.
 ### Evaluation, SSR, and exposure
 
 1. Resolve the authenticated identity before evaluating person-targeted
-   flags. Use Flowdeck's stable user UUID as the PostHog distinct ID; never
+   flags. Use Orbit's stable user UUID as the PostHog distinct ID; never
    use email, names, message content, or other PII as flag properties.
 2. Resolve a request's needed flags once and keep the result in that request's
    context. Never put user-specific decisions in a module-global Worker
@@ -200,7 +200,7 @@ security, data integrity, or a time-critical operational incident.
    code reads the assigned value through PostHog's exposure-recording API.
    Pre-register the primary metric and duration. Collaborative experiments
    need workspace-level assignment; under the $0 rule this requires a
-   Flowdeck-owned assignment as described in [the playbook](./data-playbook.md).
+   Orbit-owned assignment as described in [the playbook](./data-playbook.md).
 
 For whole-page redesigns, branch at the route/surface boundary so the server
 renders only the selected experience. For smaller component variants,

@@ -1,15 +1,15 @@
-// Flowdeck MCP server — Supabase Edge Function.
+// Orbit MCP server — Supabase Edge Function.
 //
 // Speaks the Model Context Protocol over the streamable HTTP transport:
 // every request is a JSON-RPC 2.0 message POSTed to this endpoint, and
 // every response is plain JSON (no server-initiated streams needed, so the
 // SSE half of the transport stays unused). Any MCP client — Claude Desktop,
 // Cursor, a custom harness — connects with the URL plus a personal access
-// token created on the Flowdeck profile page:
+// token created on the Orbit profile page:
 //
-//   { "mcpServers": { "flowdeck": {
+//   { "mcpServers": { "orbit": {
 //     "url": "https://<project>.supabase.co/functions/v1/mcp",
-//     "headers": { "Authorization": "Bearer fd_..." } } } }
+//     "headers": { "Authorization": "Bearer orb_..." } } } }
 //
 // Auth: Bearer PAT → sha256 → api_tokens.token_hash (the plaintext is
 // never stored). Every operation runs through public.mcp_exec, which
@@ -26,7 +26,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.119.2';
 import brand from './brand.json' with { type: 'json' };
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-const SERVER_INFO = { name: 'flowdeck', version: '1.0.0' };
+const SERVER_INFO = { name: 'orbit', version: '1.0.0' };
 
 type ToolDef = {
   name: string;
@@ -816,7 +816,7 @@ async function sha256Hex(value: string): Promise<string> {
 // at <app>/api/mcp, so the PUBLIC resource URL — what discovery documents
 // and 401 challenges advertise — is that proxy path, not this direct
 // Supabase URL. The direct URL keeps working as a fallback entry point.
-const APP_ORIGIN = Deno.env.get('APP_ORIGIN') ?? 'https://flowdeck.tejusgupta.dev';
+const APP_ORIGIN = Deno.env.get('APP_ORIGIN') ?? 'https://orbit.tejusgupta.dev';
 const RESOURCE_URL = `${new URL(Deno.env.get('SUPABASE_URL') ?? 'https://supabase.co').origin}/functions/v1/mcp`;
 const MCP_PUBLIC_URL = Deno.env.get('MCP_PUBLIC_URL') ?? `${APP_ORIGIN}/api/mcp`;
 
@@ -849,7 +849,7 @@ function safeRedirectUri(uri: string): boolean {
  *
  * VS Code (and other MCP harnesses) auto-register before the browser
  * flow: they POST their redirect URIs and expect a client_id back.
- * Flowdeck treats the client_id as a presentation-consistency label,
+ * Orbit treats the client_id as a presentation-consistency label,
  * not a credential — the authorize and /token steps only require that
  * the SAME client_id and redirect_uri come back, and PKCE (S256) is
  * the real client authentication. So there is nothing to persist: the
@@ -1042,7 +1042,7 @@ async function oauthTokenExchange(request: Request, service: ReturnType<typeof c
     return oauthError(400, 'invalid_grant', 'code is unknown, expired, or already used');
   }
 
-  const token = `fd_${Array.from(crypto.getRandomValues(new Uint8Array(24)))
+  const token = `orb_${Array.from(crypto.getRandomValues(new Uint8Array(24)))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')}`;
   const { error: insertError } = await service.from('api_tokens').insert({
@@ -1174,9 +1174,9 @@ Deno.serve(async (request) => {
   }
   const auth = request.headers.get('authorization') ?? '';
   const presented = auth.replace(/^Bearer\s+/i, '').trim();
-  if (!presented.startsWith('fd_')) {
+  if (!presented.startsWith('orb_')) {
     return json(
-      { jsonrpc: '2.0', error: { code: -32001, message: 'Missing or malformed token. Pass "Authorization: Bearer fd_…"' } },
+      { jsonrpc: '2.0', error: { code: -32001, message: 'Missing or malformed token. Pass "Authorization: Bearer orb_…"' } },
       401,
       // RFC 9728 challenge: OAuth-capable clients start the browser flow
       // from this header alone.

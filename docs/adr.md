@@ -182,7 +182,7 @@ need a paid plan or the local stack.
 
 ## ADR-13: Preview is private — Cloudflare Access
 
-**Decision.** The preview worker gets a custom domain on the Flowdeck
+**Decision.** The preview worker gets a custom domain on the Orbit
 zone; Cloudflare Access (free ≤50 users) gates it with an email allowlist.
 Preview Supabase: invite-only signups, redirect URLs pinned to the preview
 domain. Preview MCP tokens live in the preview DB only.
@@ -287,7 +287,7 @@ or how developers compare variants. A client-only check can flash a surface
 before hydration and cannot protect a route. PostHog's edge guidance also
 means a process-local SDK cache cannot be assumed on Cloudflare Workers.
 
-**Decision.** Define and consume flags through a Flowdeck-owned typed
+**Decision.** Define and consume flags through a Orbit-owned typed
 registry and provider boundary. Every flag declares its purpose, finite
 value set, safe fallback, evaluation scope, owner, expiry/review date, and
 rollback behavior. Release flags fall back to the existing UI; playground
@@ -306,7 +306,7 @@ Exact workspace conditions use 100% rollout; PostHog percentage rollouts
 remain person-bucketed and cannot ensure one variant per workspace. PostHog
 Group Analytics is paid and excluded by ADR-8's strict $0 rule. If
 workspace-randomized experiments become necessary, assignment and analysis
-must use a separately designed Flowdeck-owned mechanism rather than a
+must use a separately designed Orbit-owned mechanism rather than a
 PostHog group experiment.
 
 The developer playground is a server-gated `/playground/*` route family.

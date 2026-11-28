@@ -1,6 +1,6 @@
 # UX Mechanisms Research Report: Notion, Canva, Linear, Figma, Arc
 
-**Method note:** Claims below are verified against production CSS bundles (Notion, Linear, Canva), official help docs, engineering blogs, and UX research. Where I could not verify a claim, I flag it explicitly. Flowdeck's current `src/app.css` (Tailwind 4, class-based dark mode, indigo accent) was reviewed to ground the recommendations.
+**Method note:** Claims below are verified against production CSS bundles (Notion, Linear, Canva), official help docs, engineering blogs, and UX research. Where I could not verify a claim, I flag it explicitly. Orbit's current `src/app.css` (Tailwind 4, class-based dark mode, indigo accent) was reviewed to ground the recommendations.
 
 ---
 
@@ -27,7 +27,7 @@ Notion's help doc "What is a block?" confirms everything is a block that can be 
 
 Notion's production CSS shows hover-revealed affordances with `cubic-bezier(.16,1,.3,1)` transitions (extracted from `notion.com/_assets/main-b8d69ace73080c20.css`). The handle appears only on block hover — progressive disclosure of the drag affordance.
 
-**Flowdeck implementation:** add `/` and `@` menus to the card description composer (you already have `@` chips in `SmartTextarea`); make the `/` menu filter-as-you-type with keyboard navigation, positioned at the caret.
+**Orbit implementation:** add `/` and `@` menus to the card description composer (you already have `@` chips in `SmartTextarea`); make the `/` menu filter-as-you-type with keyboard navigation, positioned at the caret.
 
 ---
 
@@ -68,7 +68,7 @@ The 708px measure ≈ 65–75 characters per line at 16px — the classic optima
 
 **Notion's design system is internally called "Tatami"** — its tokens visible in the CSS: border-radius scale (`--tatami-border-radius-0/200/500/600/700`, `round: 624.938rem`), semantic radius aliases (`--tatami-border-button-radius`, `--tatami-border-popover-radius`, `--tatami-border-card-radius`), focus-ring style tokens (solid/dashed), and a `--tatami-motion-global-fade-in-duration` variable.
 
-**Flowdeck implementation (Tailwind 4):**
+**Orbit implementation (Tailwind 4):**
 
 ```css
 .prose-card {
@@ -109,7 +109,7 @@ From Notion's CSS bundles (frequency = occurrences in the bundle):
 
 **Mechanism:** ~99% of the interface is warm-neutral (`#37352f` is a brown-tinted gray, warmer than Tailwind's `neutral`); one blue accent carries all interactivity; red is rationed. This maps to the 60/30/10 cinematography rule Freiberg cites: "about 60% primary, 30% secondary, 10% accent… the remaining 10% can be thought of as the _novelty_ color." Source: https://rauno.me/craft/novelty
 
-**Flowdeck note:** your current `neutral` + `indigo` stack is close; consider warming the text gray slightly (e.g. `stone` or a custom `#37352f`-like value) for Notion's calm feel.
+**Orbit note:** your current `neutral` + `indigo` stack is close; consider warming the text gray slightly (e.g. `stone` or a custom `#37352f`-like value) for Notion's calm feel.
 
 ---
 
@@ -159,7 +159,7 @@ From Notion's CSS bundles (frequency = occurrences in the bundle):
 - The macOS App Switcher never animates; if the time delta between Cmd and Tab is low enough, it switches **without showing the menu at all**
 - His bookmarking tool felt sluggish _because of_ its add/remove animations, despite snappy tuning
 
-**Flowdeck implementation (Tailwind 4 tokens):**
+**Orbit implementation (Tailwind 4 tokens):**
 
 ```css
 :root {
@@ -197,7 +197,7 @@ try {
 } catch {}
 ```
 
-Three-state model (`light`/`dark`/`system`), class-based, runs before paint. **Flowdeck already does this** (your `app.css` comment describes the mirror-cookie + inline head script) — you match Canva's pattern.
+Three-state model (`light`/`dark`/`system`), class-based, runs before paint. **Orbit already does this** (your `app.css` comment describes the mirror-cookie + inline head script) — you match Canva's pattern.
 
 ### Linear's palette (extracted from static.linear.app CSS)
 
@@ -211,7 +211,7 @@ Three-state model (`light`/`dark`/`system`), class-based, runs before paint. **F
 
 **Gap flagged:** I could not fetch the Labrecque & Milne (2012) study directly (Springer returned 406). It's the standard citation ("Exciting red and competent blue: the importance of color in marketing" — blue reliably maps to "competence"), but treat as unverified-here. The verified adjacent finding is Stripe's: HSL lightness is perceptually broken ("at the same level of mathematical lightness, yellow appears lighter than blue"), so they rebuilt their palette in a perceptual model (OKLCH) to get WCAG-passing contrast (4.5:1 small text) _without_ muddy colors. Source: https://stripe.com/blog/accessible-color-systems (Koopersmith & Miner, 2019)
 
-**Flowdeck note:** Tailwind 4 supports `oklch()` natively — define your indigo accent in OKLCH and generate tints by lightness steps for perceptually even chips (your amber/sky/violet mention/tag colors).
+**Orbit note:** Tailwind 4 supports `oklch()` natively — define your indigo accent in OKLCH and generate tints by lightness steps for perceptually even chips (your amber/sky/violet mention/tag colors).
 
 ---
 

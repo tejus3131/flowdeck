@@ -1,9 +1,9 @@
 ---
 name: onboarding
-description: Ground a fresh agent session in Flowdeck — what this repo is, the docs to read in order, the environment to verify, and the workflow rules that keep changes safe. Run it at the start of any new session on this repo.
+description: Ground a fresh agent session in Orbit — what this repo is, the docs to read in order, the environment to verify, and the workflow rules that keep changes safe. Run it at the start of any new session on this repo.
 ---
 
-# Flowdeck onboarding — grounding a new session
+# Orbit onboarding — grounding a new session
 
 Run this when starting work on the repo (fresh session, new machine, or
 after a long gap). The root `AGENTS.md` is the always-loaded summary; this
@@ -12,7 +12,7 @@ and why it is the way it is" in one pass.
 
 ## 1. What this project is
 
-Flowdeck is a team workspace — boards, cards, chats, and an MCP server for
+Orbit is a team workspace — boards, cards, chats, and an MCP server for
 AI agents. Solo-maintained, free-tier resources, deliberate over clever.
 The architecture doc's five principles and the canonical test are the
 constitution; most review feedback traces back to them.

@@ -76,18 +76,18 @@ d('mcp per-op functions (local stack)', () => {
       `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, confirmation_token, recovery_token, email_change, email_change_token_new)
        select '${OWNER}',
               coalesce((select instance_id from auth.users limit 1), '00000000-0000-0000-0000-000000000000'),
-              'authenticated', 'authenticated', 'mcp-ops@flowdeck.local', 'x', now(), now(), now(),
+              'authenticated', 'authenticated', 'mcp-ops@orbit.local', 'x', now(), now(), now(),
               '{"provider":"email","providers":["email"]}', '{"display_name":"MCP Ops Probe"}',
               '', '', '', ''
        on conflict do nothing`,
-      `insert into public.profiles (id, email, display_name) values ('${OWNER}', 'mcp-ops@flowdeck.local', 'MCP Ops Probe') on conflict do nothing`,
+      `insert into public.profiles (id, email, display_name) values ('${OWNER}', 'mcp-ops@orbit.local', 'MCP Ops Probe') on conflict do nothing`,
       `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, confirmation_token, recovery_token, email_change, email_change_token_new)
        select '${MEMBER}',
               coalesce((select instance_id from auth.users limit 1), '00000000-0000-0000-0000-000000000000'),
-              'authenticated', 'authenticated', 'mcp-member@flowdeck.local', 'x', now(), now(), now(),
+              'authenticated', 'authenticated', 'mcp-member@orbit.local', 'x', now(), now(), now(),
               '{"provider":"email","providers":["email"]}', '{}', '', '', '', ''
        on conflict do nothing`,
-      `insert into public.profiles (id, email, display_name) values ('${MEMBER}', 'mcp-member@flowdeck.local', 'MCP Member Probe') on conflict do nothing`,
+      `insert into public.profiles (id, email, display_name) values ('${MEMBER}', 'mcp-member@orbit.local', 'MCP Member Probe') on conflict do nothing`,
       `insert into public.workspaces (name, slug, owner_id) values ('MCP ops world', 'mcp-ops-world', '${OWNER}') on conflict do nothing`,
       `select id from public.workspaces where slug = 'mcp-ops-world'`,
     );
@@ -105,7 +105,7 @@ d('mcp per-op functions (local stack)', () => {
     // accumulates them.
     sql(
       'begin',
-      "select set_config('flowdeck.purge', 'on', true)",
+      "select set_config('orbit.purge', 'on', true)",
       `delete from public.workspaces where id = '${WS}'`,
       'commit',
     );

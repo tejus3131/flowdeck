@@ -1,4 +1,4 @@
-// Drop planner tests — the move bug on the Flowdeck changes board: three
+// Drop planner tests — the move bug on the Orbit changes board: three
 // cards tied at position 1 made a drop between them compute (1+1)/2 = 1,
 // joining the tie instead of landing between (the card "snapped" into
 // place seconds later when the fold re-shuffled the tie's order).

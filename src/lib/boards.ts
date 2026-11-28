@@ -1,4 +1,4 @@
-// Flowdeck board data layer: server functions the UI calls directly.
+// Orbit board data layer: server functions the UI calls directly.
 //
 // Reads run through the request-scoped Supabase client, so RLS decides
 // what each caller sees (boards: only memberships; cards: only member
@@ -2327,7 +2327,7 @@ async function currentWorkspaceId(
 ): Promise<string | null> {
   const event = getRequestEvent();
   const header = event?.request.headers.get('cookie') ?? '';
-  const match = header.match(/(?:^|;\s*)fd_ws=([0-9a-f-]{36})/);
+  const match = header.match(/(?:^|;\s*)ob_ws=([0-9a-f-]{36})/);
   const candidate = match?.[1];
   if (!candidate) return null;
   const {

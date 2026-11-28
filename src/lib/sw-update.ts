@@ -9,7 +9,7 @@
 //     ready" chip reads it.
 //   * APPLY rules: on the next navigation when the outbox is empty; after
 //     the outbox drains, or on the user's explicit "Update now", when
-//     edits are pending. Applying = `fd-skip-waiting` message → the new
+//     edits are pending. Applying = `orbit-skip-waiting` message → the new
 //     worker activates → `controllerchange` fires → ONE guarded reload.
 //   * The reload guard is re-entrancy-safe across tabs: only the tab that
 //     saw the controllerchange reloads, once, keyed by the applied
@@ -57,7 +57,7 @@ export function isAppRoute(path: string): boolean {
 }
 
 // ── the applied-version guard (one reload per version, per tab) ──────────
-const APPLIED_KEY = 'flowdeck:sw-applied-version';
+const APPLIED_KEY = 'orbit:sw-applied-version';
 
 /** The SW version this tab has already reloaded for. Null = none yet. */
 function appliedVersion(): string | null {
@@ -143,7 +143,7 @@ export function applySwUpdate(): void {
   if (isServer || !('serviceWorker' in navigator)) return;
   void (async () => {
     const registration = await navigator.serviceWorker.getRegistration();
-    registration?.waiting?.postMessage({ type: 'fd-skip-waiting' });
+    registration?.waiting?.postMessage({ type: 'orbit-skip-waiting' });
   })();
 }
 

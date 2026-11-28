@@ -314,9 +314,9 @@ export default function McpDocsPage() {
       <pre class="mt-1 overflow-x-auto rounded-xl bg-neutral-950 p-4 text-xs leading-relaxed text-neutral-100">
         <code>{`{
   "mcpServers": {
-    "flowdeck": {
+    "orbit": {
       "url": "${MCP_URL}",
-      "headers": { "Authorization": "Bearer fd_YOUR_TOKEN" }
+      "headers": { "Authorization": "Bearer orb_YOUR_TOKEN" }
     }
   }
 }`}</code>
@@ -371,8 +371,8 @@ export default function McpDocsPage() {
 
       <h2 class="mt-8 text-lg font-semibold tracking-tight">A skill for deep context</h2>
       <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
-        Tool descriptions carry the essentials, but the <code>skills/flowdeck/SKILL.md</code> file
-        in the repository is the full operating manual for agents — workflows, mention etiquette,
+        Tool descriptions carry the essentials, but the <code>skills/orbit/SKILL.md</code> file in
+        the repository is the full operating manual for agents — workflows, mention etiquette,
         pagination, error meanings, and limits. Install it alongside the connection.
       </p>
 

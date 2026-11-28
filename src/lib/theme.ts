@@ -11,7 +11,7 @@ import { createSupabaseRequestClient } from '../server/supabase';
 
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
-export const THEME_COOKIE = 'fd_theme';
+export const THEME_COOKIE = 'ob_theme';
 const YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 export function parseTheme(value: string | null | undefined): Theme | null {

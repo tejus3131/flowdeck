@@ -1,4 +1,4 @@
-/* The Flowdeck token layer — docs/design-system.md (ADR-16) implemented.
+/* The Orbit token layer — docs/design-system.md (ADR-16) implemented.
    Every value here traces to that doc; nothing ships that invents a new
    value. Raw `--fd-*` custom properties carry the semantics; app.css
    maps them into Tailwind's theme so utilities (bg-fd-bg, text-fd-text,

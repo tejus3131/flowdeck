@@ -27,7 +27,7 @@ afterEach(() => {
 
 /** Run the preload inside a request scope and return the event. */
 async function preloadInRequestScope(): Promise<RequestEvent> {
-  const event = createRequestEvent(new Request('https://flowdeck.test/playground'));
+  const event = createRequestEvent(new Request('https://orbit.test/playground'));
   await requestScope.run(event, () => playgroundPreload());
   return event;
 }

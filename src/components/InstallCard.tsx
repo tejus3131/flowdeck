@@ -18,7 +18,7 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 };
 
-const DISMISS_KEY = 'flowdeck:install-dismissed';
+const DISMISS_KEY = 'orbit:install-dismissed';
 const EDIT_THRESHOLD = 3;
 
 let captured: InstallPromptEvent | null = null;
@@ -34,7 +34,7 @@ if (!isServer) {
 
 function editCount(): number {
   try {
-    return Number(sessionStorage.getItem('flowdeck:edit-count') ?? 0);
+    return Number(sessionStorage.getItem('orbit:edit-count') ?? 0);
   } catch {
     return 0;
   }
@@ -44,7 +44,7 @@ function editCount(): number {
  *  (a user who edits is a user who benefits from installing). */
 export function noteEngagementEdit(): void {
   try {
-    sessionStorage.setItem('flowdeck:edit-count', String(editCount() + 1));
+    sessionStorage.setItem('orbit:edit-count', String(editCount() + 1));
   } catch {
     // blocked storage — the affordance just never arms
   }
@@ -124,7 +124,7 @@ export function InstallCard() {
       fallback={
         <Show when={!installed() && showIosHelp()}>
           <div class="rounded-xl border border-neutral-200 bg-white p-3 text-xs dark:border-neutral-700 dark:bg-neutral-900">
-            <p class="font-semibold">Add Flowdeck to your Home Screen</p>
+            <p class="font-semibold">Add Orbit to your Home Screen</p>
             <p class="mt-1 text-neutral-500 dark:text-neutral-400">
               Safari → Share → "Add to Home Screen". Boards you've opened keep working offline, and
               edits sync when you reconnect.
@@ -134,7 +134,7 @@ export function InstallCard() {
       }
     >
       <div class="fixed bottom-4 right-4 z-[55] flex w-72 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-xs shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
-        <p class="font-semibold">📌 Install Flowdeck</p>{' '}
+        <p class="font-semibold">📌 Install Orbit</p>{' '}
         <p class="text-neutral-500 dark:text-neutral-400">
           Keep your boards one tap away and working offline. Changes you make offline sync when
           you're back.

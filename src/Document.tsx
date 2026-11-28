@@ -16,13 +16,13 @@ import { brand } from './lib/brand';
 // inlined here (no app imports) so this shell never pulls server-only code
 // into the client graph.
 
-const NO_FLASH_SCRIPT = `try{var m=document.cookie.match(/(?:^|; )fd_theme=(system|light|dark)/);var t=m?m[1]:'system';var d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light';}catch(e){}`;
+const NO_FLASH_SCRIPT = `try{var m=document.cookie.match(/(?:^|; )ob_theme=(system|light|dark)/);var t=m?m[1]:'system';var d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light';}catch(e){}`;
 
 function ssrThemeIsDark(): boolean {
   // getRequestEvent() is isomorphic and returns undefined outside a
   // request — on the client this is simply false.
   const header = getRequestEvent()?.request.headers.get('cookie') ?? '';
-  return /(?:^|;\s*)fd_theme=dark(?:;|$|\s)/.test(header);
+  return /(?:^|;\s*)ob_theme=dark(?:;|$|\s)/.test(header);
 }
 
 export default function Document(props: ParentProps) {

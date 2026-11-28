@@ -12,7 +12,7 @@
 // clears the moment the drawer opens.
 import { createSignal } from 'solid-js';
 
-const KEY = 'flowdeck:comments-seen';
+const KEY = 'orbit:comments-seen';
 
 type SeenMap = Record<string, number | string>;
 

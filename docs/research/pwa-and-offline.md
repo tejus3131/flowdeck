@@ -1,4 +1,4 @@
-# PWA & Offline Research — Flowdeck → Orbit
+# PWA & Offline Research — Orbit → Orbit
 
 Deep research grounding for the offline/PWA work (phases 5–6 of the redesign
 prep). Companion docs: [`seo.md`](./seo.md), [`brand-and-legal.md`](./brand-and-legal.md).
@@ -17,7 +17,7 @@ offline is done; the SW only needs to make the shell survive.
 ## The model the industry converged on
 
 **The service worker handles the shell; the data layer handles offline
-data.** Figma is the canonical validation of Flowdeck's own architecture:
+data.** Figma is the canonical validation of Orbit's own architecture:
 "lets you go offline for an arbitrary amount of time and continue editing.
 When you come back online, the client downloads a fresh copy of the
 document, **reapplies any offline edits on top of this latest state**, and
@@ -86,7 +86,7 @@ application is open and is filling in a form. If your application has
 forms, we recommend… `prompt`"
 ([auto-update](https://vite-pwa-org.netlify.app/guide/auto-update.html)).
 
-**Flowdeck today:** unconditional `skipWaiting()` + `clients.claim()` with
+**Orbit today:** unconditional `skipWaiting()` + `clients.claim()` with
 no reload — a mid-session takeover can mix old-page/new-SW fetch handling
 with zero user visibility, while the outbox holds unsynced edits. This is
 the riskiest part of the current SW.
@@ -150,7 +150,7 @@ Every reference implementation converges on: **version-scoped cache names
 
 - an expected-caches allowlist + delete-on-activate**
   ([offline-cookbook "On activate"](https://web.dev/articles/offline-cookbook)).
-  Flowdeck's image cache is bounded but uses a static name with no
+  Orbit's image cache is bounded but uses a static name with no
   activate-time cleanup — fine while it's the only cache; the allowlist
   pattern must land with precaching.
 
@@ -195,7 +195,7 @@ Current manifest has the basics. Against the
 - **iOS/Safari:** no `beforeinstallprompt`, no browser prompt — manual
   Add to Home Screen; only `standalone` honored; web push (16.4+) works
   **only for Home Screen web apps** and requires direct user interaction
-  (Flowdeck's subscribe-button flow already matches);
+  (Orbit's subscribe-button flow already matches);
   `apple-touch-icon` takes precedence over manifest icons (already
   shipped) — [webkit.org iOS push](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/),
   [learn/pwa installation](https://web.dev/learn/pwa/installation).

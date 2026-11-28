@@ -1,6 +1,6 @@
 # Support
 
-Flowdeck is a solo-maintained project, so support is best-effort —
+Orbit is a solo-maintained project, so support is best-effort —
 documentation first, then issues.
 
 - **Setup and local development:**

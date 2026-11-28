@@ -1,4 +1,4 @@
-# SEO Research — Flowdeck → Orbit
+# SEO Research — Orbit → Orbit
 
 Deep research grounding for the SEO work that ships with the rebrand and
 the new landing page. Companion docs: [`pwa-and-offline.md`](./pwa-and-offline.md)
@@ -10,7 +10,7 @@ implementation claim.
 `src/Document.tsx`; per-route `<Title>` exists on some routes; there are no
 meta descriptions, OG tags, canonicals, robots.txt, sitemap, or structured
 data. The 404 route already emits a real HTTP 404 via `httpStatus()`. Prod
-URL is `flowdeck.tejusgupta.dev` (`VITE_APP_URL`). `@solidjs/meta` v2 is
+URL is `orbit.tejusgupta.dev` (`VITE_APP_URL`). `@solidjs/meta` v2 is
 already a dependency.
 
 ## Core Web Vitals on the edge
@@ -178,7 +178,7 @@ product name — thin for a page that must rank for something. Give it a
 descriptive `<h1>`, a unique title, a meta description, OG tags, and
 `Organization` + `WebSite` + `SoftwareApplication` JSON-LD.
 
-## Rebrand migration (Flowdeck → Orbit)
+## Rebrand migration (Orbit → Orbit)
 
 **Scenario A — same domain, new name:** no URL changes → **no site move at
 all**. Update titles, OG, structured data, manifest, favicon, visible copy;

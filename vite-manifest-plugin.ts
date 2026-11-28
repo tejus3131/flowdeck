@@ -28,7 +28,7 @@ export function manifestFromBrand(): Record<string, unknown> {
 
 export function manifestPlugin(): Plugin {
   return {
-    name: 'flowdeck-manifest',
+    name: 'orbit-manifest',
     apply: 'build',
     generateBundle() {
       this.emitFile({

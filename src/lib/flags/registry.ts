@@ -1,5 +1,5 @@
 // The typed flag registry (ADR-17): the single source of truth for every
-// feature flag Flowdeck consumes. Application code reads decisions through
+// feature flag Orbit consumes. Application code reads decisions through
 // `flag()` (./snapshot.ts) — components never import a PostHog SDK or name
 // a PostHog key directly.
 //

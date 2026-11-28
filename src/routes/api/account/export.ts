@@ -59,7 +59,7 @@ export const GET: APIHandler = async (event: APIEvent) => {
 
   const payload = {
     exported_at: new Date().toISOString(),
-    format: 'flowdeck-export/1',
+    format: 'orbit-export/1',
     account: {
       id: user.id,
       email: user.email,
@@ -77,7 +77,7 @@ export const GET: APIHandler = async (event: APIEvent) => {
   return new Response(JSON.stringify(payload, null, 2), {
     headers: {
       'content-type': 'application/json',
-      'content-disposition': `attachment; filename="flowdeck-export-${date}.json"`,
+      'content-disposition': `attachment; filename="orbit-export-${date}.json"`,
       'cache-control': 'no-store',
     },
   });

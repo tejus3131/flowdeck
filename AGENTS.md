@@ -1,9 +1,9 @@
 # AGENTS.md
 
-Grounding for AI agents working on Flowdeck. Read this fully before your
+Grounding for AI agents working on Orbit. Read this fully before your
 first change; on later sessions, skim the sections relevant to your task.
 
-Flowdeck is a team workspace — boards, cards, chats, and an MCP server for
+Orbit is a team workspace — boards, cards, chats, and an MCP server for
 AI agents. Solo-maintained, free-tier resources, deliberate over clever.
 
 ## Stack

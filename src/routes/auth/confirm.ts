@@ -53,12 +53,12 @@ export const GET: APIHandler = async (event) => {
   }
   // One-hop landing from the sign-in cookie (invite flow): same-origin
   // paths only, consumed on use.
-  const next = e.request.headers.get('cookie')?.match(/(?:^|;\s*)fd_next=(\/[^\s;]*)/)?.[1];
+  const next = e.request.headers.get('cookie')?.match(/(?:^|;\s*)ob_next=(\/[^\s;]*)/)?.[1];
   const safeNext = next && !next.startsWith('//') ? decodeURIComponent(next) : '/';
   if (safeNext !== '/') {
     e.response.headers.append(
       'set-cookie',
-      stringifySetCookie({ name: 'fd_next', value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
+      stringifySetCookie({ name: 'ob_next', value: '', path: '/', sameSite: 'lax', maxAge: 0 }),
     );
   }
   return redirectTo(e, safeNext);

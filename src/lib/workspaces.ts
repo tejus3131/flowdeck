@@ -18,7 +18,7 @@ import { producerControls } from './boards';
 export type WorkspaceRole = 'owner' | 'admin' | 'member';
 export type InviteRole = 'admin' | 'member';
 
-export const WORKSPACE_COOKIE = 'fd_ws';
+export const WORKSPACE_COOKIE = 'ob_ws';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,7 +26,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function readWorkspaceCookie(): string | null {
   const header = getRequestEvent()?.request.headers.get('cookie') ?? '';
-  const match = header.match(/(?:^|;\s*)fd_ws=([0-9a-f-]{36})/);
+  const match = header.match(/(?:^|;\s*)ob_ws=([0-9a-f-]{36})/);
   return match?.[1] ?? null;
 }
 
@@ -614,7 +614,7 @@ let reservationToken = 0;
 let switchChain: Promise<unknown> = Promise.resolve();
 
 /** Run `slot` after every earlier cookie write has settled — the
- *  serialization point for ALL fd_ws writers on this device. The slot's
+ *  serialization point for ALL ob_ws writers on this device. The slot's
  *  result (or error) is delivered to its caller; the chain itself never
  *  rejects, so one failure can't starve whatever queues behind it. */
 function enqueueCookieWrite<T>(slot: () => Promise<T>): Promise<T> {
@@ -633,7 +633,7 @@ export function reserveSwitchIntent(): number {
   return ++reservationToken;
 }
 
-/** The fd_ws cookie as this device last received it — read synchronously
+/** The ob_ws cookie as this device last received it — read synchronously
  *  INSIDE the coordinator's serialized slot, where no other switch can be
  *  writing it. A fresh read here settles "already active" where a cached
  *  getMyWorkspaces snapshot can be stale mid-switch. Not httpOnly by
@@ -685,7 +685,7 @@ export function switchWorkspaceOrdered(
 }
 
 /** Serialize a workspace-ENTERING operation (create workspace, accept
- *  invite) whose response writes fd_ws server-side — the cookie writers
+ *  invite) whose response writes ob_ws server-side — the cookie writers
  *  that only learn their target workspace from their own result. Same
  *  ordering as switches: queued behind any in-flight cookie write, and
  *  like any explicit choice it cancels pending automatic intents.
@@ -698,7 +698,7 @@ export function enterWorkspaceOrdered<T>(enter: () => Promise<T>): Promise<T | '
     if (token !== switchToken) return 'superseded';
     const value = await enter();
     if (token !== switchToken) {
-      // The enter operation ran and wrote fd_ws, but a newer intent
+      // The enter operation ran and wrote ob_ws, but a newer intent
       // owns the outcome — reconcile the cache since the newer intent
       // may yet fail.
       revalidate('workspaces');
